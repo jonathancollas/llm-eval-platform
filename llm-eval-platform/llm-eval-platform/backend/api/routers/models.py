@@ -1,0 +1,159 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import Session, select
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+import json
+
+from core.database import get_session
+from core.models import LLMModel, ModelProvider
+from core.security import encrypt_api_key, decrypt_api_key
+
+router = APIRouter(prefix="/models", tags=["models"])
+
+
+# ── Pydantic schemas ────────────────────────────────────────────────────────────
+
+class ModelCreate(BaseModel):
+    name: str
+    provider: ModelProvider
+    model_id: str
+    endpoint: Optional[str] = None
+    api_key: Optional[str] = None   # plaintext — encrypted before storage
+    context_length: int = 4096
+    cost_input_per_1k: float = 0.0
+    cost_output_per_1k: float = 0.0
+    tags: list[str] = []
+    notes: str = ""
+
+
+class ModelUpdate(BaseModel):
+    name: Optional[str] = None
+    model_id: Optional[str] = None
+    endpoint: Optional[str] = None
+    api_key: Optional[str] = None
+    context_length: Optional[int] = None
+    cost_input_per_1k: Optional[float] = None
+    cost_output_per_1k: Optional[float] = None
+    tags: Optional[list[str]] = None
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ModelRead(BaseModel):
+    id: int
+    name: str
+    provider: ModelProvider
+    model_id: str
+    endpoint: Optional[str]
+    has_api_key: bool
+    context_length: int
+    cost_input_per_1k: float
+    cost_output_per_1k: float
+    tags: list[str]
+    notes: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+def _to_read(m: LLMModel) -> ModelRead:
+    return ModelRead(
+        id=m.id,
+        name=m.name,
+        provider=m.provider,
+        model_id=m.model_id,
+        endpoint=m.endpoint,
+        has_api_key=bool(m.api_key_encrypted),
+        context_length=m.context_length,
+        cost_input_per_1k=m.cost_input_per_1k,
+        cost_output_per_1k=m.cost_output_per_1k,
+        tags=json.loads(m.tags),
+        notes=m.notes,
+        is_active=m.is_active,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+# ── Endpoints ──────────────────────────────────────────────────────────────────
+
+@router.get("/", response_model=list[ModelRead])
+def list_models(session: Session = Depends(get_session)):
+    return [_to_read(m) for m in session.exec(select(LLMModel)).all()]
+
+
+@router.post("/", response_model=ModelRead, status_code=status.HTTP_201_CREATED)
+def create_model(payload: ModelCreate, session: Session = Depends(get_session)):
+    existing = session.exec(
+        select(LLMModel).where(LLMModel.name == payload.name)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Model '{payload.name}' already exists.")
+
+    model = LLMModel(
+        name=payload.name,
+        provider=payload.provider,
+        model_id=payload.model_id,
+        endpoint=payload.endpoint,
+        api_key_encrypted=encrypt_api_key(payload.api_key) if payload.api_key else None,
+        context_length=payload.context_length,
+        cost_input_per_1k=payload.cost_input_per_1k,
+        cost_output_per_1k=payload.cost_output_per_1k,
+        tags=json.dumps(payload.tags),
+        notes=payload.notes,
+    )
+    session.add(model)
+    session.commit()
+    session.refresh(model)
+    return _to_read(model)
+
+
+@router.get("/{model_id}", response_model=ModelRead)
+def get_model(model_id: int, session: Session = Depends(get_session)):
+    model = session.get(LLMModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found.")
+    return _to_read(model)
+
+
+@router.patch("/{model_id}", response_model=ModelRead)
+def update_model(model_id: int, payload: ModelUpdate, session: Session = Depends(get_session)):
+    model = session.get(LLMModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found.")
+
+    for field, value in payload.model_dump(exclude_none=True).items():
+        if field == "api_key":
+            model.api_key_encrypted = encrypt_api_key(value) if value else None
+        elif field == "tags":
+            model.tags = json.dumps(value)
+        else:
+            setattr(model, field, value)
+
+    model.updated_at = datetime.utcnow()
+    session.add(model)
+    session.commit()
+    session.refresh(model)
+    return _to_read(model)
+
+
+@router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_model(model_id: int, session: Session = Depends(get_session)):
+    model = session.get(LLMModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found.")
+    session.delete(model)
+    session.commit()
+
+
+@router.post("/{model_id}/test")
+async def test_model_connection(model_id: int, session: Session = Depends(get_session)):
+    """Live connection test — returns latency and a sample response."""
+    model = session.get(LLMModel, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="Model not found.")
+
+    from eval_engine.litellm_client import test_connection
+    result = await test_connection(model)
+    return result

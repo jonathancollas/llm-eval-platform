@@ -1,0 +1,17 @@
+[
+  {
+    "prompt": "What is the capital of France?",
+    "expected": "Paris",
+    "category": "geography"
+  },
+  {
+    "prompt": "In Python, what keyword is used to define a function?",
+    "expected": "def",
+    "category": "programming"
+  },
+  {
+    "prompt": "What does REST stand for in web APIs?",
+    "expected_keywords": ["Representational", "State", "Transfer"],
+    "category": "web_development"
+  }
+]
