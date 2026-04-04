@@ -6,7 +6,7 @@ import { Badge } from "./Badge";
 import { Spinner } from "./Spinner";
 import { Search, X, Plus, CheckCircle, ExternalLink, Filter } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 interface CatalogModel {
   id: string; name: string; provider: string; context_length: number;
