@@ -1,0 +1,83 @@
+DOUBLE LICENCE / DUAL LICENSE
+==============================
+
+Ce projet est publié sous double licence. L'utilisateur peut choisir l'une
+ou l'autre selon sa situation.
+
+This project is published under a dual license. The user may choose either
+one depending on their situation.
+
+───────────────────────────────────────────────────────────────────────────────
+
+LICENCE 1 — Licence Ouverte / Open Licence 2.0 (Etalab)
+Pour les utilisateurs français et les administrations publiques.
+
+                        LICENCE OUVERTE / OPEN LICENCE
+                               Version 2.0
+
+Le « Concédant » est tout organisme public ou toute personne morale de droit
+privé agissant sous tutelle publique qui diffuse une « Information » sous les
+termes de la présente licence.
+
+Vous êtes « Réutilisateur » de l'« Information » si vous la reproduisez, la
+redistribuez, l'adaptez, la modifiez ou la publiez.
+
+Sous réserve de respecter les conditions définies dans la présente licence,
+le Concédant vous accorde un droit non exclusif et gratuit de :
+
+  - reproduire, copier, publier et transmettre l'Information ;
+  - diffuser et redistribuer l'Information ;
+  - adapter, modifier, extraire et transformer l'Information, notamment pour
+    créer des Informations dérivées ;
+  - exploiter l'Information à titre commercial, par exemple en la combinant
+    avec d'autres informations, ou en l'incluant dans votre propre produit ou
+    application.
+
+CONDITION : mentionner la paternité de l'Information : sa source et la date
+de sa dernière mise à jour.
+
+Texte complet : https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf
+
+───────────────────────────────────────────────────────────────────────────────
+
+LICENSE 2 — Apache License 2.0
+For international users and foreign partner organizations.
+
+                           Apache License
+                     Version 2.0, January 2004
+                  http://www.apache.org/licenses/
+
+Copyright 2025 INESIA — Institut national pour l'évaluation et la sécurité
+de l'intelligence artificielle
+Sous pilotage SGDSN / DGE
+Partenaires : ANSSI, Inria, LNE, PEReN
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+───────────────────────────────────────────────────────────────────────────────
+
+CHOIX DE LICENCE / LICENSE CHOICE
+
+FR : Si vous êtes une administration française ou agissez dans le cadre du
+droit public français, la Licence Ouverte 2.0 s'applique par défaut.
+Dans tous les autres cas, vous pouvez choisir l'une ou l'autre licence.
+
+EN: If you are a French public administration or acting under French public
+law, the Open Licence 2.0 applies by default. In all other cases, you may
+choose either license.
+
+───────────────────────────────────────────────────────────────────────────────
+
+INESIA — Institut national pour l'évaluation et la sécurité de l'IA
+SGDSN — Secrétariat général de la défense et de la sécurité nationale
+https://www.sgdsn.gouv.fr/nos-missions/anticiper-et-prevenir/evaluer-et-securiser-lia
