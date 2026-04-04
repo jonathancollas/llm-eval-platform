@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState }
-import { ModelCatalogModal } from "@/components/ModelCatalogModal"; from "react";
+import { useEffect, useState } from "react";
+import { ModelCatalogModal } from "@/components/ModelCatalogModal";
 import { modelsApi } from "@/lib/api";
 import type { LLMModel, ModelProvider } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
