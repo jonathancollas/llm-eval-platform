@@ -42,14 +42,10 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
   const handleAdd = async (m: CatalogModel) => {
     setAdding(m.id);
     try {
-      const provider = m.id.startsWith("openai/") || m.provider.toLowerCase().includes("openai") ? "openai"
-        : m.id.startsWith("anthropic/") ? "anthropic"
-        : m.id.startsWith("mistralai/") ? "mistral"
-        : "custom";
       await modelsApi.create({
         name: m.name,
-        provider: provider as any,
-        model_id: `openrouter/${m.id}`,
+        provider: "custom",
+        model_id: m.id,  // e.g. "meta-llama/llama-3.1-8b-instruct:free"
         endpoint: "https://openrouter.ai/api/v1",
         cost_input_per_1k: m.cost_input_per_1k,
         cost_output_per_1k: m.cost_output_per_1k,
