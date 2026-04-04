@@ -1,22 +1,23 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
 import { benchmarksApi } from "@/lib/api";
 import type { Benchmark, BenchmarkType } from "@/lib/api";
+import { useSync } from "@/lib/useSync";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
+import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
 import { benchmarkTypeColor } from "@/lib/utils";
-import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 
 const TYPE_LABELS: Record<BenchmarkType, string> = {
   academic: "Academic", safety: "Safety", coding: "Coding", custom: "Custom",
 };
-
 const TYPE_ICONS: Record<BenchmarkType, string> = {
   academic: "🎓", safety: "🛡️", coding: "💻", custom: "🧩",
 };
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 export default function BenchmarksPage() {
   const [benches, setBenches] = useState<Benchmark[]>([]);
@@ -24,10 +25,13 @@ export default function BenchmarksPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [uploadId, setUploadId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
-  const [showCatalog, setShowCatalog] = useState(false);
   const [customForm, setCustomForm] = useState({ name: "", description: "", type: "custom" as BenchmarkType, metric: "accuracy" });
+  const { newBenchmarks, importAll } = useSync();
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 
   const load = () => benchmarksApi.list().then(setBenches).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
@@ -53,31 +57,56 @@ export default function BenchmarksPage() {
     } catch (err) { alert(String(err)); }
   };
 
+  const handleImportNew = async () => {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const n = await importAll();
+      setImportMsg(`${n} nouveau${n > 1 ? "x" : ""} benchmark${n > 1 ? "s" : ""} importé${n > 1 ? "s" : ""} !`);
+      load();
+      setTimeout(() => setImportMsg(null), 4000);
+    } finally { setImporting(false); }
+  };
+
   return (
     <div>
       <PageHeader
         title="Benchmark Library"
-        description="Built-in and custom evaluation benchmarks."
+        description="Benchmarks built-in, catalogue INESIA et imports custom."
         action={
           <div className="flex gap-2">
-          <button onClick={() => setShowCatalog(true)}
-            className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
-            🔍 Parcourir le catalogue
-          </button>
-          <button onClick={() => setShowCustomForm(!showCustomForm)}
-            className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
-            <Plus size={14} /> Import Custom
-          </button>
+            {/* New benchmarks badge */}
+            {newBenchmarks > 0 && (
+              <button onClick={handleImportNew} disabled={importing}
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors disabled:opacity-50">
+                {importing ? <Spinner size={14} /> : <Sparkles size={14} />}
+                {importing ? "Import…" : `${newBenchmarks} nouveau${newBenchmarks > 1 ? "x" : ""}`}
+              </button>
+            )}
+            <button onClick={() => setShowCatalog(true)}
+              className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+              🔍 Catalogue
+            </button>
+            <button onClick={() => setShowCustomForm(!showCustomForm)}
+              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
+              <Plus size={14} /> Import Custom
+            </button>
           </div>
         }
       />
 
+      {importMsg && (
+        <div className="mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
+          ✅ {importMsg}
+        </div>
+      )}
+
       {showCustomForm && (
         <div className="mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4">New Custom Benchmark</h3>
+          <h3 className="font-medium text-slate-900 mb-4">Nouveau benchmark custom</h3>
           <form onSubmit={handleCreateCustom} className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Name</label>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Nom</label>
               <input required value={customForm.name} onChange={e => setCustomForm(f => ({ ...f, name: e.target.value }))}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
             </div>
@@ -97,7 +126,7 @@ export default function BenchmarksPage() {
                 rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Primary metric</label>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Métrique principale</label>
               <input value={customForm.metric} onChange={e => setCustomForm(f => ({ ...f, metric: e.target.value }))}
                 placeholder="accuracy"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
@@ -105,34 +134,31 @@ export default function BenchmarksPage() {
             <div className="col-span-2 flex gap-3 pt-1">
               <button type="submit" disabled={creating}
                 className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
-                {creating ? "Creating…" : "Create — then upload dataset"}
+                {creating ? "Création…" : "Créer — puis uploader le dataset"}
               </button>
-              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
+              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Annuler</button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Upload prompt */}
       {uploadId && (
         <div className="mx-8 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
           <Upload size={16} className="text-blue-600 shrink-0" />
-          <p className="text-sm text-blue-700">
-            Benchmark created! Now upload your JSON dataset:
-          </p>
+          <p className="text-sm text-blue-700">Benchmark créé ! Uploadez votre dataset JSON :</p>
           <input type="file" accept=".json"
             onChange={e => e.target.files?.[0] && handleUpload(uploadId, e.target.files[0])}
             className="text-sm text-blue-700" />
-          <button onClick={() => setUploadId(null)} className="ml-auto text-xs text-blue-500">dismiss</button>
+          <button onClick={() => setUploadId(null)} className="ml-auto text-xs text-blue-500">fermer</button>
         </div>
       )}
 
       {/* Filter tabs */}
-      <div className="px-8 pt-6 pb-2 flex gap-2">
+      <div className="px-8 pt-6 pb-2 flex gap-2 flex-wrap">
         {(["all", "academic", "safety", "coding", "custom"] as const).map(t => (
           <button key={t} onClick={() => setFilter(t)}
             className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${filter === t ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            {t === "all" ? "All" : TYPE_LABELS[t as BenchmarkType]}
+            {t === "all" ? "Tous" : TYPE_LABELS[t as BenchmarkType]}
             <span className="ml-1.5 text-xs opacity-60">
               {t === "all" ? benches.length : benches.filter(b => b.type === t).length}
             </span>
@@ -145,13 +171,12 @@ export default function BenchmarksPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
         ) : filtered.length === 0 ? (
-          <EmptyState icon="📚" title="No benchmarks" description="Import a custom benchmark to get started." />
+          <EmptyState icon="📚" title="Aucun benchmark" description="Importez depuis le catalogue ou ajoutez un benchmark custom." />
         ) : (
           <div className="grid grid-cols-1 gap-3">
             {filtered.map(b => (
               <div key={b.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                <div
-                  className="flex items-center gap-4 p-5 cursor-pointer hover:bg-slate-50 transition-colors"
+                <div className="flex items-center gap-4 p-5 cursor-pointer hover:bg-slate-50 transition-colors"
                   onClick={() => setExpanded(expanded === b.id ? null : b.id)}>
                   <span className="text-2xl">{TYPE_ICONS[b.type]}</span>
                   <div className="flex-1 min-w-0">
@@ -159,8 +184,8 @@ export default function BenchmarksPage() {
                       <span className="font-medium text-slate-900">{b.name}</span>
                       <Badge className={benchmarkTypeColor(b.type)}>{TYPE_LABELS[b.type]}</Badge>
                       {b.is_builtin && <Badge className="bg-slate-100 text-slate-500"><Lock size={10} className="inline mr-1" />Built-in</Badge>}
-                      {b.risk_threshold && <Badge className="bg-red-100 text-red-600"><AlertTriangle size={10} className="inline mr-1" />Risk threshold</Badge>}
-                      {!b.has_dataset && !b.is_builtin && <Badge className="bg-orange-100 text-orange-600">⚠ No dataset</Badge>}
+                      {b.risk_threshold && <Badge className="bg-red-100 text-red-600"><AlertTriangle size={10} className="inline mr-1" />Seuil de risque</Badge>}
+                      {!b.has_dataset && !b.is_builtin && <Badge className="bg-orange-100 text-orange-600">⚠ Pas de dataset</Badge>}
                     </div>
                     <p className="text-xs text-slate-500 truncate">{b.description}</p>
                   </div>
@@ -174,9 +199,9 @@ export default function BenchmarksPage() {
                 {expanded === b.id && (
                   <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-sm">
                     <div className="grid grid-cols-2 gap-4 mb-3 text-xs text-slate-600">
-                      <div><span className="font-medium">Primary metric:</span> {b.metric}</div>
-                      <div><span className="font-medium">Max samples:</span> {b.num_samples ?? "no limit"}</div>
-                      {b.risk_threshold && <div><span className="font-medium">Risk threshold:</span> {(b.risk_threshold * 100).toFixed(0)}%</div>}
+                      <div><span className="font-medium">Métrique :</span> {b.metric}</div>
+                      <div><span className="font-medium">Samples :</span> {b.num_samples ?? "no limit"}</div>
+                      {b.risk_threshold && <div><span className="font-medium">Seuil risque :</span> {(b.risk_threshold * 100).toFixed(0)}%</div>}
                     </div>
                     <p className="text-slate-600 text-xs">{b.description}</p>
                     <div className="flex flex-wrap gap-1.5 mt-3">
@@ -191,7 +216,7 @@ export default function BenchmarksPage() {
                         </label>
                         <button onClick={() => benchmarksApi.delete(b.id).then(load)}
                           className="text-xs px-3 py-1.5 text-red-500 hover:bg-red-50 border border-red-100 rounded-lg">
-                          Delete
+                          Supprimer
                         </button>
                       </div>
                     )}
@@ -202,7 +227,8 @@ export default function BenchmarksPage() {
           </div>
         )}
       </div>
-    {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
+
+      {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
     </div>
   );
 }
