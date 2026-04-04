@@ -1,17 +1,42 @@
-# ⚡ LLM Eval Platform — INESIA
+<div align="center">
 
-> Infrastructure technique ouverte d'évaluation des modèles et systèmes d'IA avancés.
-> Développée dans le cadre de la feuille de route INESIA 2026-2027 (SGDSN / DGE).
+<svg width="120" height="120" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg">
+  <defs><clipPath id="rc"><circle cx="36" cy="36" r="20"/></clipPath></defs>
+  <ellipse cx="36" cy="36" rx="34" ry="8" fill="none" stroke="#ff00ff" stroke-width="1.0" opacity="0.5" transform="rotate(-12 36 36)"/>
+  <ellipse cx="36" cy="36" rx="26" ry="6" fill="none" stroke="#cc44ff" stroke-width="1.4" opacity="0.65" transform="rotate(-12 36 36)"/>
+  <circle cx="36" cy="36" r="20" fill="#1a0033"/>
+  <circle cx="36" cy="36" r="20" fill="#3a0066" clip-path="url(#rc)"/>
+  <ellipse cx="36" cy="30" rx="19" ry="5" fill="#cc00ff" opacity="0.2" clip-path="url(#rc)"/>
+  <ellipse cx="36" cy="40" rx="19" ry="4" fill="#ff0088" opacity="0.18" clip-path="url(#rc)"/>
+  <path d="M36 16 Q52 24 52 36 Q52 48 36 56 Q44 48 43 36 Q41 24 36 16Z" fill="#000022" opacity="0.5" clip-path="url(#rc)"/>
+  <ellipse cx="28" cy="28" rx="9" ry="5" fill="#ff44ff" opacity="0.22" clip-path="url(#rc)"/>
+  <circle cx="36" cy="36" r="20" fill="none" stroke="#ff00ff" stroke-width="1.5" opacity="0.7"/>
+  <path d="M10 22 Q22 12 36 14 Q50 12 62 22" fill="none" stroke="#00ffff" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M58 18 L62 22 L58 26" fill="none" stroke="#00ffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 18 L10 22 L14 26" fill="none" stroke="#00ffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+
+# ↺ MERCURY RETROGRADE
+
+**INESIA · AI Evaluation Platform**
+
+*Infrastructure technique ouverte d'évaluation des modèles et systèmes d'IA avancés*
+
+[![License: Etalab 2.0](https://img.shields.io/badge/License-Etalab%202.0-blue.svg)](https://www.etalab.gouv.fr/licence-ouverte-open-licence)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
+[![INESIA](https://img.shields.io/badge/INESIA-SGDSN%20%2F%20DGE-purple.svg)](https://www.sgdsn.gouv.fr/nos-missions/anticiper-et-prevenir/evaluer-et-securiser-lia)
 
 **Démo live** : https://llm-eval-frontend.onrender.com
+
+</div>
 
 ---
 
 ## Vue d'ensemble
 
-Cette plateforme permet d'évaluer et de comparer des modèles de langage (LLM) sur un spectre complet de benchmarks — des standards académiques internationaux aux évaluations frontier spécifiques aux risques systémiques identifiés par l'INESIA.
+Mercury Retrograde permet d'évaluer et de comparer des modèles de langage (LLM) sur un spectre complet de benchmarks — des standards académiques internationaux aux évaluations frontier spécifiques aux risques systémiques identifiés par l'INESIA.
 
-Elle est conçue pour être :
+La plateforme est conçue pour être :
 - **Légère** — tourne sur un desktop ou un serveur modeste, sans GPU requis
 - **Souveraine** — self-hosted, aucune donnée ne quitte votre infrastructure
 - **Extensible** — architecture plugin, benchmarks importables en JSON
@@ -23,30 +48,35 @@ Elle est conçue pour être :
 
 ### Modèles
 - Registre de modèles locaux (Ollama) et cloud (OpenAI, Anthropic, Mistral, Groq)
-- **Catalogue OpenRouter** : parcourir et ajouter 200+ modèles en un clic (filtres : gratuit / open-source / coût)
+- **Catalogue OpenRouter** : 300+ modèles importés automatiquement au démarrage
 - Test de connexion live avec mesure de latence
 - Chiffrement des clés API stockées (Fernet / AES-128)
 
 ### Benchmarks
-- **Catalogue INESIA** : 20 benchmarks built-in, organisés par domaine
-- **Parcourir le catalogue** : modal de découverte avec onglet Frontier dédié
-- Import de benchmarks custom au format JSON (3 formats supportés)
+- **68 benchmarks built-in** importés automatiquement au démarrage
+- Catalogue organisé par domaine : raisonnement, maths, code, français, frontier…
+- Import de benchmarks custom au format JSON
 
 ### Campagnes d'évaluation
 - N modèles × M benchmarks en une seule campagne
 - Exécution asynchrone (asyncio natif, sans Redis ni Celery)
 - Reproductibilité : seed fixé, version modèle tracée, hash prompts archivés
-- Suivi de progression en temps réel (polling 3s)
+- Suivi de progression en temps réel
+
+### Leaderboard
+- Vue globale tous modèles / tous benchmarks
+- Pages thématiques : Frontier, Cyber, CBRN-E, Agentique, Académique, Français, Code
+- **Rapport Claude** par domaine : analyse narrative générée à la demande
 
 ### Dashboards
-- Radar chart (comparaison multi-modèles / multi-benchmarks)
+- Radar chart multi-modèles / multi-benchmarks
 - Heatmap colorée (score par cellule modèle × benchmark)
 - Win-rate table (comparaison pairwise)
-- Alertes automatiques si un score passe sous un seuil de risque
+- Alertes automatiques sur seuils de risque
 
 ### Rapport IA
-- Génération d'un rapport narratif structuré via Claude (Anthropic)
-- Couvre : résumé exécutif, analyse par modèle, évaluation sécurité, coût/perf, recommandations
+- Génération narrative via Claude (Anthropic)
+- Analyse par domaine : résumé exécutif, patterns, recommandations
 - Export Markdown
 
 ---
@@ -57,38 +87,51 @@ Elle est conçue pour être :
 
 | Benchmark | Domaine | Métrique | Items |
 |---|---|---|---|
-| MMLU (subset) | Connaissances multi-domaines | accuracy | 50 |
-| HellaSwag (subset) | Raisonnement / sens commun | accuracy | 25 |
-| ARC-Challenge (subset) | Sciences / raisonnement | accuracy | 25 |
-| WinoGrande (subset) | Pronoms / sens commun | accuracy | 20 |
-| GSM8K (subset) | Maths (problèmes verbaux) | accuracy | 15 |
-| MATH (subset) | Maths compétition | accuracy | 10 |
-| TruthfulQA (subset) | Factualité / hallucinations | accuracy | 15 |
-| NaturalQuestions (subset) | QA factuel | accuracy | 13 |
-| HumanEval (mini) | Code Python | pass@1 | 20 |
-| MBPP (subset) | Code Python | pass@1 | 10 |
+| MMLU | Connaissances multi-domaines | accuracy | 50 |
+| MMLU-Pro | Connaissances (difficile, 10 choix) | accuracy | 50 |
+| GPQA Diamond | Connaissances expert PhD | accuracy | 30 |
+| HellaSwag | Raisonnement / sens commun | accuracy | 50 |
+| ARC-Challenge | Sciences / raisonnement | accuracy | 50 |
+| WinoGrande | Pronoms / sens commun | accuracy | 50 |
+| BIG-Bench Hard | Raisonnement difficile | accuracy | 30 |
+| GSM8K | Maths (problèmes verbaux) | accuracy | 50 |
+| MATH | Maths compétition | accuracy | 30 |
+| AIME | Olympiades mathématiques | accuracy | 20 |
+| TruthfulQA | Factualité / hallucinations | accuracy | 50 |
+| NaturalQuestions | QA factuel | accuracy | 50 |
+| HumanEval+ | Code Python (robuste) | pass@1 | 50 |
+| MBPP+ | Code Python (robuste) | pass@1 | 50 |
+| SWE-bench | Ingénierie logicielle réelle | resolved_% | 20 |
+| IFEval | Instruction following | accuracy | 50 |
+| MedQA (USMLE) | Médecine | accuracy | 30 |
+| LegalBench | Droit | accuracy | 30 |
 
 ### Français
 
 | Benchmark | Domaine | Métrique | Items |
 |---|---|---|---|
-| MMLU-FR (subset) | Connaissances en français | accuracy | 15 |
-| FrenchBench — Raisonnement | Raisonnement en français | accuracy | 12 |
+| MMLU-FR | Connaissances en français | accuracy | 50 |
+| FrenchBench — Raisonnement | Raisonnement natif FR | accuracy | 40 |
+| FrenchBench — Droit FR | Droit français | accuracy | 30 |
+| FrenchBench — Institutions FR | Institutions françaises et européennes | accuracy | 30 |
+| FQuAD | QA extractif en français | f1 | 50 |
+| PIAF | Pour une IA Francophone | f1 | 50 |
+| MGSM | Maths multilingue (FR inclus) | accuracy | 50 |
 
 ### Frontier INESIA (risques systémiques)
 
 | Benchmark | Domaine | Seuil d'alerte | Items |
 |---|---|---|---|
-| Safety Refusals | Refus / sur-refus | — | 30 |
-| Frontier: Autonomy Probe | Systèmes agentiques | — | 20 |
 | Cyber Uplift | Cybersécurité offensive | 85% | 15 |
-| CBRN-E Uplift Probe | CBRN-E | 95% | 15 |
+| CBRN-E Uplift Probe | CBRN-E | **95%** | 15 |
 | Loss of Control | Agentique / désalignement | 80% | 15 |
-| Evaluation Awareness | Méta-évaluation / sandbagging | 75% | 10 |
-| Capability Overhang | Capacités latentes / élicitation | Δ 30% | 8 |
-| Mechanistic Interpretability Probe | Faithfulness du raisonnement | 70% | 8 |
+| Evaluation Awareness | Sandbagging / méta-éval | 75% | 10 |
+| Capability Overhang | Capacités latentes | Δ 30% | 8 |
+| Mechanistic Interpretability Probe | Faithfulness CoT | 70% | 8 |
+| Deception Probe | Déception des principals | 90% | 20 |
+| Manipulation info d'origine étrangère | Désinformation / ingérence | 85% | 20 |
 
-> Les benchmarks frontier sont inspirés des méthodologies METR (Model Evaluation & Threat Research) et UK AISI, adaptés au contexte réglementaire et géopolitique européen.
+> Les benchmarks frontier sont inspirés des méthodologies METR et UK AISI, adaptés au contexte réglementaire et géopolitique européen.
 
 ---
 
@@ -99,8 +142,8 @@ Elle est conçue pour être :
 | Backend | FastAPI, SQLModel, SQLite, asyncio |
 | Eval engine | Plugin-based, runners MMLU / Safety / Custom |
 | Modèles | LiteLLM (Ollama + tous providers cloud) |
-| Catalogue modèles | OpenRouter API (200+ modèles) |
-| Frontend | Next.js 15, Tailwind CSS, shadcn/ui |
+| Catalogue modèles | OpenRouter API (300+ modèles, sync auto) |
+| Frontend | Next.js 15, Tailwind CSS |
 | Dashboards | Recharts (Radar, Heatmap custom) |
 | Rapports | Claude API (claude-sonnet-4) |
 | Sécurité | Fernet (AES-128-CBC + HMAC-SHA256) |
@@ -109,10 +152,6 @@ Elle est conçue pour être :
 ---
 
 ## Démarrage rapide
-
-### Prérequis
-- Docker + Docker Compose
-- (Optionnel) Ollama pour les modèles locaux
 
 ### 1. Configuration
 
@@ -126,16 +165,14 @@ cp .env.example .env
 # Obligatoire
 SECRET_KEY=<générer avec : python -c "import secrets; print(secrets.token_hex(32))">
 
-# Providers cloud (ajoutez ceux que vous utilisez)
+# Providers cloud
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
-MISTRAL_API_KEY=...
-GROQ_API_KEY=...
 
-# Catalogue OpenRouter (pour parcourir 200+ modèles)
+# OpenRouter — 300+ modèles importés automatiquement
 OPENROUTER_API_KEY=sk-or-...
 
-# Ollama (modèles locaux, optionnel)
+# Ollama (optionnel, modèles locaux)
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
@@ -147,38 +184,25 @@ docker-compose up --build
 
 Ouvrez **http://localhost:3000**
 
-### 3. Premier usage
+Au premier chargement, la plateforme importe automatiquement :
+- Les 68 benchmarks du catalogue INESIA
+- Les 300+ modèles disponibles via OpenRouter
 
-1. **Models** → "Parcourir le catalogue" → sélectionnez un modèle gratuit (ex: `meta-llama/llama-3.1-8b-instruct:free`)
-2. **Benchmarks** → "Parcourir le catalogue" → ajoutez MMLU et Safety Refusals
-3. **Campaigns** → Nouvelle campagne → sélectionnez modèle + benchmarks → Run
-4. **Dashboard** → sélectionnez la campagne terminée → visualisez les résultats
-
----
-
-## Développement sans Docker
+### 3. Développement sans Docker
 
 ```bash
 # Backend
-cd backend
-pip install -r requirements.txt
-cp .env.example .env  # puis éditez
+cd backend && pip install -r requirements.txt
 uvicorn main:app --reload
 
-# Frontend (autre terminal)
-cd frontend
-npm install
-npm run dev
+# Frontend
+cd frontend && npm install && npm run dev
 ```
 
-API disponible sur `http://localhost:8000/api`
-Interface sur `http://localhost:3000`
-
-## Tests
+### 4. Tests
 
 ```bash
-cd backend
-pytest tests/ -v
+cd backend && pytest tests/ -v
 # 23 tests : scoring MMLU, détection refus, runner custom, chiffrement
 ```
 
@@ -186,67 +210,43 @@ pytest tests/ -v
 
 ## Format des benchmarks custom
 
-Trois formats sont supportés pour l'import JSON :
-
-### QCM (Multiple Choice)
+### QCM
 ```json
-[
-  {
-    "question": "Quelle est la capitale de la France ?",
-    "choices": ["Lyon", "Paris", "Marseille", "Bordeaux"],
-    "answer": "B",
-    "category": "géographie"
-  }
-]
+[{"question": "...", "choices": ["A", "B", "C", "D"], "answer": "B", "category": "..."}]
 ```
 
-### Correspondance par mots-clés
+### Mots-clés
 ```json
-[
-  {
-    "prompt": "Citez la capitale de la France.",
-    "expected_keywords": ["Paris"],
-    "category": "géographie"
-  }
-]
+[{"prompt": "...", "expected_keywords": ["mot1", "mot2"], "category": "..."}]
 ```
 
 ### Classification
 ```json
-[
-  {
-    "prompt": "Ce commentaire est-il positif ou négatif ? 'Excellent produit !'",
-    "expected": "POSITIF",
-    "category": "sentiment"
-  }
-]
+[{"prompt": "...", "expected": "LABEL", "category": "..."}]
 ```
-
-**Import** : Benchmarks → Import Custom → créer → uploader le fichier JSON.
 
 ---
 
 ## Structure du projet
 
 ```
-llm-eval-platform/
+mercury-retrograde/
 ├── backend/
-│   ├── api/routers/        # Models, Benchmarks, Campaigns, Results, Reports, Catalog
-│   ├── core/               # DB, config, sécurité, job queue
-│   ├── eval_engine/        # Runners MMLU, Safety, Custom + client LiteLLM
-│   └── tests/              # 23 tests unitaires
+│   ├── api/routers/     # models, benchmarks, campaigns, results, reports, catalog, leaderboard, sync
+│   ├── core/            # DB, config, sécurité, job queue
+│   ├── eval_engine/     # Runners + client LiteLLM
+│   └── tests/           # 23 tests unitaires
 ├── bench_library/
-│   ├── academic/           # MMLU, HellaSwag, ARC, WinoGrande, GSM8K, MATH, TruthfulQA, NQ, HumanEval
-│   ├── coding/             # MBPP
-│   ├── french/             # MMLU-FR, FrenchBench
-│   ├── frontier/           # Cyber, CBRN-E, Loss of Control, Eval Awareness, Capability Overhang, Mech Interp
-│   ├── safety/             # Safety Refusals, Autonomy Probe
-│   └── custom/             # Exemple de benchmark custom
+│   ├── academic/        # MMLU, HellaSwag, ARC, WinoGrande, GSM8K, MATH, TruthfulQA, NQ
+│   ├── coding/          # MBPP, HumanEval
+│   ├── french/          # MMLU-FR, FrenchBench
+│   ├── frontier/        # Cyber, CBRN-E, Loss of Control, Eval Awareness, Cap. Overhang, Mech. Interp.
+│   └── safety/          # Safety Refusals, Autonomy Probe
 ├── frontend/
-│   ├── app/                # Pages : Overview, Models, Benchmarks, Campaigns, Dashboard
-│   └── components/         # Sidebar, Modals catalogue, Charts, UI
-├── MANIFESTO.md            # Mission, méthodologie, gouvernance INESIA
-├── LICENSE                 # Double licence Etalab 2.0 / Apache 2.0
+│   ├── app/             # Overview, Models, Benchmarks, Campaigns, Dashboard, Leaderboard, About
+│   └── components/      # Sidebar (↺ MR), Modals catalogue, Charts, SyncBanner
+├── MANIFESTO.md         # Mission, méthodologie, gouvernance INESIA
+├── LICENSE              # Etalab 2.0 / Apache 2.0
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -258,11 +258,11 @@ llm-eval-platform/
 | Version | Contenu | Statut |
 |---|---|---|
 | v0.1 | Pipeline eval, 4 benchmarks, dashboard | ✅ Déployé |
-| v0.2 | Catalogue OpenRouter, 20 benchmarks, modaux | ✅ Déployé |
-| v0.3 | lm-evaluation-harness, leaderboard public | 🔜 T2 2026 |
-| v0.4 | Benchmarks FR certifiés INESIA, API soumission | 🔜 T3 2026 |
-| v0.5 | Module frontier complet, authentification multi-org | 🔜 T4 2026 |
-| v1.0 | Interopérabilité réseau INAIMES | 🔜 T1 2027 |
+| v0.2 | Catalogue OpenRouter, 68 benchmarks, Leaderboard, Rapports Claude | ✅ Déployé |
+| v0.3 | lm-evaluation-harness, API soumission publique | 🔜 T2 2026 |
+| v0.4 | Benchmarks FR certifiés INESIA, scoring pass@1 réel | 🔜 T3 2026 |
+| v0.5 | Analyzers — module d'analyse avancée | 🔜 T4 2026 |
+| v1.0 | Interopérabilité réseau INAIMES, multi-org | 🔜 T1 2027 |
 
 ---
 
@@ -270,7 +270,7 @@ llm-eval-platform/
 
 Double licence :
 - **Licence Ouverte / Open Licence 2.0 (Etalab)** — administrations françaises
-- **Apache License 2.0** — utilisateurs internationaux et partenaires étrangers
+- **Apache License 2.0** — utilisateurs internationaux
 
 Voir `LICENSE` pour le texte complet.
 
@@ -281,7 +281,5 @@ Voir `LICENSE` pour le texte complet.
 L'Institut national pour l'évaluation et la sécurité de l'intelligence artificielle (INESIA) a été créé en janvier 2025, sous pilotage du SGDSN et de la DGE. Il fédère l'ANSSI, Inria, le LNE et le PEReN.
 
 → https://www.sgdsn.gouv.fr/nos-missions/anticiper-et-prevenir/evaluer-et-securiser-lia
-
----
 
 *Voir aussi `MANIFESTO.md` pour la vision complète, les principes méthodologiques et la gouvernance des benchmarks.*
