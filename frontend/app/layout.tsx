@@ -4,13 +4,19 @@ import { Sidebar } from "@/components/Sidebar";
 import { SyncBanner } from "@/components/SyncBanner";
 
 export const metadata: Metadata = {
-  title: "LLM Eval Platform — INESIA",
-  description: "Plateforme d'évaluation des modèles d'IA — INESIA",
+  title: "MR | Mercury Retrograde",
+  description: "INESIA · AI Evaluation Platform — Mercury Retrograde",
+  icons: {
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='24' font-size='22'>↺</text></svg>",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
+      <head>
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%231a0033'/><text x='16' y='22' text-anchor='middle' font-size='14' font-weight='bold' fill='%23ff00ff' font-family='system-ui'>MR</text></svg>"/>
+      </head>
       <body className="bg-slate-50 text-slate-900 antialiased">
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
