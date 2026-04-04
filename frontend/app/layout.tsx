@@ -1,14 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
-import { SyncBanner } from "@/components/SyncBanner";
+import { AutoSync } from "@/components/AutoSync";
 
 export const metadata: Metadata = {
   title: "MR | Mercury Retrograde",
   description: "INESIA · AI Evaluation Platform — Mercury Retrograde",
-  icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='24' font-size='22'>↺</text></svg>",
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -21,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="flex h-screen overflow-hidden">
           <Sidebar />
           <main className="flex-1 overflow-auto flex flex-col">
-            <SyncBanner />
+            <AutoSync />
             <div className="flex-1">{children}</div>
           </main>
         </div>
