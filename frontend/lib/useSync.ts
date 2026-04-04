@@ -1,63 +1,47 @@
 /**
- * Silent sync hook — runs once at app startup.
- * Checks for new benchmarks in catalog vs local DB.
- * Returns count of new items available.
+ * Auto-sync hook — runs once at startup, imports everything silently.
+ * No user action required.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
-const SYNC_CACHE_KEY = "inesia_sync_last";
-const SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+const SYNC_KEY = "mr_sync_ts";
+const SYNC_TTL = 15 * 60 * 1000; // re-sync every 15 min max
 
 export interface SyncState {
-  newBenchmarks: number;
-  newBenchmarkItems: unknown[];
-  lastChecked: Date | null;
-  checking: boolean;
-  importAll: () => Promise<number>;
-  recheck: () => void;
+  synced: boolean;
+  benchmarksAdded: number;
+  modelsAdded: number;
+  syncing: boolean;
 }
 
 export function useSync(): SyncState {
-  const [newBenchmarks, setNewBenchmarks] = useState(0);
-  const [newBenchmarkItems, setNewBenchmarkItems] = useState<unknown[]>([]);
-  const [lastChecked, setLastChecked] = useState<Date | null>(null);
-  const [checking, setChecking] = useState(false);
-
-  const check = useCallback(async () => {
-    setChecking(true);
-    try {
-      const res = await fetch(`${API_BASE}/sync/benchmarks`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setNewBenchmarks(data.new_count ?? 0);
-      setNewBenchmarkItems(data.new_benchmarks ?? []);
-      setLastChecked(new Date());
-      localStorage.setItem(SYNC_CACHE_KEY, new Date().toISOString());
-    } catch {
-      // silent fail — sync is best-effort
-    } finally {
-      setChecking(false);
-    }
-  }, []);
+  const [synced, setSynced]               = useState(false);
+  const [benchmarksAdded, setBenchmarks]  = useState(0);
+  const [modelsAdded, setModels]          = useState(0);
+  const [syncing, setSyncing]             = useState(false);
 
   useEffect(() => {
-    // Check if we synced recently
-    const last = localStorage.getItem(SYNC_CACHE_KEY);
-    if (last) {
-      const elapsed = Date.now() - new Date(last).getTime();
-      if (elapsed < SYNC_INTERVAL_MS) return; // skip if synced recently
+    // Skip if synced recently
+    const last = localStorage.getItem(SYNC_KEY);
+    if (last && Date.now() - Number(last) < SYNC_TTL) {
+      setSynced(true);
+      return;
     }
-    check();
-  }, [check]);
 
-  const importAll = async (): Promise<number> => {
-    const res = await fetch(`${API_BASE}/sync/benchmarks/import-all`, { method: "POST" });
-    const data = await res.json();
-    setNewBenchmarks(0);
-    setNewBenchmarkItems([]);
-    return data.added ?? 0;
-  };
+    setSyncing(true);
+    fetch(`${API_BASE}/sync/startup`, { method: "POST" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        setBenchmarks(data.benchmarks_added ?? 0);
+        setModels(data.models_added ?? 0);
+        localStorage.setItem(SYNC_KEY, String(Date.now()));
+        setSynced(true);
+      })
+      .catch(() => setSynced(true)) // silent fail
+      .finally(() => setSyncing(false));
+  }, []);
 
-  return { newBenchmarks, newBenchmarkItems, lastChecked, checking, importAll, recheck: check };
+  return { synced, benchmarksAdded, modelsAdded, syncing };
 }
