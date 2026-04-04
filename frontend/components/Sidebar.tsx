@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Cpu, Library, Rocket, Activity, Trophy } from "lucide-react";
+import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info, Microscope } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -11,17 +11,14 @@ const nav = [
   { href: "/campaigns", label: "Campaigns", icon: Rocket },
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/about", label: "About", icon: Info },
 ];
 
 const PlanetLogo = () => (
   <svg width="36" height="36" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <clipPath id="sc"><circle cx="36" cy="36" r="20"/></clipPath>
-    </defs>
-    {/* orbital rings */}
+    <defs><clipPath id="sc"><circle cx="36" cy="36" r="20"/></clipPath></defs>
     <ellipse cx="36" cy="36" rx="34" ry="8" fill="none" stroke="#ff00ff" strokeWidth="1.0" opacity="0.5" transform="rotate(-12 36 36)"/>
     <ellipse cx="36" cy="36" rx="26" ry="6" fill="none" stroke="#cc44ff" strokeWidth="1.4" opacity="0.65" transform="rotate(-12 36 36)"/>
-    {/* planet */}
     <circle cx="36" cy="36" r="20" fill="#1a0033"/>
     <circle cx="36" cy="36" r="20" fill="#3a0066" clipPath="url(#sc)"/>
     <ellipse cx="36" cy="30" rx="19" ry="5" fill="#cc00ff" opacity="0.2" clipPath="url(#sc)"/>
@@ -29,9 +26,7 @@ const PlanetLogo = () => (
     <path d="M36 16 Q52 24 52 36 Q52 48 36 56 Q44 48 43 36 Q41 24 36 16Z" fill="#000022" opacity="0.5" clipPath="url(#sc)"/>
     <ellipse cx="28" cy="28" rx="9" ry="5" fill="#ff44ff" opacity="0.22" clipPath="url(#sc)"/>
     <ellipse cx="26" cy="26" rx="4" ry="2.5" fill="#ffffff" opacity="0.18" clipPath="url(#sc)"/>
-    {/* rim glow */}
     <circle cx="36" cy="36" r="20" fill="none" stroke="#ff00ff" strokeWidth="1.5" opacity="0.7"/>
-    {/* retrograde arrow */}
     <path d="M10 22 Q22 12 36 14 Q50 12 62 22" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round"/>
     <path d="M58 18 L62 22 L58 26" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
     <path d="M14 18 L10 22 L14 26" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
@@ -49,12 +44,13 @@ export function Sidebar() {
             <div className="font-bold text-slate-900 text-xs tracking-widest leading-tight group-hover:text-purple-700 transition-colors">
               MERCURY<br/>RETROGRADE
             </div>
-            <div className="text-xs text-slate-400 mt-0.5 tracking-wide" style={{fontSize: "9px"}}>
+            <div className="text-slate-400 mt-0.5 tracking-wide" style={{fontSize:"9px"}}>
               INESIA · AI EVALUATION
             </div>
           </div>
         </div>
       </Link>
+
       <nav className="flex-1 p-3 space-y-0.5">
         {nav.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href}
@@ -67,9 +63,20 @@ export function Sidebar() {
             <Icon size={15} />{label}
           </Link>
         ))}
+
+        {/* Analyzers — coming soon */}
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm cursor-not-allowed opacity-70 mt-1">
+          <Microscope size={15} className="text-cyan-400" />
+          <span className="text-cyan-400 font-medium">Analyzers</span>
+          <span className="ml-auto text-xs bg-cyan-50 text-cyan-400 border border-cyan-200 px-1.5 py-0.5 rounded-full"
+            style={{fontSize:"8px", letterSpacing:"0.5px"}}>
+            IDLE
+          </span>
+        </div>
       </nav>
+
       <div className="px-4 py-3 border-t border-slate-100">
-        <p style={{fontSize: "9px"}} className="text-slate-400 tracking-wide">↺ MR · v0.2.0 · 2026</p>
+        <p className="text-slate-400 tracking-wide" style={{fontSize:"9px"}}>↺ MR · v0.2.0 · 2026</p>
       </div>
     </aside>
   );
