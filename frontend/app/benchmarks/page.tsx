@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState }
-import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal"; from "react";
+import { useEffect, useState } from "react";
+import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
 import { benchmarksApi } from "@/lib/api";
 import type { Benchmark, BenchmarkType } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
