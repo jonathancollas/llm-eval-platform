@@ -87,10 +87,10 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
             { key: "all", label: `Tous (${catalog.length})` },
             { key: "academic", label: `Académiques (${academicCount})` },
             { key: "frontier", label: `Frontier (${frontierCount})`, icon: "🛡️" },
-          ] as const).map(({ key, label, icon }) => (
+           ] as const).map(({ key, label, ...rest }) => (
             <button key={key} onClick={() => setFilter(key)}
               className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${filter === key ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-              {icon && <span className="mr-1">{icon}</span>}{label}
+             {"icon" in rest && <span className="mr-1">{rest.icon}</span>}{label}
             </button>
           ))}
         </div>
