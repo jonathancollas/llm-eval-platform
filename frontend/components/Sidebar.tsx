@@ -13,14 +13,48 @@ const nav = [
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 
+const PlanetLogo = () => (
+  <svg width="36" height="36" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <clipPath id="sc"><circle cx="36" cy="36" r="20"/></clipPath>
+    </defs>
+    {/* orbital rings */}
+    <ellipse cx="36" cy="36" rx="34" ry="8" fill="none" stroke="#ff00ff" strokeWidth="1.0" opacity="0.5" transform="rotate(-12 36 36)"/>
+    <ellipse cx="36" cy="36" rx="26" ry="6" fill="none" stroke="#cc44ff" strokeWidth="1.4" opacity="0.65" transform="rotate(-12 36 36)"/>
+    {/* planet */}
+    <circle cx="36" cy="36" r="20" fill="#1a0033"/>
+    <circle cx="36" cy="36" r="20" fill="#3a0066" clipPath="url(#sc)"/>
+    <ellipse cx="36" cy="30" rx="19" ry="5" fill="#cc00ff" opacity="0.2" clipPath="url(#sc)"/>
+    <ellipse cx="36" cy="40" rx="19" ry="4" fill="#ff0088" opacity="0.18" clipPath="url(#sc)"/>
+    <path d="M36 16 Q52 24 52 36 Q52 48 36 56 Q44 48 43 36 Q41 24 36 16Z" fill="#000022" opacity="0.5" clipPath="url(#sc)"/>
+    <ellipse cx="28" cy="28" rx="9" ry="5" fill="#ff44ff" opacity="0.22" clipPath="url(#sc)"/>
+    <ellipse cx="26" cy="26" rx="4" ry="2.5" fill="#ffffff" opacity="0.18" clipPath="url(#sc)"/>
+    {/* rim glow */}
+    <circle cx="36" cy="36" r="20" fill="none" stroke="#ff00ff" strokeWidth="1.5" opacity="0.7"/>
+    {/* retrograde arrow */}
+    <path d="M10 22 Q22 12 36 14 Q50 12 62 22" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round"/>
+    <path d="M58 18 L62 22 L58 26" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M14 18 L10 22 L14 26" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
 export function Sidebar() {
   const pathname = usePathname();
   return (
     <aside className="w-56 border-r border-slate-200 bg-white flex flex-col shrink-0">
-      <div className="px-5 py-5 border-b border-slate-100">
-        <span className="font-semibold text-slate-900 text-sm">⚡ LLM Eval</span>
-        <p className="text-xs text-slate-400 mt-0.5">INESIA · Plateforme d'évaluation</p>
-      </div>
+      <Link href="/" className="px-4 py-4 border-b border-slate-100 hover:bg-slate-50 transition-colors group">
+        <div className="flex items-center gap-3">
+          <PlanetLogo />
+          <div>
+            <div className="font-bold text-slate-900 text-xs tracking-widest leading-tight group-hover:text-purple-700 transition-colors">
+              MERCURY<br/>RETROGRADE
+            </div>
+            <div className="text-xs text-slate-400 mt-0.5 tracking-wide" style={{fontSize: "9px"}}>
+              INESIA · AI EVALUATION
+            </div>
+          </div>
+        </div>
+      </Link>
       <nav className="flex-1 p-3 space-y-0.5">
         {nav.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href}
@@ -35,7 +69,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="px-4 py-3 border-t border-slate-100">
-        <p className="text-xs text-slate-400">v0.2.0 — INESIA 2026</p>
+        <p style={{fontSize: "9px"}} className="text-slate-400 tracking-wide">↺ MR · v0.2.0 · 2026</p>
       </div>
     </aside>
   );
