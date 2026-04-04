@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState }
+import { ModelCatalogModal } from "@/components/ModelCatalogModal"; from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModel, ModelProvider } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -36,6 +37,7 @@ export default function ModelsPage() {
     cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "",
   });
   const [saving, setSaving] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
 
   const load = () => modelsApi.list().then(setModels).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
@@ -90,10 +92,16 @@ export default function ModelsPage() {
         title="Model Registry"
         description="Manage your LLM endpoints — local (Ollama) and cloud APIs."
         action={
+          <div className="flex gap-2">
+          <button onClick={() => setShowCatalog(true)}
+            className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+            🔍 Parcourir le catalogue
+          </button>
           <button onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
             <Plus size={14} /> Add Model
           </button>
+          </div>
         }
       />
 
@@ -234,6 +242,7 @@ export default function ModelsPage() {
           </div>
         )}
       </div>
+    {showCatalog && <ModelCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
     </div>
   );
 }

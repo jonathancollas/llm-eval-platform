@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState }
+import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal"; from "react";
 import { benchmarksApi } from "@/lib/api";
 import type { Benchmark, BenchmarkType } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -25,6 +26,7 @@ export default function BenchmarksPage() {
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [uploadId, setUploadId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [customForm, setCustomForm] = useState({ name: "", description: "", type: "custom" as BenchmarkType, metric: "accuracy" });
 
   const load = () => benchmarksApi.list().then(setBenches).finally(() => setLoading(false));
@@ -57,10 +59,16 @@ export default function BenchmarksPage() {
         title="Benchmark Library"
         description="Built-in and custom evaluation benchmarks."
         action={
+          <div className="flex gap-2">
+          <button onClick={() => setShowCatalog(true)}
+            className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+            🔍 Parcourir le catalogue
+          </button>
           <button onClick={() => setShowCustomForm(!showCustomForm)}
             className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
             <Plus size={14} /> Import Custom
           </button>
+          </div>
         }
       />
 
@@ -194,6 +202,7 @@ export default function BenchmarksPage() {
           </div>
         )}
       </div>
+    {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
     </div>
   );
 }

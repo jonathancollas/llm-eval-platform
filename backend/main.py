@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
 from core.database import create_db_and_tables
-from api.routers import models, benchmarks, campaigns, results, reports
+from api.routers import models, benchmarks, campaigns, results, reports, catalog
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +44,7 @@ app.include_router(benchmarks.router, prefix="/api")
 app.include_router(campaigns.router,  prefix="/api")
 app.include_router(results.router,    prefix="/api")
 app.include_router(reports.router,    prefix="/api")
+app.include_router(catalog.router,    prefix="/api")
 
 
 @app.get("/api/health")

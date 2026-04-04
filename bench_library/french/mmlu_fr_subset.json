@@ -1,0 +1,167 @@
+[
+  {
+    "question": "Quelle est la formule chimique de l'eau ?",
+    "choices": [
+      "H2O2",
+      "HO",
+      "H2O",
+      "H3O"
+    ],
+    "answer": "C",
+    "category": "chimie"
+  },
+  {
+    "question": "Qui a \u00e9crit Les Mis\u00e9rables ?",
+    "choices": [
+      "Flaubert",
+      "Victor Hugo",
+      "Zola",
+      "Camus"
+    ],
+    "answer": "B",
+    "category": "litt\u00e9rature"
+  },
+  {
+    "question": "Quelle est la capitale de la France ?",
+    "choices": [
+      "Lyon",
+      "Marseille",
+      "Paris",
+      "Bordeaux"
+    ],
+    "answer": "C",
+    "category": "g\u00e9ographie"
+  },
+  {
+    "question": "En quelle ann\u00e9e a eu lieu la R\u00e9volution fran\u00e7aise ?",
+    "choices": [
+      "1776",
+      "1789",
+      "1815",
+      "1848"
+    ],
+    "answer": "B",
+    "category": "histoire"
+  },
+  {
+    "question": "Quel organe produit l'insuline ?",
+    "choices": [
+      "Le foie",
+      "Les reins",
+      "Le pancr\u00e9as",
+      "L'estomac"
+    ],
+    "answer": "C",
+    "category": "biologie"
+  },
+  {
+    "question": "Quelle est la vitesse de la lumi\u00e8re dans le vide ?",
+    "choices": [
+      "3x10^6 m/s",
+      "3x10^8 m/s",
+      "3x10^10 m/s",
+      "3x10^12 m/s"
+    ],
+    "answer": "B",
+    "category": "physique"
+  },
+  {
+    "question": "Quel philosophe a \u00e9crit Critique de la raison pure ?",
+    "choices": [
+      "Hegel",
+      "Nietzsche",
+      "Kant",
+      "Descartes"
+    ],
+    "answer": "C",
+    "category": "philosophie"
+  },
+  {
+    "question": "Quel traite a mis fin a la Premiere Guerre mondiale ?",
+    "choices": [
+      "Traite de Paris",
+      "Traite de Versailles",
+      "Traite de Westphalie",
+      "Traite de Berlin"
+    ],
+    "answer": "B",
+    "category": "histoire"
+  },
+  {
+    "question": "Quel scientifique a formule la theorie de la relativite generale ?",
+    "choices": [
+      "Newton",
+      "Bohr",
+      "Planck",
+      "Einstein"
+    ],
+    "answer": "D",
+    "category": "physique"
+  },
+  {
+    "question": "Quel est le role principal des mitochondries ?",
+    "choices": [
+      "Synthese des proteines",
+      "Production d'energie (ATP)",
+      "Replication de l'ADN",
+      "Transport"
+    ],
+    "answer": "B",
+    "category": "biologie"
+  },
+  {
+    "question": "En droit francais, quel est l'age de la majorite civile ?",
+    "choices": [
+      "16 ans",
+      "17 ans",
+      "18 ans",
+      "21 ans"
+    ],
+    "answer": "C",
+    "category": "droit"
+  },
+  {
+    "question": "Quel est le symbole chimique du fer ?",
+    "choices": [
+      "Fe",
+      "Fr",
+      "Fi",
+      "Fo"
+    ],
+    "answer": "A",
+    "category": "chimie"
+  },
+  {
+    "question": "Quel philosophe francais a dit Je pense, donc je suis ?",
+    "choices": [
+      "Pascal",
+      "Voltaire",
+      "Descartes",
+      "Rousseau"
+    ],
+    "answer": "C",
+    "category": "philosophie"
+  },
+  {
+    "question": "Quelle institution francaise controle la constitutionnalite des lois ?",
+    "choices": [
+      "Conseil d'Etat",
+      "Cour de cassation",
+      "Conseil constitutionnel",
+      "Cour des comptes"
+    ],
+    "answer": "C",
+    "category": "droit"
+  },
+  {
+    "question": "Qui est l'auteur de A la recherche du temps perdu ?",
+    "choices": [
+      "Marcel Proust",
+      "Andre Gide",
+      "Paul Valery",
+      "Stendhal"
+    ],
+    "answer": "A",
+    "category": "litterature"
+  }
+]

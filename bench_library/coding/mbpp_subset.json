@@ -1,0 +1,89 @@
+[
+  {
+    "prompt": "Write a function to find the maximum element in a list.",
+    "expected_keywords": [
+      "def",
+      "max",
+      "return"
+    ],
+    "category": "list_operations"
+  },
+  {
+    "prompt": "Write a function to check if a string is a palindrome.",
+    "expected_keywords": [
+      "def",
+      "return"
+    ],
+    "category": "string_operations"
+  },
+  {
+    "prompt": "Write a function to calculate the factorial of a number.",
+    "expected_keywords": [
+      "def",
+      "factorial",
+      "return"
+    ],
+    "category": "recursion"
+  },
+  {
+    "prompt": "Write a function to find all prime numbers up to n using the Sieve of Eratosthenes.",
+    "expected_keywords": [
+      "def",
+      "sieve",
+      "return"
+    ],
+    "category": "algorithms"
+  },
+  {
+    "prompt": "Write a function that removes duplicates from a list while preserving order.",
+    "expected_keywords": [
+      "def",
+      "return"
+    ],
+    "category": "list_operations"
+  },
+  {
+    "prompt": "Write a function to merge two sorted lists into a single sorted list.",
+    "expected_keywords": [
+      "def",
+      "merge",
+      "return"
+    ],
+    "category": "algorithms"
+  },
+  {
+    "prompt": "Write a function to count the frequency of each character in a string.",
+    "expected_keywords": [
+      "def",
+      "return"
+    ],
+    "category": "string_operations"
+  },
+  {
+    "prompt": "Write a function to implement binary search on a sorted list.",
+    "expected_keywords": [
+      "def",
+      "mid",
+      "return"
+    ],
+    "category": "algorithms"
+  },
+  {
+    "prompt": "Write a function to flatten a nested list of arbitrary depth.",
+    "expected_keywords": [
+      "def",
+      "isinstance",
+      "return"
+    ],
+    "category": "recursion"
+  },
+  {
+    "prompt": "Write a function that returns the nth Fibonacci number using memoization.",
+    "expected_keywords": [
+      "def",
+      "memo",
+      "return"
+    ],
+    "category": "recursion"
+  }
+]

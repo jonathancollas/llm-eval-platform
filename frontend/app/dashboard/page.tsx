@@ -77,7 +77,7 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
                     <td key={bench} className="px-3 py-2 text-center">
                       <div className="inline-flex items-center justify-center w-16 h-10 rounded-lg text-xs font-mono font-medium text-white"
                         style={{ backgroundColor: score !== null ? color : "#e2e8f0", color: score !== null ? "white" : "#94a3b8" }}>
-                        {score != null ? `${(score * 100).toFixed(1)}%` : cell?.status ?? "—"}
+                        {score !== null ? `${(score * 100).toFixed(1)}%` : cell?.status ?? "—"}
                       </div>
                     </td>
                   );
