@@ -1,8 +1,7 @@
 """
-LiteLLM wrapper that provides a unified interface to all model providers.
-Handles Ollama (local) and cloud APIs transparently.
+LiteLLM wrapper — unified interface to all model providers.
+Handles Ollama (local), cloud APIs, and OpenRouter transparently.
 """
-import asyncio
 import time
 import logging
 from dataclasses import dataclass
@@ -18,6 +17,8 @@ from core.config import get_settings
 logger = logging.getLogger(__name__)
 litellm.set_verbose = False
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
 
 @dataclass
 class CompletionResult:
@@ -29,13 +30,26 @@ class CompletionResult:
     model_id: str
 
 
+def _is_openrouter(model: LLMModel) -> bool:
+    """Detect OpenRouter models by endpoint or model_id prefix."""
+    return (
+        (model.endpoint or "").rstrip("/") == OPENROUTER_BASE_URL.rstrip("/")
+        or model.model_id.startswith("openrouter/")
+    )
+
+
 def _build_litellm_model_str(model: LLMModel) -> str:
     """Map our model record to the LiteLLM model string format."""
+    if _is_openrouter(model):
+        # Strip any leading "openrouter/" prefix — LiteLLM adds it
+        raw_id = model.model_id.removeprefix("openrouter/")
+        return f"openrouter/{raw_id}"
+
     match model.provider:
         case ModelProvider.OLLAMA:
             return f"ollama/{model.model_id}"
         case ModelProvider.OPENAI:
-            return model.model_id  # e.g. "gpt-4o-mini"
+            return model.model_id           # e.g. "gpt-4o-mini"
         case ModelProvider.ANTHROPIC:
             return f"anthropic/{model.model_id}"
         case ModelProvider.MISTRAL:
@@ -43,7 +57,7 @@ def _build_litellm_model_str(model: LLMModel) -> str:
         case ModelProvider.GROQ:
             return f"groq/{model.model_id}"
         case ModelProvider.CUSTOM:
-            return f"openai/{model.model_id}"  # assume OpenAI-compatible
+            return f"openai/{model.model_id}"   # assume OpenAI-compatible
         case _:
             return model.model_id
 
@@ -53,22 +67,26 @@ def _build_kwargs(model: LLMModel, temperature: float, max_tokens: int) -> dict:
     kwargs: dict = {}
     settings = get_settings()
 
+    # ── Endpoint ────────────────────────────────────────────────────────────────
     if model.provider == ModelProvider.OLLAMA:
         kwargs["api_base"] = model.endpoint or settings.ollama_base_url
-
+    elif _is_openrouter(model):
+        kwargs["api_base"] = OPENROUTER_BASE_URL
     elif model.provider == ModelProvider.CUSTOM and model.endpoint:
         kwargs["api_base"] = model.endpoint
 
-    # API key
+    # ── API key ─────────────────────────────────────────────────────────────────
     if model.api_key_encrypted:
         api_key = decrypt_api_key(model.api_key_encrypted)
+    elif _is_openrouter(model):
+        # Auto-pick OPENROUTER_API_KEY from env
+        api_key = settings.openrouter_api_key
     else:
-        # Fall back to env vars
         api_key = {
-            ModelProvider.OPENAI: settings.openai_api_key,
-            ModelProvider.ANTHROPIC: settings.anthropic_api_key,
-            ModelProvider.MISTRAL: settings.mistral_api_key,
-            ModelProvider.GROQ: settings.groq_api_key,
+            ModelProvider.OPENAI:     settings.openai_api_key,
+            ModelProvider.ANTHROPIC:  settings.anthropic_api_key,
+            ModelProvider.MISTRAL:    settings.mistral_api_key,
+            ModelProvider.GROQ:       settings.groq_api_key,
         }.get(model.provider, "")
 
     if api_key:
@@ -107,14 +125,12 @@ async def complete(
         raise
 
     latency_ms = int((time.monotonic() - t0) * 1000)
-    choice = response.choices[0]
-    text = choice.message.content or ""
+    text = response.choices[0].message.content or ""
 
     usage = response.usage or {}
     input_tokens = getattr(usage, "prompt_tokens", 0) or 0
     output_tokens = getattr(usage, "completion_tokens", 0) or 0
 
-    # Cost estimation (USD)
     cost = (
         input_tokens / 1000 * model.cost_input_per_1k
         + output_tokens / 1000 * model.cost_output_per_1k
@@ -131,10 +147,7 @@ async def complete(
 
 
 async def test_connection(model: LLMModel) -> dict:
-    """
-    Quick connection test — send a minimal prompt and check for a valid response.
-    Returns {"ok": bool, "latency_ms": int, "error": str | None}
-    """
+    """Quick connection test — returns latency and a sample response."""
     try:
         result = await complete(
             model=model,
