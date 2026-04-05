@@ -155,59 +155,123 @@ def delete_benchmark(benchmark_id: int, session: Session = Depends(get_session))
     session.commit()
 
 @router.get("/{benchmark_id}/items")
-def get_benchmark_items(
+async def get_benchmark_items(
     benchmark_id: int,
     page: int = 1,
     page_size: int = 20,
     search: str = "",
     session: Session = Depends(get_session),
 ):
-    """Browse dataset items for a benchmark (paginated)."""
+    """Browse dataset items for a benchmark (paginated).
+    Supports: local JSON files, lm-eval HuggingFace datasets.
+    """
     from pathlib import Path
     from core.config import get_settings
-    from core.utils import safe_json_load
-    import json
+    import json, asyncio
 
     settings = get_settings()
     benchmark = session.get(Benchmark, benchmark_id)
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found.")
 
-    if not benchmark.dataset_path:
-        return {"items": [], "total": 0, "page": page, "page_size": page_size,
-                "source": "lm_eval", "message": "This benchmark uses lm-evaluation-harness datasets (downloaded at runtime)."}
+    items = []
+    source = "unknown"
 
-    full_path = Path(settings.bench_library_path) / benchmark.dataset_path
-    if not full_path.exists():
-        return {"items": [], "total": 0, "page": page, "page_size": page_size,
-                "source": "missing", "message": f"Dataset file not found: {benchmark.dataset_path}"}
+    # 1. Try local JSON file first
+    if benchmark.dataset_path:
+        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        if full_path.exists():
+            try:
+                with open(full_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                items = data if isinstance(data, list) else data.get("items", [])
+                source = "local"
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
 
-    try:
-        with open(full_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        items = data if isinstance(data, list) else data.get("items", [])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
+    # 2. If no local file, try loading from lm-eval / HuggingFace
+    if not items:
+        from eval_engine.registry import _find_harness_task
+        task_name = _find_harness_task(benchmark.name) if benchmark.name else None
+
+        if task_name:
+            try:
+                hf_items = await asyncio.get_event_loop().run_in_executor(
+                    None, _load_hf_items, task_name, page_size * 3
+                )
+                if hf_items:
+                    items = hf_items
+                    source = f"huggingface:{task_name}"
+            except Exception as e:
+                return {
+                    "items": [], "total": 0, "page": page, "page_size": page_size,
+                    "source": "hf_error",
+                    "message": f"Could not load HuggingFace dataset for '{task_name}': {str(e)[:200]}",
+                }
+        else:
+            return {
+                "items": [], "total": 0, "page": page, "page_size": page_size,
+                "source": "no_dataset",
+                "message": "No local dataset and no matching lm-eval task found. Upload a JSON dataset.",
+            }
 
     # Search filter
     if search:
-        search_lower = search.lower()
-        items = [
-            item for item in items
-            if any(search_lower in str(v).lower() for v in item.values())
-        ]
+        s = search.lower()
+        items = [it for it in items if any(s in str(v).lower() for v in it.values())]
 
     total = len(items)
     start = (page - 1) * page_size
-    end = start + page_size
-    page_items = items[start:end]
+    page_items = items[start:start + page_size]
 
     return {
         "items": page_items,
         "total": total,
         "page": page,
         "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
-        "source": "local",
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "source": source,
         "dataset_path": benchmark.dataset_path,
     }
+
+
+def _load_hf_items(task_name: str, limit: int = 60) -> list[dict]:
+    """Load items from HuggingFace via lm-eval task (synchronous, runs in thread)."""
+    from lm_eval.tasks import TaskManager
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        tm = TaskManager()
+        task_dict = tm.load_task_or_group([task_name])
+        task = task_dict.get(task_name)
+        if not task:
+            return []
+
+        # Build the task to get the dataset
+        task.build_all_requests(rank=0, world_size=1)
+        docs = list(task.test_docs() or task.validation_docs() or [])
+        if not docs:
+            docs = list(task.test_docs() or [])
+
+        items = []
+        for doc in docs[:limit]:
+            if hasattr(task, "doc_to_text"):
+                try:
+                    item = dict(doc) if hasattr(doc, "items") else {"text": str(doc)}
+                    # Add the rendered prompt
+                    item["_prompt"] = task.doc_to_text(doc)
+                    if hasattr(task, "doc_to_target"):
+                        item["_answer"] = task.doc_to_target(doc)
+                    items.append(item)
+                except Exception:
+                    items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
+            else:
+                items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
+
+        logger.info(f"Loaded {len(items)} items from HuggingFace for task '{task_name}'")
+        return items
+
+    except Exception as e:
+        logger.warning(f"HuggingFace load failed for '{task_name}': {e}")
+        raise

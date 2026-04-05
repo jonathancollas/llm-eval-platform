@@ -1,6 +1,12 @@
 """
 Runner registry — routes a Benchmark to the correct runner.
-Priority: lm-eval harness (by task name) → named override → type fallback → custom.
+
+Priority:
+1. has_dataset=True AND dataset_path set → always use local runner (fast, no HuggingFace)
+2. Named override (INESIA frontier benchmarks)
+3. lm-eval harness (by task name match) — only if no local dataset
+4. Type fallback
+5. CustomRunner (default)
 """
 import logging
 from core.models import Benchmark, BenchmarkType
@@ -11,11 +17,24 @@ _initialized = False
 _NAME_REGISTRY: dict = {}
 _TYPE_REGISTRY: dict = {}
 
+# Benchmarks that ALWAYS use local runners regardless of name matching
+LOCAL_ONLY_NAMES = {
+    "MMLU (subset)", "HumanEval (mini)", "Safety Refusals",
+    "Safety Refusals (INESIA)", "Frontier: Autonomy Probe",
+    "Cyber Uplift (INESIA)", "CBRN-E Uplift Probe (INESIA)",
+    "Loss of Control (INESIA)", "Evaluation Awareness (INESIA)",
+    "Capability Overhang (INESIA)",
+    "Mechanistic Interpretability Probe (INESIA)",
+    "Deception Probe (INESIA)",
+    "Manipulation Information d'Origine Étrangère (INESIA)",
+}
+
 
 def _lazy_register():
     global _initialized, _NAME_REGISTRY, _TYPE_REGISTRY
     if _initialized:
         return
+
     from eval_engine.academic.mmlu import MMLURunner
     from eval_engine.safety.refusals import SafetyRefusalsRunner
     from eval_engine.custom.runner import CustomRunner
@@ -47,58 +66,75 @@ def _lazy_register():
 def get_runner(benchmark: Benchmark, bench_library_path: str) -> BaseBenchmarkRunner:
     _lazy_register()
 
-    from eval_engine.harness_runner import HARNESS_CATALOG, get_available_harness_tasks
+    # 1. If benchmark has a local dataset file → always use local runner
+    #    This prevents lm-eval HuggingFace downloads for built-in datasets
+    if benchmark.has_dataset and benchmark.dataset_path:
+        from pathlib import Path
+        full_path = Path(bench_library_path) / benchmark.dataset_path
+        if full_path.exists():
+            runner_cls = _NAME_REGISTRY.get(benchmark.name) or _TYPE_REGISTRY.get(benchmark.type)
+            if runner_cls:
+                logger.info(f"Local dataset → using {runner_cls.__name__} for '{benchmark.name}'")
+                return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
 
-    # 1. Check if this benchmark's name matches an lm-eval task
-    task_name = _find_harness_task(benchmark.name)
-    if task_name:
-        available = get_available_harness_tasks()
-        if task_name in available:
+    # 2. Named override (always takes priority for known INESIA benchmarks)
+    if benchmark.name in _NAME_REGISTRY:
+        runner_cls = _NAME_REGISTRY[benchmark.name]
+        logger.info(f"Named override → {runner_cls.__name__} for '{benchmark.name}'")
+        return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
+
+    # 3. lm-eval harness — only for benchmarks WITHOUT a local dataset
+    #    (they explicitly need HuggingFace)
+    if benchmark.name not in LOCAL_ONLY_NAMES:
+        task_name = _find_harness_task(benchmark.name)
+        if task_name:
             try:
-                from eval_engine.harness_runner import HarnessRunner
-                logger.info(f"Routing '{benchmark.name}' → HarnessRunner (task={task_name})")
-                return HarnessRunner(benchmark=benchmark, bench_library_path=bench_library_path, task_name=task_name)
+                from eval_engine.harness_runner import HarnessRunner, get_available_harness_tasks
+                if task_name in get_available_harness_tasks():
+                    logger.info(f"lm-eval harness → task '{task_name}' for '{benchmark.name}'")
+                    return HarnessRunner(
+                        benchmark=benchmark,
+                        bench_library_path=bench_library_path,
+                        task_name=task_name,
+                    )
             except ImportError:
                 logger.warning("lm-eval not available, falling back to local runner")
 
-    # 2. Named override (INESIA frontier, built-in local)
-    runner_cls = _NAME_REGISTRY.get(benchmark.name)
-    if runner_cls:
-        return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
-
-    # 3. Type fallback
+    # 4. Type fallback
     runner_cls = _TYPE_REGISTRY.get(benchmark.type)
     if runner_cls:
+        logger.info(f"Type fallback → {runner_cls.__name__} for '{benchmark.name}' (type={benchmark.type})")
         return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
 
-    # 4. Generic fallback
+    # 5. Generic fallback
     from eval_engine.custom.runner import CustomRunner
-    logger.warning(f"No runner for '{benchmark.name}', using CustomRunner")
+    logger.warning(f"No specific runner for '{benchmark.name}', using CustomRunner")
     return CustomRunner(benchmark=benchmark, bench_library_path=bench_library_path)
 
 
 def _find_harness_task(benchmark_name: str) -> str | None:
-    """
-    Try to match a benchmark name to an lm-eval task.
-    Checks: exact match on name, then fuzzy match on HARNESS_CATALOG keys.
-    """
-    from eval_engine.harness_runner import HARNESS_CATALOG, _task_display_name
+    """Match a benchmark name to a lm-eval task ID."""
+    try:
+        from eval_engine.harness_runner import HARNESS_CATALOG, _task_display_name
+    except ImportError:
+        return None
 
     name_lower = benchmark_name.lower().strip()
 
-    # Direct match on task ID
+    # Direct task ID match
     if name_lower in HARNESS_CATALOG:
         return name_lower
 
-    # Match on display name
-    for task_id, meta in HARNESS_CATALOG.items():
+    # Display name match
+    for task_id in HARNESS_CATALOG:
         display = _task_display_name(task_id).lower()
-        if name_lower == display or name_lower == task_id.replace("_", " "):
+        if name_lower == display:
             return task_id
 
-    # Partial match — task ID as prefix of benchmark name
+    # Fuzzy: task ID embedded in benchmark name (e.g. "GSM8K (CoT)" → "gsm8k_cot")
+    name_slug = name_lower.replace(" ", "_").replace("-", "_")
     for task_id in HARNESS_CATALOG:
-        if name_lower.startswith(task_id.replace("_", " ")) or task_id in name_lower.replace(" ", "_"):
+        if task_id in name_slug or name_slug.startswith(task_id):
             return task_id
 
     return None

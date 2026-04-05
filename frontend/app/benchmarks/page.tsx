@@ -76,19 +76,24 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">✕</button>
         </div>
 
-        {data?.source === "lm_eval" && (
+        {/* Info banners per source type */}
+        {data?.source?.startsWith("huggingface:") && (
           <div className="mx-6 mt-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
-            Ce benchmark utilise lm-evaluation-harness. Les datasets sont téléchargés automatiquement depuis HuggingFace au moment de l'évaluation.
+            📡 Items chargés depuis HuggingFace via lm-eval — tâche <span className="font-mono">{data.source.split(":")[1]}</span>
           </div>
         )}
-
-        {data?.source === "missing" && (
+        {data?.source === "hf_error" && (
           <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-            Dataset non trouvé localement. Uploadez un fichier JSON via la page Benchmarks.
+            ⚠ {data.message}
+          </div>
+        )}
+        {data?.source === "no_dataset" && (
+          <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+            ⚠ {data.message}
           </div>
         )}
 
-        {data?.source === "local" && (
+        {(data?.source === "local" || data?.source?.startsWith("huggingface:")) && (
           <>
             <div className="px-6 py-3 border-b border-slate-100">
               <form onSubmit={handleSearch} className="flex gap-2">
