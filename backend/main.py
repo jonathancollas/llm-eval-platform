@@ -14,6 +14,10 @@ from core.config import get_settings
 from core.database import create_db_and_tables
 from api.routers import models, benchmarks, campaigns, results, reports, catalog, leaderboard, sync
 
+from sqlmodel import Session
+from core.database import engine
+from api.routers.sync import sync_catalog_and_models
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -21,16 +25,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up — creating DB tables and seeding benchmarks…")
+    logger.info("Starting up — DB init + sync catalogue/models")
     create_db_and_tables()
-    logger.info(f"Ready. bench_library_path={settings.bench_library_path}")
+    with Session(engine) as session:
+        sync_catalog_and_models(session)
     yield
-    logger.info("Shutting down.")
-
-
+    
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
