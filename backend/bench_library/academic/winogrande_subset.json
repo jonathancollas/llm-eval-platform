@@ -1,0 +1,22 @@
+[
+  {"question": "The trophy didn't fit in the suitcase because it was too big. What was too big?", "choices": ["The trophy", "The suitcase"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The trophy didn't fit in the suitcase because it was too small. What was too small?", "choices": ["The trophy", "The suitcase"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "Mark was unkind to Kevin because he was jealous of his success. Who was jealous?", "choices": ["Mark", "Kevin"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "Sarah couldn't get the scholarship because she failed the exam. Who failed the exam?", "choices": ["Sarah", "The committee"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The city councilors refused to give the protesters a permit because they feared violence. Who feared violence?", "choices": ["The city councilors", "The protesters"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The city councilors refused to give the protesters a permit because they advocated violence. Who advocated violence?", "choices": ["The city councilors", "The protesters"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "Emma's mother had been diagnosed with cancer, so she was very worried. Who was worried?", "choices": ["Emma", "Emma's mother"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The dog chased the cat until it got tired. What got tired?", "choices": ["The dog", "The cat"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "John told his friend Paul that he had won the lottery. Who won the lottery?", "choices": ["John", "Paul"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The lawyers argued with the judges before they gave their verdict. Who gave the verdict?", "choices": ["The lawyers", "The judges"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "Alice put a box on the table because it was sturdy enough to hold it. What was sturdy?", "choices": ["The box", "The table"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "The package was so heavy that the porter dropped it. What was dropped?", "choices": ["The porter", "The package"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "The artist painted the house for the client because she needed money. Who needed money?", "choices": ["The artist", "The client"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "Tom helped his neighbor repair her car because he was skilled at mechanics. Who was skilled?", "choices": ["Tom", "The neighbor"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The journalist interviewed the politician even though she knew he was lying. Who knew he was lying?", "choices": ["The journalist", "The politician"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "The student questioned the professor because she thought the answer was wrong. Who thought the answer was wrong?", "choices": ["The student", "The professor"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "Sam visited his uncle every week because he felt lonely. Who felt lonely?", "choices": ["Sam", "His uncle"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "The car couldn't fit in the parking space because it was too wide. What was too wide?", "choices": ["The car", "The parking space"], "answer": "A", "category": "pronoun_resolution"},
+  {"question": "Anna thanked Maria because she had been so helpful. Who had been helpful?", "choices": ["Anna", "Maria"], "answer": "B", "category": "pronoun_resolution"},
+  {"question": "The detective suspected the suspect because she had a clear motive. Who had a motive?", "choices": ["The detective", "The suspect"], "answer": "B", "category": "pronoun_resolution"}
+]

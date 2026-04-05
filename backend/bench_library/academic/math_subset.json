@@ -1,0 +1,88 @@
+[
+  {
+    "question": "Solve for x: 2x^2 - 5x + 2 = 0",
+    "expected_keywords": [
+      "x = 2",
+      "x = 0.5",
+      "x = 1/2"
+    ],
+    "answer": "x=2 or x=1/2",
+    "category": "algebra"
+  },
+  {
+    "question": "Find the sum of: 1 + 1/2 + 1/4 + 1/8 + ...",
+    "expected_keywords": [
+      "2"
+    ],
+    "answer": "2",
+    "category": "series"
+  },
+  {
+    "question": "If f(x) = x^3 - 3x^2 + 2, find f'(x).",
+    "expected_keywords": [
+      "3x^2",
+      "6x"
+    ],
+    "answer": "3x^2 - 6x",
+    "category": "calculus"
+  },
+  {
+    "question": "How many ways can 5 people be arranged in a row?",
+    "expected_keywords": [
+      "120"
+    ],
+    "answer": "120",
+    "category": "combinatorics"
+  },
+  {
+    "question": "A bag has 4 red and 6 blue balls. Probability of drawing 2 red without replacement?",
+    "expected_keywords": [
+      "2/15",
+      "0.133"
+    ],
+    "answer": "2/15",
+    "category": "probability"
+  },
+  {
+    "question": "Find the area of a triangle with sides 5, 12, and 13.",
+    "expected_keywords": [
+      "30"
+    ],
+    "answer": "30",
+    "category": "geometry"
+  },
+  {
+    "question": "What is log base 2 of 64?",
+    "expected_keywords": [
+      "6"
+    ],
+    "answer": "6",
+    "category": "algebra"
+  },
+  {
+    "question": "Find the limit as x approaches 0 of sin(x)/x.",
+    "expected_keywords": [
+      "1"
+    ],
+    "answer": "1",
+    "category": "calculus"
+  },
+  {
+    "question": "A circle has circumference 10*pi. What is its area?",
+    "expected_keywords": [
+      "25",
+      "pi",
+      "78"
+    ],
+    "answer": "25pi",
+    "category": "geometry"
+  },
+  {
+    "question": "How many subsets does a set with 4 elements have?",
+    "expected_keywords": [
+      "16"
+    ],
+    "answer": "16",
+    "category": "combinatorics"
+  }
+]

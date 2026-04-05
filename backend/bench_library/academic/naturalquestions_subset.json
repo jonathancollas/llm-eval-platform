@@ -1,0 +1,97 @@
+[
+  {
+    "prompt": "Who wrote the play Hamlet?",
+    "expected_keywords": [
+      "Shakespeare"
+    ],
+    "category": "literature"
+  },
+  {
+    "prompt": "What is the chemical symbol for gold?",
+    "expected_keywords": [
+      "Au"
+    ],
+    "category": "chemistry"
+  },
+  {
+    "prompt": "In what year did World War II end?",
+    "expected_keywords": [
+      "1945"
+    ],
+    "category": "history"
+  },
+  {
+    "prompt": "What is the largest planet in our solar system?",
+    "expected_keywords": [
+      "Jupiter"
+    ],
+    "category": "astronomy"
+  },
+  {
+    "prompt": "Who invented the telephone?",
+    "expected_keywords": [
+      "Bell",
+      "Alexander"
+    ],
+    "category": "history"
+  },
+  {
+    "prompt": "What is the capital of Japan?",
+    "expected_keywords": [
+      "Tokyo"
+    ],
+    "category": "geography"
+  },
+  {
+    "prompt": "How many bones are in the adult human body?",
+    "expected_keywords": [
+      "206"
+    ],
+    "category": "biology"
+  },
+  {
+    "prompt": "What does DNA stand for?",
+    "expected_keywords": [
+      "Deoxyribonucleic"
+    ],
+    "category": "biology"
+  },
+  {
+    "prompt": "Who painted the Mona Lisa?",
+    "expected_keywords": [
+      "Leonardo",
+      "da Vinci"
+    ],
+    "category": "art"
+  },
+  {
+    "prompt": "What element has atomic number 1?",
+    "expected_keywords": [
+      "Hydrogen"
+    ],
+    "category": "chemistry"
+  },
+  {
+    "prompt": "In which country is the Amazon rainforest primarily located?",
+    "expected_keywords": [
+      "Brazil"
+    ],
+    "category": "geography"
+  },
+  {
+    "prompt": "Who was the first person to walk on the Moon?",
+    "expected_keywords": [
+      "Armstrong",
+      "Neil"
+    ],
+    "category": "history"
+  },
+  {
+    "prompt": "What gas do plants absorb during photosynthesis?",
+    "expected_keywords": [
+      "carbon dioxide",
+      "CO2"
+    ],
+    "category": "biology"
+  }
+]
