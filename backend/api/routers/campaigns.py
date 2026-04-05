@@ -141,12 +141,17 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
         session.commit()
         session.refresh(campaign)
 
+    import logging, asyncio
+    _logger = logging.getLogger(__name__)
+    _logger.info(f"Submitting campaign {campaign_id} for execution")
+
     from eval_engine.runner import execute_campaign
     job_queue.submit_campaign(campaign_id, execute_campaign(campaign_id))
 
-    import asyncio
-    await asyncio.sleep(0.2)
+    # Give the task a moment to transition to RUNNING before responding
+    await asyncio.sleep(0.3)
     session.refresh(campaign)
+    _logger.info(f"Campaign {campaign_id} status after submit: {campaign.status}")
     return _to_read(campaign)
 
 
