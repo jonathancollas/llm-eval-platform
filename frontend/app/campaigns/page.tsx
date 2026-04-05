@@ -343,8 +343,8 @@ export default function CampaignsPage() {
         ) : (
           campaigns.map(c => {
             const running = isRunning(c);
-            const modelCount = JSON.parse(c.model_ids || "[]").length;
-            const benchCount = JSON.parse(c.benchmark_ids || "[]").length;
+            const modelCount = Array.isArray(c.model_ids) ? c.model_ids.length : JSON.parse(c.model_ids as any || "[]").length;
+            const benchCount = Array.isArray(c.benchmark_ids) ? c.benchmark_ids.length : JSON.parse(c.benchmark_ids as any || "[]").length;
             return (
               <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-5">
                 <div className="flex items-start gap-4">
