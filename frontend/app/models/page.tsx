@@ -65,7 +65,7 @@ export default function ModelsPage() {
         cost_output_per_1k: form.cost_output_per_1k, notes: form.notes,
       });
       setShowForm(false);
-      setForm({ name: "", provider: model_id: "", endpoint: "", api_key: "", context_length: 4096, cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "" });
+      setForm({ name: "", provider: "", model_id: "", endpoint: "", api_key: "", context_length: 4096, cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "" });
       load();
     } catch (err) { alert(String(err)); } finally { setSaving(false); }
   };
