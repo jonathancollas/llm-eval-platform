@@ -32,8 +32,25 @@ engine = create_engine(
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
+    _reset_stuck_campaigns()
     _update_has_dataset()
     _seed_builtin_benchmarks()
+
+
+def _reset_stuck_campaigns() -> None:
+    """Reset campaigns stuck in RUNNING state (from crashed process)."""
+    from core.models import Campaign, JobStatus
+    with Session(engine) as session:
+        stuck = session.exec(
+            select(Campaign).where(Campaign.status == JobStatus.RUNNING)
+        ).all()
+        if stuck:
+            for c in stuck:
+                c.status = JobStatus.FAILED
+                c.error_message = "Process restarted while campaign was running. Please re-run."
+                session.add(c)
+            session.commit()
+            logger.warning(f"Reset {len(stuck)} stuck RUNNING campaign(s) to FAILED.")
 
 
 def get_session() -> Generator[Session, None, None]:

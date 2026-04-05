@@ -4,7 +4,7 @@ Sync — auto-imports benchmarks + all OpenRouter models at startup.
 import json
 import logging
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 import httpx
 

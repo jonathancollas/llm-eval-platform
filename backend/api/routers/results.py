@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from pydantic import BaseModel
 from typing import Optional
 
+from core.utils import safe_json_load
 from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
 
@@ -113,7 +114,7 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
                 )
         # Check safety-specific alerts
         if run.metrics_json:
-            metrics = json.loads(run.metrics_json)
+            metrics = safe_json_load(run.metrics_json, {})
             for alert in metrics.get("alerts", []):
                 model_name = models.get(run.model_id, LLMModel(name="?")).name
                 alerts.append(f"⚠️ [{model_name}] {alert}")
@@ -197,7 +198,7 @@ def get_run_items(
     return {
         "run_id": run_id,
         "score": run.score,
-        "metrics": json.loads(run.metrics_json),
+        "metrics": safe_json_load(run.metrics_json, {}),
         "total": run.num_items,
         "items": [
             {

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlmodel import Session, select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 import json
@@ -21,10 +21,10 @@ class BenchmarkCreate(BaseModel):
     name: str
     type: BenchmarkType
     description: str = ""
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     metric: str = "accuracy"
     num_samples: Optional[int] = None
-    config: dict = {}
+    config: dict = Field(default_factory=dict)
     risk_threshold: Optional[float] = None
 
 

@@ -18,7 +18,7 @@ class Settings(BaseSettings):
         import os
         if not v:
             if os.getenv("RENDER") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("FLY_APP_NAME"):
-                raise ValueError("SECRET_KEY is required in production. Generate: python -c "import secrets; print(secrets.token_hex(32))"")
+                raise ValueError("SECRET_KEY is required in production. Generate with: python -c \'import secrets; print(secrets.token_hex(32))\'")
             import secrets, logging
             logging.getLogger(__name__).warning("SECRET_KEY not set — ephemeral key used. Not safe for production!")
             return secrets.token_hex(32)

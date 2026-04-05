@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 import json
 
+from core.utils import safe_json_load
 from core.database import get_session
 from core.models import Campaign, EvalRun, LLMModel, Benchmark, JobStatus
 from core import job_queue
@@ -39,7 +40,7 @@ class CampaignRead(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
-    runs: list[dict] = []  # EvalRun summaries
+    runs: list[dict] = Field(default_factory=list)  # EvalRun summaries
 
 
 def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
@@ -47,8 +48,8 @@ def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
         id=c.id,
         name=c.name,
         description=c.description,
-        model_ids=json.loads(c.model_ids),
-        benchmark_ids=json.loads(c.benchmark_ids),
+        model_ids=safe_json_load(c.model_ids, []),
+        benchmark_ids=safe_json_load(c.benchmark_ids, []),
         seed=c.seed,
         max_samples=c.max_samples,
         temperature=c.temperature,
@@ -65,7 +66,7 @@ def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
                 "benchmark_id": r.benchmark_id,
                 "status": r.status,
                 "score": r.score,
-                "metrics": json.loads(r.metrics_json),
+                "metrics": safe_json_load(r.metrics_json, {}),
                 "total_cost_usd": r.total_cost_usd,
                 "total_latency_ms": r.total_latency_ms,
                 "num_items": r.num_items,

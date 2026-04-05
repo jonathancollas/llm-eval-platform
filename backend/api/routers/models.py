@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 import json
@@ -8,6 +8,7 @@ import json
 from core.database import get_session
 from core.models import LLMModel, ModelProvider
 from core.security import encrypt_api_key, decrypt_api_key
+from core.utils import safe_json_load
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -23,7 +24,7 @@ class ModelCreate(BaseModel):
     context_length: int = 4096
     cost_input_per_1k: float = 0.0
     cost_output_per_1k: float = 0.0
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -68,7 +69,7 @@ def _to_read(m: LLMModel) -> ModelRead:
         context_length=m.context_length,
         cost_input_per_1k=m.cost_input_per_1k,
         cost_output_per_1k=m.cost_output_per_1k,
-        tags=json.loads(m.tags),
+        tags=safe_json_load(m.tags, []),
         notes=m.notes,
         is_active=m.is_active,
         created_at=m.created_at,

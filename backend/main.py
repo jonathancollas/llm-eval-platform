@@ -98,3 +98,34 @@ def health():
         "bench_library": settings.bench_library_path,
         "bench_library_exists": bench_ok,
     }
+
+
+# ── Optional API Key protection ───────────────────────────────────────────────
+
+_API_KEY = None
+
+@app.on_event("startup")
+async def _load_api_key():
+    global _API_KEY
+    import os
+    _API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+
+@app.middleware("http")
+async def api_key_auth(request: Request, call_next: Callable) -> Response:
+    """Optional admin API key. Set ADMIN_API_KEY env var to enable."""
+    global _API_KEY
+    # Skip auth for health, docs, and OPTIONS
+    if request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json") \
+       or request.method == "OPTIONS" \
+       or not _API_KEY:
+        return await call_next(request)
+
+    key = request.headers.get("X-API-Key", "")
+    if key != _API_KEY:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or missing X-API-Key header"},
+        )
+    return await call_next(request)
