@@ -15,9 +15,12 @@ class Settings(BaseSettings):
     @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
+        import os
         if not v:
-            # Generate a random key at runtime if not set (not persistent across restarts)
-            import secrets
+            if os.getenv("RENDER") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("FLY_APP_NAME"):
+                raise ValueError("SECRET_KEY is required in production. Generate: python -c "import secrets; print(secrets.token_hex(32))"")
+            import secrets, logging
+            logging.getLogger(__name__).warning("SECRET_KEY not set — ephemeral key used. Not safe for production!")
             return secrets.token_hex(32)
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
