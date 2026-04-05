@@ -54,7 +54,12 @@ export default function BenchmarksPage() {
   const [customForm, setCustomForm] = useState({
     name: "", description: "", type: "custom" as BenchmarkType, metric: "accuracy"
   });
-  const { newBenchmarks, importAll } = useSync();
+  const { benchmarksAdded: newBenchmarks } = useSync();
+  const importAll = async () => {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api"}/sync/benchmarks/import-all`, { method: "POST" });
+    const data = await res.json();
+    return data.added ?? 0;
+  };
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
