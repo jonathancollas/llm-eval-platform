@@ -16,7 +16,7 @@
   <path d="M14 18 L10 22 L14 26" fill="none" stroke="#00ffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 
-# ↺ MERCURY RETROGRADE
+# ☿ MERCURY RETROGRADE
 
 **INESIA · AI Evaluation Platform**
 
