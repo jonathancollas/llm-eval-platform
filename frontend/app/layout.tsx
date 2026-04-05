@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SyncBanner } from "@/components/SyncBanner";
 
 export const metadata: Metadata = {
-  title: "MR | Mercury Retrograde",
+  title: "☿ Mercury Retrograde",
   description: "INESIA · AI Evaluation Platform — Mercury Retrograde",
 };
 
@@ -12,7 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr">
       <head>
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='16' fill='%231a0033'/><text x='16' y='22' text-anchor='middle' font-size='14' font-weight='bold' fill='%23ff00ff' font-family='system-ui'>MR</text></svg>"/>
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='%230D0020' rx='8'/><text x='32' y='54' text-anchor='middle' font-family='system-ui' font-size='52' font-weight='900' stroke='%2300EEFF' stroke-width='3' fill='%23CC44FF'>☿</text></svg>"/>
       </head>
       <body className="bg-slate-50 text-slate-900 antialiased">
         <div className="flex h-screen overflow-hidden">
