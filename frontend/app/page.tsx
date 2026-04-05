@@ -1,110 +1,122 @@
 "use client";
-import { useEffect, useState } from "react";
-import { campaignsApi, modelsApi, benchmarksApi } from "@/lib/api";
-import type { Campaign, LLMModel, Benchmark } from "@/lib/api";
-import { StatusBadge } from "@/components/StatusBadge";
-import { formatScore, formatCost, timeAgo } from "@/lib/utils";
+import { useEffect, useState, useCallback } from "react";
+import { modelsApi, benchmarksApi, campaignsApi } from "@/lib/api";
+import { PageHeader } from "@/components/PageHeader";
 import Link from "next/link";
-import { Cpu, Library, Rocket, ArrowRight, AlertTriangle } from "lucide-react";
+import { Cpu, Library, Rocket, BarChart3, Trophy, ArrowRight } from "lucide-react";
 
-export default function OverviewPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [models, setModels] = useState<LLMModel[]>([]);
-  const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
+interface Stats {
+  models: number;
+  benchmarks: number;
+  campaigns: number;
+  completed_runs: number;
+}
+
+const QUICK_LINKS = [
+  { href: "/models",     icon: Cpu,      label: "Models",     desc: "Gérer les modèles" },
+  { href: "/benchmarks", icon: Library,  label: "Benchmarks", desc: "Catalogue & datasets" },
+  { href: "/campaigns",  icon: Rocket,   label: "Campaigns",  desc: "Lancer une évaluation" },
+  { href: "/dashboard",  icon: BarChart3,label: "Dashboard",  desc: "Visualiser les résultats" },
+  { href: "/leaderboard",icon: Trophy,   label: "Leaderboard",desc: "Classements par domaine" },
+];
+
+function AnimatedCount({ value, suffix = "" }: { value: number; suffix?: string }) {
+  const [display, setDisplay] = useState(0);
 
   useEffect(() => {
-    Promise.all([campaignsApi.list(), modelsApi.list(), benchmarksApi.list()])
-      .then(([c, m, b]) => { setCampaigns(c); setModels(m); setBenchmarks(b); });
+    if (value === 0) return;
+    let start = 0;
+    const step = Math.ceil(value / 24);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= value) { setDisplay(value); clearInterval(timer); }
+      else setDisplay(start);
+    }, 30);
+    return () => clearInterval(timer);
+  }, [value]);
+
+  return <span>{display}{suffix}</span>;
+}
+
+export default function OverviewPage() {
+  const [stats, setStats] = useState<Stats>({ models: 0, benchmarks: 0, campaigns: 0, completed_runs: 0 });
+  const [loading, setLoading] = useState(true);
+
+  const fetchStats = useCallback(async () => {
+    const [models, benchmarks, campaigns] = await Promise.all([
+      modelsApi.list(),
+      benchmarksApi.list(),
+      campaignsApi.list(),
+    ]);
+    setStats({
+      models: models.length,
+      benchmarks: benchmarks.length,
+      campaigns: campaigns.length,
+      completed_runs: campaigns.filter((c: any) => c.status === "completed").length,
+    });
+    setLoading(false);
   }, []);
 
-  const recent = campaigns.slice(0, 5);
-  const running = campaigns.filter(c => c.status === "running");
+  useEffect(() => {
+    fetchStats();
+    // Refresh every 10s
+    const interval = setInterval(fetchStats, 10_000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  const statCards = [
+    { label: "Modèles enregistrés", value: stats.models,        color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-100" },
+    { label: "Benchmarks actifs",   value: stats.benchmarks,    color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
+    { label: "Campagnes créées",    value: stats.campaigns,     color: "text-slate-700",  bg: "bg-slate-50",  border: "border-slate-100" },
+    { label: "Évaluations complètes", value: stats.completed_runs, color: "text-green-600", bg: "bg-green-50", border: "border-green-100" },
+  ];
 
   return (
-    <div className="p-8 max-w-6xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-slate-900">Overview</h1>
-        <p className="text-slate-500 text-sm mt-1">LLM Evaluation Platform</p>
-      </div>
+    <div>
+      <PageHeader
+        title="Overview"
+        description="Mercury Retrograde — INESIA AI Evaluation Platform"
+      />
+      <div className="p-8 space-y-8 max-w-4xl">
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        {[
-          { label: "Models", value: models.length, icon: Cpu, href: "/models", color: "text-blue-600" },
-          { label: "Benchmarks", value: benchmarks.length, icon: Library, href: "/benchmarks", color: "text-violet-600" },
-          { label: "Campaigns", value: campaigns.length, icon: Rocket, href: "/campaigns", color: "text-emerald-600" },
-        ].map(({ label, value, icon: Icon, href, color }) => (
-          <Link key={label} href={href}
-            className="bg-white border border-slate-200 rounded-xl p-5 flex items-center gap-4 hover:border-slate-300 transition-colors group">
-            <div className={`${color} bg-slate-50 rounded-lg p-2.5`}>
-              <Icon size={20} />
+        {/* Stat counters */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {statCards.map(({ label, value, color, bg, border }) => (
+            <div key={label} className={`${bg} border ${border} rounded-xl p-5`}>
+              <div className={`text-3xl font-bold ${color} mb-1`}>
+                {loading ? "—" : <AnimatedCount value={value} />}
+              </div>
+              <div className="text-xs text-slate-500">{label}</div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-slate-900">{value}</div>
-              <div className="text-sm text-slate-500">{label}</div>
-            </div>
-            <ArrowRight size={14} className="ml-auto text-slate-300 group-hover:text-slate-500 transition-colors" />
-          </Link>
-        ))}
-      </div>
-
-      {/* Running campaigns alert */}
-      {running.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center gap-3">
-          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-          <span className="text-sm text-blue-700 font-medium">
-            {running.length} campaign{running.length > 1 ? "s" : ""} running
-          </span>
-          <Link href="/campaigns" className="ml-auto text-xs text-blue-600 hover:underline">View →</Link>
+          ))}
         </div>
-      )}
 
-      {/* Recent campaigns */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="font-medium text-slate-900 text-sm">Recent Campaigns</h2>
-          <Link href="/campaigns" className="text-xs text-slate-500 hover:text-slate-700">View all →</Link>
-        </div>
-        {recent.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 text-sm">
-            No campaigns yet. <Link href="/campaigns" className="text-blue-600 hover:underline">Create one →</Link>
+        {/* Quick nav */}
+        <div>
+          <h2 className="text-sm font-medium text-slate-700 mb-3">Navigation rapide</h2>
+          <div className="grid grid-cols-1 gap-2">
+            {QUICK_LINKS.map(({ href, icon: Icon, label, desc }) => (
+              <Link key={href} href={href}
+                className="flex items-center gap-4 bg-white border border-slate-200 rounded-xl px-5 py-4 hover:border-slate-300 hover:bg-slate-50 transition-colors group">
+                <Icon size={18} className="text-slate-400 group-hover:text-slate-700 transition-colors shrink-0" />
+                <div className="flex-1">
+                  <div className="font-medium text-slate-900 text-sm">{label}</div>
+                  <div className="text-xs text-slate-400">{desc}</div>
+                </div>
+                <ArrowRight size={14} className="text-slate-300 group-hover:text-slate-500 transition-colors" />
+              </Link>
+            ))}
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100">
-                {["Name", "Status", "Progress", "Models", "Cost", "Created"].map(h => (
-                  <th key={h} className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map(c => (
-                <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-3">
-                    <Link href={`/dashboard?campaign=${c.id}`} className="font-medium text-slate-900 hover:text-blue-600">
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-3"><StatusBadge status={c.status} /></td>
-                  <td className="px-6 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 bg-slate-100 rounded-full h-1.5">
-                        <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${c.progress}%` }} />
-                      </div>
-                      <span className="text-slate-500 text-xs">{c.progress.toFixed(0)}%</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-3 text-slate-600">{c.model_ids.length}</td>
-                  <td className="px-6 py-3 text-slate-600">
-                    {formatCost(c.runs.reduce((s, r) => s + r.total_cost_usd, 0))}
-                  </td>
-                  <td className="px-6 py-3 text-slate-400">{timeAgo(c.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        </div>
+
+        {/* Status note */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 text-xs text-slate-500 space-y-1">
+          <div className="font-medium text-slate-700 mb-2">Moteur d'évaluation</div>
+          <div>↺ Benchmarks standards → <span className="font-mono text-slate-600">lm-evaluation-harness</span> (EleutherAI)</div>
+          <div>🛡️ Benchmarks frontier INESIA → runners custom (safety scoring)</div>
+          <div>☿ Modèles → LiteLLM + OpenRouter ({stats.models} configurés)</div>
+        </div>
+
       </div>
     </div>
   );

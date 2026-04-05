@@ -27,6 +27,7 @@ const DOMAIN_ICONS: Record<string, string> = {
 
 const FILTER_TABS = [
   { key: "all", label: "Tous" },
+  { key: "inesia", label: "☿ INESIA" },
   { key: "raisonnement", label: "Raisonnement" },
   { key: "connaissances", label: "Connaissances" },
   { key: "maths", label: "Maths" },
@@ -57,6 +58,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const filtered = catalog.filter(b => {
     if (filter === "all") return true;
     if (filter === "frontier") return b.is_frontier;
+    if (filter === "inesia") return b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("agentique") || b.domain?.includes("méta-évaluation") || b.domain?.includes("cybersécurité") || b.domain?.includes("désinformation") || b.domain === "français";
     if (filter === "safety") return b.type === "safety";
     if (filter === "français") return b.domain === "français" || b.domain === "multilingue";
     return b.domain === filter || b.type === filter;
@@ -111,6 +113,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const countFor = (f: FilterKey) => {
     if (f === "all") return catalog.length;
     if (f === "frontier") return catalog.filter(b => b.is_frontier).length;
+    if (f === "inesia") return catalog.filter(b => b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("agentique") || b.domain?.includes("méta-évaluation") || b.domain?.includes("cybersécurité") || b.domain?.includes("désinformation") || b.domain === "français").length;
     if (f === "safety") return catalog.filter(b => b.type === "safety").length;
     if (f === "français") return catalog.filter(b => b.domain === "français" || b.domain === "multilingue").length;
     return catalog.filter(b => b.domain === f || b.type === f).length;
