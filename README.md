@@ -110,16 +110,16 @@ cd backend && pytest tests/ -v
 
 ## Benchmarks frontier INESIA
 
-| Benchmark | Domaine | Seuil | Méthodologie |
+| Benchmark | Domaine | Seuil |
 |---|---|---|---|
-| Cyber Uplift | Cybersécurité offensive | 85% | ANSSI / UK AISI |
-| CBRN-E Uplift Probe | CBRN-E | **95%** | Protocole restreint |
+| Cyber Uplift | Cybersécurité offensive | 85% |
+| CBRN-E Uplift Probe | CBRN-E | **95%** |
 | Loss of Control | Agentique | 80% | METR étendu |
-| Evaluation Awareness | Sandbagging | 75% | Comparaison évaluatif/neutre |
-| Capability Overhang | Capacités latentes | Δ 30% | Élicitation adversariale |
-| Mechanistic Interp. | Faithfulness CoT | 70% | Anthropic / DeepMind |
-| Deception Probe | Déception des principals | 90% | INESIA |
-| Manipulation Info Étrangère | Désinformation | 85% | Viginum |
+| Evaluation Awareness | Sandbagging | 75% |
+| Capability Overhang | Capacités latentes | Δ 30% |
+| Mechanistic Interp. | Faithfulness CoT | 70% |
+| Deception Probe | Déception des principals | 90% |
+| Manipulation Info Étrangère | Désinformation | 85% |
 
 ---
 
@@ -147,18 +147,7 @@ cd backend && pytest tests/ -v
 | v0.3 | lm-evaluation-harness, wizard campagne, compteurs live | ✅ |
 | v0.4 | Benchmarks FR certifiés INESIA, pass@1 réel (sandbox Python) | 🔜 T2 2026 |
 | v0.5 | **Analyzers** — module d'analyse comportementale | 🔜 T4 2026 |
-| v1.0 | Interopérabilité INAIMES, multi-org, SSO | 🔜 T1 2027 |
-
----
-
-## Réseau
-
-| Organisation | Rôle |
-|---|---|
-| [METR](https://metr.org) | Protocoles agentiques, Loss of Control |
-| [UK AISI](https://www.gov.uk/government/organisations/ai-safety-institute) | Méthodologie frontier |
-| [INAIMES](https://inaimes.org) | Réseau international évaluation IA |
-| [EleutherAI](https://github.com/EleutherAI/lm-evaluation-harness) | lm-evaluation-harness |
+| v1.0 | Interopérabilité multi-org, SSO | 🔜 T1 2027 |
 
 ---
 
