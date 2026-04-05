@@ -20,7 +20,11 @@ export interface LLMModel {
   id: number; name: string; provider: ModelProvider; model_id: string;
   endpoint: string | null; has_api_key: boolean; context_length: number;
   cost_input_per_1k: number; cost_output_per_1k: number; tags: string[];
-  notes: string; is_active: boolean; created_at: string; updated_at: string;
+  notes: string; is_active: boolean;
+  supports_vision: boolean;
+  supports_tools: boolean;
+  supports_reasoning: boolean;
+  created_at: string; updated_at: string;
 }
 
 export interface Benchmark {

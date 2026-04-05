@@ -77,6 +77,16 @@ def _build_model(m: dict) -> LLMModel | None:
 
     desc = (m.get("description", "") or "")[:200]
 
+    # Extract capabilities from OpenRouter metadata
+    modalities = m.get("architecture", {}).get("modality", "") or ""
+    supported_params = m.get("supported_parameters") or []
+    supports_vision = "image" in str(modalities).lower()
+    supports_tools = any("tool" in str(p).lower() or "function" in str(p).lower()
+                         for p in supported_params)
+    supports_reasoning = any("reasoning" in str(p).lower() or "think" in model_id.lower()
+                              or "r1" in model_id.lower() or "qwq" in model_id.lower()
+                              for p in supported_params)
+
     return LLMModel(
         name=name,
         provider=ModelProvider.CUSTOM,
@@ -88,6 +98,9 @@ def _build_model(m: dict) -> LLMModel | None:
         tags=json.dumps(tags),
         notes=f"Via OpenRouter. {desc}",
         is_active=True,
+        supports_vision=supports_vision,
+        supports_tools=supports_tools,
+        supports_reasoning=supports_reasoning,
     )
 
 

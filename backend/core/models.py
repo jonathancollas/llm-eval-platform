@@ -42,6 +42,10 @@ class LLMModel(SQLModel, table=True):
     tags: str                  = Field(default="[]")
     notes: str                 = Field(default="")
     is_active: bool            = Field(default=True)
+    # Capability flags (extracted from OpenRouter modalities/supported_parameters)
+    supports_vision: bool      = Field(default=False)
+    supports_tools: bool       = Field(default=False)
+    supports_reasoning: bool   = Field(default=False)
     created_at: datetime       = Field(default_factory=datetime.utcnow)
     updated_at: datetime       = Field(default_factory=datetime.utcnow)
 

@@ -153,3 +153,61 @@ def delete_benchmark(benchmark_id: int, session: Session = Depends(get_session))
         raise HTTPException(status_code=400, detail="Cannot delete built-in benchmarks.")
     session.delete(bench)
     session.commit()
+
+@router.get("/{benchmark_id}/items")
+def get_benchmark_items(
+    benchmark_id: int,
+    page: int = 1,
+    page_size: int = 20,
+    search: str = "",
+    session: Session = Depends(get_session),
+):
+    """Browse dataset items for a benchmark (paginated)."""
+    from pathlib import Path
+    from core.config import get_settings
+    from core.utils import safe_json_load
+    import json
+
+    settings = get_settings()
+    benchmark = session.get(Benchmark, benchmark_id)
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found.")
+
+    if not benchmark.dataset_path:
+        return {"items": [], "total": 0, "page": page, "page_size": page_size,
+                "source": "lm_eval", "message": "This benchmark uses lm-evaluation-harness datasets (downloaded at runtime)."}
+
+    full_path = Path(settings.bench_library_path) / benchmark.dataset_path
+    if not full_path.exists():
+        return {"items": [], "total": 0, "page": page, "page_size": page_size,
+                "source": "missing", "message": f"Dataset file not found: {benchmark.dataset_path}"}
+
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        items = data if isinstance(data, list) else data.get("items", [])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
+
+    # Search filter
+    if search:
+        search_lower = search.lower()
+        items = [
+            item for item in items
+            if any(search_lower in str(v).lower() for v in item.values())
+        ]
+
+    total = len(items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = items[start:end]
+
+    return {
+        "items": page_items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
+        "source": "local",
+        "dataset_path": benchmark.dataset_path,
+    }

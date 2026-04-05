@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { benchmarksApi } from "@/lib/api";
 import type { Benchmark, BenchmarkType } from "@/lib/api";
 import { useSync } from "@/lib/useSync";
@@ -9,7 +9,10 @@ import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
 import { benchmarkTypeColor } from "@/lib/utils";
-import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles,
+         Search, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 const TYPE_LABELS: Record<string, string> = {
   academic: "Academic", safety: "Safety", coding: "Coding", custom: "Custom",
@@ -17,7 +20,6 @@ const TYPE_LABELS: Record<string, string> = {
 const TYPE_ICONS: Record<string, string> = {
   academic: "🎓", safety: "🛡️", coding: "💻", custom: "🧩",
 };
-
 const FILTER_TABS = [
   { key: "all",      label: "Tous" },
   { key: "inesia",   label: "☿ INESIA" },
@@ -26,7 +28,6 @@ const FILTER_TABS = [
   { key: "coding",   label: "Code" },
   { key: "custom",   label: "Custom" },
 ] as const;
-
 type FilterKey = typeof FILTER_TABS[number]["key"];
 
 function matchFilter(b: Benchmark, f: FilterKey): boolean {
@@ -40,13 +41,157 @@ function matchFilter(b: Benchmark, f: FilterKey): boolean {
   return b.type === f;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+// ── Benchmark Item Explorer ────────────────────────────────────────────────────
+function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: () => void }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
 
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch(`${API_BASE}/benchmarks/${benchmarkId}/items?page=${page}&page_size=20&search=${encodeURIComponent(search)}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [benchmarkId, page, search]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    setSearch(searchInput);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h2 className="font-semibold text-slate-900">Explorer le dataset</h2>
+            {data && <p className="text-xs text-slate-400 mt-0.5">{data.total} items · {data.source === "lm_eval" ? "lm-evaluation-harness" : data.dataset_path}</p>}
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">✕</button>
+        </div>
+
+        {data?.source === "lm_eval" && (
+          <div className="mx-6 mt-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
+            Ce benchmark utilise lm-evaluation-harness. Les datasets sont téléchargés automatiquement depuis HuggingFace au moment de l'évaluation.
+          </div>
+        )}
+
+        {data?.source === "missing" && (
+          <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+            Dataset non trouvé localement. Uploadez un fichier JSON via la page Benchmarks.
+          </div>
+        )}
+
+        {data?.source === "local" && (
+          <>
+            <div className="px-6 py-3 border-b border-slate-100">
+              <form onSubmit={handleSearch} className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
+                    placeholder="Rechercher dans les items…"
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                </div>
+                <button type="submit" className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700">
+                  Chercher
+                </button>
+                {search && <button type="button" onClick={() => { setSearch(""); setSearchInput(""); setPage(1); }}
+                  className="px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg">Effacer</button>}
+              </form>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+              {loading ? (
+                <div className="flex justify-center py-12"><Spinner size={24} /></div>
+              ) : data?.items?.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">Aucun item trouvé.</div>
+              ) : data?.items?.map((item: any, i: number) => (
+                <div key={i} className="bg-slate-50 rounded-xl p-4 text-sm border border-slate-100">
+                  {/* Try to render common fields nicely */}
+                  {item.question && (
+                    <div className="mb-2">
+                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Question</span>
+                      <p className="mt-1 text-slate-800">{item.question}</p>
+                    </div>
+                  )}
+                  {item.prompt && !item.question && (
+                    <div className="mb-2">
+                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Prompt</span>
+                      <p className="mt-1 text-slate-800 whitespace-pre-wrap">{item.prompt}</p>
+                    </div>
+                  )}
+                  {item.choices && (
+                    <div className="mb-2 flex gap-2 flex-wrap">
+                      {item.choices.map((c: string, ci: number) => (
+                        <span key={ci} className={`text-xs px-2 py-1 rounded ${
+                          item.answer === String.fromCharCode(65 + ci) || item.answer === ci
+                            ? "bg-green-100 text-green-700 font-medium"
+                            : "bg-white border border-slate-200 text-slate-600"
+                        }`}>
+                          {String.fromCharCode(65 + ci)}. {c}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {item.answer != null && (
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="text-slate-500">Réponse correcte :</span>
+                      <span className="font-mono font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded">{String(item.answer)}</span>
+                    </div>
+                  )}
+                  {item.expected_keywords && (
+                    <div className="flex items-center gap-1.5 text-xs mt-1">
+                      <span className="text-slate-500">Mots-clés attendus :</span>
+                      {item.expected_keywords.map((k: string) => (
+                        <span key={k} className="font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{k}</span>
+                      ))}
+                    </div>
+                  )}
+                  {item.category && (
+                    <div className="mt-2">
+                      <Badge className="bg-slate-100 text-slate-500 text-xs">{item.category}</Badge>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {data && data.total_pages > 1 && (
+              <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between text-sm">
+                <span className="text-slate-400 text-xs">Page {page} / {data.total_pages} · {data.total} items</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40">
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button onClick={() => setPage(p => Math.min(data.total_pages, p + 1))} disabled={page === data.total_pages}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function BenchmarksPage() {
   const [benches, setBenches] = useState<Benchmark[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [exploringId, setExploringId] = useState<number | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
   const [uploadId, setUploadId] = useState<number | null>(null);
@@ -55,19 +200,13 @@ export default function BenchmarksPage() {
     name: "", description: "", type: "custom" as BenchmarkType, metric: "accuracy"
   });
   const { benchmarksAdded: newBenchmarks } = useSync();
-  const importAll = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api"}/sync/benchmarks/import-all`, { method: "POST" });
-    const data = await res.json();
-    return data.added ?? 0;
-  };
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
-  const load = () => benchmarksApi.list().then(setBenches).finally(() => setLoading(false));
-  useEffect(() => { load(); }, []);
+  const load = useCallback(() => benchmarksApi.list().then(setBenches).finally(() => setLoading(false)), []);
+  useEffect(() => { load(); }, [load]);
 
   const filtered = benches.filter(b => matchFilter(b, filter));
-
   const countFor = (f: FilterKey) => benches.filter(b => matchFilter(b, f)).length;
 
   const handleCreateCustom = async (e: React.FormEvent) => {
@@ -93,7 +232,9 @@ export default function BenchmarksPage() {
     setImporting(true);
     setImportMsg(null);
     try {
-      const n = await importAll();
+      const res = await fetch(`${API_BASE}/sync/benchmarks/import-all`, { method: "POST" });
+      const data = await res.json();
+      const n = data.added ?? 0;
       setImportMsg(`${n} nouveau${n > 1 ? "x" : ""} benchmark${n > 1 ? "s" : ""} importé${n > 1 ? "s" : ""} !`);
       load();
       setTimeout(() => setImportMsg(null), 4000);
@@ -172,8 +313,7 @@ export default function BenchmarksPage() {
                 className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
                 {creating ? "Création…" : "Créer"}
               </button>
-              <button type="button" onClick={() => setShowCustomForm(false)}
-                className="px-4 py-2 text-sm text-slate-600">Annuler</button>
+              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Annuler</button>
             </div>
           </form>
         </div>
@@ -185,7 +325,7 @@ export default function BenchmarksPage() {
           <p className="text-sm text-blue-700">Benchmark créé ! Uploadez votre dataset JSON :</p>
           <input type="file" accept=".json"
             onChange={e => e.target.files?.[0] && handleUpload(uploadId, e.target.files[0])}
-            className="text-sm text-blue-700" />
+            className="text-sm" />
           <button onClick={() => setUploadId(null)} className="ml-auto text-xs text-blue-500">fermer</button>
         </div>
       )}
@@ -205,7 +345,7 @@ export default function BenchmarksPage() {
         ))}
       </div>
 
-      {/* Benchmark list */}
+      {/* List */}
       <div className="p-8 pt-4">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
@@ -224,7 +364,7 @@ export default function BenchmarksPage() {
                       <Badge className={benchmarkTypeColor(b.type as any)}>{TYPE_LABELS[b.type] ?? b.type}</Badge>
                       {b.is_builtin && <Badge className="bg-slate-100 text-slate-500"><Lock size={10} className="inline mr-1" />Built-in</Badge>}
                       {b.risk_threshold && <Badge className="bg-red-100 text-red-600"><AlertTriangle size={10} className="inline mr-1" />Frontier</Badge>}
-                      {!b.has_dataset && !b.is_builtin && <Badge className="bg-orange-100 text-orange-600">⚠ Pas de dataset</Badge>}
+                      {b.has_dataset && <Badge className="bg-green-100 text-green-600">Dataset ✓</Badge>}
                     </div>
                     <p className="text-xs text-slate-500 truncate">{b.description}</p>
                   </div>
@@ -236,29 +376,36 @@ export default function BenchmarksPage() {
                 </div>
 
                 {expanded === b.id && (
-                  <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-sm">
+                  <div className="border-t border-slate-100 px-5 py-4 bg-slate-50">
                     <div className="grid grid-cols-2 gap-4 mb-3 text-xs text-slate-600">
                       <div><span className="font-medium">Métrique :</span> {b.metric}</div>
                       <div><span className="font-medium">Samples :</span> {b.num_samples ?? "no limit"}</div>
                       {b.risk_threshold && <div><span className="font-medium">Seuil risque :</span> {(b.risk_threshold * 100).toFixed(0)}%</div>}
                     </div>
-                    <p className="text-slate-600 text-xs">{b.description}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-3">
+                    <p className="text-slate-600 text-xs mb-3">{b.description}</p>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
                       {b.tags?.map((t: string) => <Badge key={t} className="bg-white border border-slate-200 text-slate-600">{t}</Badge>)}
                     </div>
-                    {!b.is_builtin && (
-                      <div className="mt-3 flex gap-2">
-                        <label className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
-                          <Upload size={12} /> Upload JSON
-                          <input type="file" accept=".json" className="hidden"
-                            onChange={e => e.target.files?.[0] && handleUpload(b.id, e.target.files[0])} />
-                        </label>
-                        <button onClick={() => benchmarksApi.delete(b.id).then(load)}
-                          className="text-xs px-3 py-1.5 text-red-500 hover:bg-red-50 border border-red-100 rounded-lg">
-                          Supprimer
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      {/* Explorer button — always shown */}
+                      <button onClick={e => { e.stopPropagation(); setExploringId(b.id); }}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
+                        <Eye size={12} /> Explorer le dataset
+                      </button>
+                      {!b.is_builtin && (
+                        <>
+                          <label className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
+                            <Upload size={12} /> Upload JSON
+                            <input type="file" accept=".json" className="hidden"
+                              onChange={e => e.target.files?.[0] && handleUpload(b.id, e.target.files[0])} />
+                          </label>
+                          <button onClick={() => benchmarksApi.delete(b.id).then(load)}
+                            className="text-xs px-3 py-1.5 text-red-500 hover:bg-red-50 border border-red-100 rounded-lg">
+                            Supprimer
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -268,6 +415,7 @@ export default function BenchmarksPage() {
       </div>
 
       {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
+      {exploringId !== null && <ItemExplorer benchmarkId={exploringId} onClose={() => setExploringId(null)} />}
     </div>
   );
 }

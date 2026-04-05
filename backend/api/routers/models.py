@@ -54,6 +54,9 @@ class ModelRead(BaseModel):
     tags: list[str]
     notes: str
     is_active: bool
+    supports_vision: bool
+    supports_tools: bool
+    supports_reasoning: bool
     created_at: datetime
     updated_at: datetime
 
@@ -72,6 +75,9 @@ def _to_read(m: LLMModel) -> ModelRead:
         tags=safe_json_load(m.tags, []),
         notes=m.notes,
         is_active=m.is_active,
+        supports_vision=getattr(m, 'supports_vision', False),
+        supports_tools=getattr(m, 'supports_tools', False),
+        supports_reasoning=getattr(m, 'supports_reasoning', False),
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
