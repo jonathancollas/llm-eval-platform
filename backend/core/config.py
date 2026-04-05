@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     default_max_samples: int = 50
     report_model: str = "claude-sonnet-4-20250514"
 
+    debug: bool = False
+
     class Config:
         env_file = ".env"
         extra = "ignore"
