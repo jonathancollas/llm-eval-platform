@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -12,8 +12,6 @@ from core import job_queue
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
-
-# ── Schemas ────────────────────────────────────────────────────────────────────
 
 class CampaignCreate(BaseModel):
     name: str
@@ -40,7 +38,7 @@ class CampaignRead(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
-    runs: list[dict] = Field(default_factory=list)  # EvalRun summaries
+    runs: list[dict] = Field(default_factory=list)
 
 
 def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
@@ -70,13 +68,12 @@ def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
                 "total_cost_usd": r.total_cost_usd,
                 "total_latency_ms": r.total_latency_ms,
                 "num_items": r.num_items,
+                "error_message": r.error_message,
             }
             for r in (runs or [])
         ],
     )
 
-
-# ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=list[CampaignRead])
 def list_campaigns(session: Session = Depends(get_session)):
@@ -86,13 +83,12 @@ def list_campaigns(session: Session = Depends(get_session)):
 
 @router.post("/", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
 def create_campaign(payload: CampaignCreate, session: Session = Depends(get_session)):
-    # Validate model and benchmark IDs exist
     for mid in payload.model_ids:
         if not session.get(LLMModel, mid):
-            raise HTTPException(status_code=404, detail=f"Model {mid} not found.")
+            raise HTTPException(404, detail=f"Model {mid} not found.")
     for bid in payload.benchmark_ids:
         if not session.get(Benchmark, bid):
-            raise HTTPException(status_code=404, detail=f"Benchmark {bid} not found.")
+            raise HTTPException(404, detail=f"Benchmark {bid} not found.")
 
     campaign = Campaign(
         name=payload.name,
@@ -114,28 +110,42 @@ def create_campaign(payload: CampaignCreate, session: Session = Depends(get_sess
 def get_campaign(campaign_id: int, session: Session = Depends(get_session)):
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+        raise HTTPException(404, detail="Campaign not found.")
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     return _to_read(campaign, list(runs))
 
 
 @router.post("/{campaign_id}/run", response_model=CampaignRead)
 async def run_campaign(campaign_id: int, session: Session = Depends(get_session)):
-    """Start executing a campaign as a background task."""
+    """Start or re-run a campaign."""
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+        raise HTTPException(404, detail="Campaign not found.")
     if campaign.status == JobStatus.RUNNING:
-        raise HTTPException(status_code=409, detail="Campaign is already running.")
-    if campaign.status == JobStatus.COMPLETED:
-        raise HTTPException(status_code=409, detail="Campaign already completed. Create a new one to re-run.")
+        raise HTTPException(409, detail="Campaign is already running.")
+
+    # Reset state for re-run (completed or failed campaigns)
+    if campaign.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+        # Delete previous runs to allow fresh start
+        prev_runs = session.exec(
+            select(EvalRun).where(EvalRun.campaign_id == campaign_id)
+        ).all()
+        for r in prev_runs:
+            session.delete(r)
+        campaign.status = JobStatus.PENDING
+        campaign.progress = 0.0
+        campaign.error_message = None
+        campaign.started_at = None
+        campaign.completed_at = None
+        session.add(campaign)
+        session.commit()
+        session.refresh(campaign)
 
     from eval_engine.runner import execute_campaign
     job_queue.submit_campaign(campaign_id, execute_campaign(campaign_id))
 
-    # Brief delay so the status update is visible
     import asyncio
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.2)
     session.refresh(campaign)
     return _to_read(campaign)
 
@@ -144,10 +154,21 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
 def cancel_campaign(campaign_id: int, session: Session = Depends(get_session)):
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+        raise HTTPException(404, detail="Campaign not found.")
+
     cancelled = job_queue.cancel_campaign(campaign_id)
+
     if not cancelled:
-        raise HTTPException(status_code=400, detail="Campaign is not running.")
+        # Task not in queue — force status update if DB still shows running
+        if campaign.status == JobStatus.RUNNING:
+            campaign.status = JobStatus.CANCELLED
+            campaign.error_message = "Cancelled by user."
+            campaign.completed_at = datetime.utcnow()
+            session.add(campaign)
+            session.commit()
+        else:
+            raise HTTPException(400, detail=f"Campaign is not running (status: {campaign.status}).")
+
     session.refresh(campaign)
     return _to_read(campaign)
 
@@ -156,8 +177,11 @@ def cancel_campaign(campaign_id: int, session: Session = Depends(get_session)):
 def delete_campaign(campaign_id: int, session: Session = Depends(get_session)):
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+        raise HTTPException(404, detail="Campaign not found.")
     if campaign.status == JobStatus.RUNNING:
-        raise HTTPException(status_code=409, detail="Stop the campaign before deleting.")
+        raise HTTPException(409, detail="Stop the campaign before deleting.")
+    # Cascade delete runs
+    for r in session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all():
+        session.delete(r)
     session.delete(campaign)
     session.commit()

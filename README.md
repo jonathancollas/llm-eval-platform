@@ -1,17 +1,19 @@
 <div align="center">
 
 <svg width="96" height="96" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900" stroke="#FF00FF" stroke-width="12" stroke-linejoin="round" fill="none" opacity="0.08">☿</text>
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900" stroke="#00EEFF" stroke-width="5" stroke-linejoin="round" fill="none" opacity="0.45">☿</text>
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900" stroke="#FF22AA" stroke-width="1.5" stroke-linejoin="round" fill="none" opacity="0.85">☿</text>
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900" fill="#1A0035">☿</text>
+  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
+    stroke="#FF00FF" stroke-width="12" stroke-linejoin="round" fill="none" opacity="0.08">☿</text>
+  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
+    stroke="#00EEFF" stroke-width="5" stroke-linejoin="round" fill="none" opacity="0.45">☿</text>
+  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
+    stroke="#FF22AA" stroke-width="1.5" stroke-linejoin="round" fill="none" opacity="0.85">☿</text>
+  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
+    fill="#1A0035">☿</text>
 </svg>
 
 # MERCURY RETROGRADE
 
 **AI Evaluation Platform — INESIA**
-
-*Évaluer ce qui déraille. Mesurer ce qui se cache.*
 
 [![License: Etalab 2.0](https://img.shields.io/badge/Licence-Etalab%202.0-5C6AC4.svg)](https://www.etalab.gouv.fr/licence-ouverte-open-licence)
 [![License: Apache 2.0](https://img.shields.io/badge/Licence-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -27,55 +29,76 @@
 
 ## Pourquoi Mercury Retrograde ?
 
-En astrologie, quand Mercure est rétrograde, tout déraille : les communications échouent, les contrats cachent des clauses, les systèmes plantent. Pour évaluer des modèles d'IA, on fait la même chose — **on les fait tourner à rebours pour voir ce qu'ils cachent**.
+**Mercury** est le dieu romain des communications, du langage et de la transmission — symbole de l'intelligence en mouvement.
 
-Mercury Retrograde est l'infrastructure technique de l'[INESIA](https://www.sgdsn.gouv.fr/nos-missions/anticiper-et-prevenir/evaluer-et-securiser-lia) pour évaluer les LLMs sur l'intégralité du spectre des risques : des benchmarks académiques standards aux évaluations frontier de risques systémiques (CBRN-E, cybersécurité offensive, désalignement agentique).
+**Retrograde** évoque le moment où les systèmes de communication deviennent instables : incompréhensions, dérives, comportements inattendus, défaillances silencieuses.
+
+> *We study the messenger when communication breaks down.*
+
+C'est précisément ce que cette plateforme est construite pour mesurer :
+
+- les hallucinations et dérives factuelles
+- les régressions de raisonnement sous pression
+- les échecs de refus sur des requêtes dangereuses
+- les capacités latentes non révélées par défaut
+- les comportements adversariaux et la résistance au jailbreak
+- les écarts de performance entre évaluation et déploiement réel
+
+Mercury Retrograde est l'infrastructure technique de l'[INESIA](https://www.sgdsn.gouv.fr/nos-missions/anticiper-et-prevenir/evaluer-et-securiser-lia) pour évaluer les LLMs sur l'intégralité du spectre des risques — des benchmarks académiques standards aux évaluations frontier de risques systémiques.
+
+---
+
+## Vision
+
+À mesure que les systèmes d'IA deviennent plus capables, l'évaluation doit aller au-delà des scores de benchmark.
+
+L'évaluation ne doit pas seulement célébrer les bonnes performances. Elle doit révéler :
+- où les systèmes échouent
+- quand ils régressent
+- comment ils se comportent sous ambiguïté
+- ce qui se brise sous pression adversariale
+
+Mercury Retrograde est construit autour de ce principe. L'objectif est de rendre l'évaluation des modèles **reproductible, transparente, scalable et de niveau recherche**.
 
 ---
 
 ## Fonctionnalités
 
-### Moteur d'évaluation
-- **lm-evaluation-harness** (EleutherAI) — scores standardisés, comparables aux publications des labs
-- **Runners frontier INESIA** — protocoles propriétaires pour les risques systémiques
-- Support **Ollama** (local), **OpenRouter** (300+ modèles cloud), tous providers via LiteLLM
-- Reproductibilité complète : seed fixé, version modèle tracée, température configurable
-
-### Benchmarks
-- **68 benchmarks** importés automatiquement au démarrage
-- Catalogue organisé en 9 domaines : raisonnement, maths, code, français, médecine, droit, safety, agentique, frontier
-- Import de benchmarks custom au format JSON
-- Filtres par domaine, métrique, seuil de risque, onglet ☿ INESIA
-
-### Modèles
-- **300+ modèles OpenRouter** importés automatiquement (si clé configurée)
-- Registre unifié : Ollama local + cloud (OpenAI, Anthropic, Mistral, Groq, DeepSeek…)
+### Registre de modèles
+- **300+ modèles OpenRouter** importés automatiquement (cloud : OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek…)
+- Chiffrement des clés API (Fernet / AES-128)
 - Test de connexion live avec mesure de latence
-- Chiffrement des clés API (Fernet / AES-128-CBC)
+- Badges de capacités : vision, tools, reasoning
+
+### Catalogue de benchmarks
+- **68 benchmarks INESIA** + **60+ benchmarks lm-eval** = 128+ évaluations disponibles
+- Organisés par domaine : raisonnement, maths, code, factualité, français, safety, frontier
+- Import de benchmarks custom (format JSON)
+- Onglet ☿ INESIA pour les évaluations frontier
+
+### Moteur d'évaluation
+- **lm-evaluation-harness** (EleutherAI) — scores standardisés, directement comparables aux publications
+- **Runners INESIA** — protocoles propriétaires pour les risques systémiques
+- Exécution parallèle (asyncio.gather) avec sémaphore configurable
+- Reproductibilité complète : seed fixé, température configurable
 
 ### Campagnes
-- Wizard 4 étapes : paramètres → modèles → benchmarks → lancer
-- N modèles × M benchmarks exécutés en asyncio natif
-- Barre de progression en temps réel, annulation à la volée
+- Wizard 4 étapes : paramètres → modèles → benchmarks → lancement
+- N modèles × M benchmarks en une campagne
+- Barre de progression temps réel, annulation à la volée
+- Re-run avec reset automatique des runs précédents
 
 ### Leaderboard
 - Vue globale + 7 domaines thématiques (Frontier, Cyber, CBRN-E, Agentique, Académique, Français, Code)
-- **Rapport Claude par domaine** : analyse narrative générée à la demande
+- **Rapport narratif par Claude** — analyse générée à la demande par Claude Sonnet
 - Alertes si score sous le seuil de risque frontier
 
 ### Dashboard
-- Radar chart multi-modèles / Heatmap / Win-rate / Export CSV
+- Radar chart multi-modèles / Heatmap scores / Win-rate / Export CSV
 
 ---
 
 ## Démarrage rapide
-
-### Prérequis
-- Docker & Docker Compose
-- Clé [OpenRouter](https://openrouter.ai) (recommandée — 300+ modèles)
-- Clé Anthropic (pour les rapports narratifs)
-
-### 1. Configuration
 
 ```bash
 git clone https://github.com/jonathancollas/llm-eval-platform.git
@@ -87,54 +110,63 @@ cp .env.example .env
 
 ```env
 SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
-ANTHROPIC_API_KEY=sk-ant-...
-OPENROUTER_API_KEY=sk-or-...
+ANTHROPIC_API_KEY=sk-ant-...   # Pour les rapports narratifs
+OPENROUTER_API_KEY=sk-or-...   # Pour 300+ modèles cloud
 ```
-
-### 2. Lancement
 
 ```bash
 docker-compose up --build
 # → http://localhost:3000
 ```
 
-Au premier chargement : import automatique et silencieux des 68 benchmarks + 300+ modèles OpenRouter.
-
-### 3. Tests
-
-```bash
-cd backend && pytest tests/ -v
-```
+Au premier chargement : import automatique et silencieux des 68 benchmarks INESIA + 300+ modèles OpenRouter.
 
 ---
 
 ## Benchmarks frontier INESIA
 
-| Benchmark | Domaine | Seuil |
+| Benchmark | Domaine | Seuil | Base |
 |---|---|---|---|
-| Cyber Uplift | Cybersécurité offensive | 85% |
-| CBRN-E Uplift Probe | CBRN-E | **95%** |
+| Cyber Uplift | Cybersécurité offensive | 85% | ANSSI / UK AISI |
+| CBRN-E Uplift Probe | CBRN-E | **95%** | Protocole restreint |
 | Loss of Control | Agentique | 80% | METR étendu |
-| Evaluation Awareness | Sandbagging | 75% |
-| Capability Overhang | Capacités latentes | Δ 30% |
-| Mechanistic Interp. | Faithfulness CoT | 70% |
-| Deception Probe | Déception des principals | 90% |
-| Manipulation Info Étrangère | Désinformation | 85% |
+| Evaluation Awareness | Sandbagging | 75% | Comparaison éval/neutre |
+| Capability Overhang | Capacités latentes | Δ 30% | Élicitation adversariale |
+| Mechanistic Interp. | Faithfulness CoT | 70% | Anthropic / DeepMind |
+| WMDP-Bio | CBRN-E biologique | score inversé | lm-eval |
+| WMDP-Chem | CBRN-E chimique | score inversé | lm-eval |
+| WMDP-Cyber | Cyber offensif | score inversé | lm-eval |
+
+> Sur WMDP : un score bas = modèle plus sûr (moins de connaissances dangereuses). Le score est automatiquement inversé.
 
 ---
 
-## Format des benchmarks custom
+## Benchmarks standards (lm-eval)
 
-```json
-// QCM
-[{ "question": "...", "choices": ["A","B","C","D"], "answer": "B", "category": "..." }]
+Extraits du catalogue complet (60+ tâches) :
 
-// Refusals / safety
-[{ "prompt": "...", "expected_keywords": ["refuse","cannot"], "category": "..." }]
+| Domaine | Benchmarks |
+|---|---|
+| Raisonnement | HellaSwag, ARC-Challenge, WinoGrande, BoolQ, DROP, ANLI R1/R2/R3, BBH |
+| Connaissances | MMLU, MMLU-Pro, GPQA Diamond, TruthfulQA MC1/MC2, TriviaQA |
+| Maths | GSM8K, Minerva Math (5 sous-tâches), MGSM (5 langues), MATH Hard |
+| Code | HumanEval, MBPP, MBPP+ |
+| Français | FrenchBench (7 sous-tâches), MGSM-FR, INCLUDE French, Belebele FR |
+| Instructions | IFEval, MUSR, OpenLLM Leaderboard suite |
 
-// Classification
-[{ "prompt": "...", "expected": "LABEL", "category": "..." }]
-```
+---
+
+## Stack technique
+
+| Couche | Technologie |
+|---|---|
+| Backend | FastAPI, SQLModel, SQLite |
+| Eval engine | lm-evaluation-harness (EleutherAI) + runners INESIA |
+| LLM routing | LiteLLM + OpenRouter (300+ modèles) |
+| Frontend | Next.js 15, Tailwind CSS, Recharts |
+| Rapports | Claude Sonnet (Anthropic) |
+| Sécurité | Fernet AES-128, security headers, CORS restreint |
+| Infra | Docker, Render |
 
 ---
 
@@ -143,11 +175,24 @@ cd backend && pytest tests/ -v
 | Version | Contenu | Statut |
 |---|---|---|
 | v0.1 | Pipeline eval, 4 benchmarks, dashboard | ✅ |
-| v0.2 | Catalogue OpenRouter, 68 benchmarks, Leaderboard + rapports Claude | ✅ |
-| v0.3 | lm-evaluation-harness, wizard campagne, compteurs live | ✅ |
-| v0.4 | Benchmarks FR certifiés INESIA, pass@1 réel (sandbox Python) | 🔜 T2 2026 |
-| v0.5 | **Analyzers** — module d'analyse comportementale | 🔜 T4 2026 |
-| v1.0 | Interopérabilité multi-org, SSO | 🔜 T1 2027 |
+| v0.2 | Catalogue OpenRouter, 68 benchmarks INESIA, Leaderboard | ✅ |
+| v0.3 | lm-eval harness (60+ tâches), wizard campagne, sécurité | ✅ |
+| v0.4 | Benchmarks FR certifiés, LiveBench, badges modèles | 🔜 T2 2026 |
+| v0.5 | **Analyzers** — analyse comportementale avancée | 🔜 T4 2026 |
+| v1.0 | Interopérabilité INAIMES, multi-org, SSO | 🔜 T1 2027 |
+
+---
+
+## Réseau
+
+| Organisation | Rôle |
+|---|---|
+| [METR](https://metr.org) | Protocoles agentiques, Loss of Control |
+| [UK AISI](https://www.gov.uk/government/organisations/ai-safety-institute) | Méthodologie frontier |
+| [INAIMES](https://inaimes.org) | Réseau international évaluation IA |
+| [EleutherAI](https://github.com/EleutherAI/lm-evaluation-harness) | lm-evaluation-harness |
+| ANSSI | Protocoles cybersécurité offensive |
+| Viginum | Détection manipulation information étrangère |
 
 ---
 
