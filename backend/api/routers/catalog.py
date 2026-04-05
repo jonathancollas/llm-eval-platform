@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from core.config import get_settings
+from eval_engine.harness_runner import get_catalog_for_api as _harness_catalog
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 settings = get_settings()
@@ -392,9 +393,40 @@ def get_benchmark_catalog(
     domain: Optional[str] = Query(None),
     frontier_only: bool = Query(False),
     search: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),   # "inesia" | "harness" | None = all
 ):
+    # Build combined catalog: INESIA custom + lm-eval harness
+    combined = list(BENCHMARK_CATALOG)
+
+    # Add lm-eval harness tasks (deduplicate by key)
+    existing_keys = {b["key"] for b in combined}
+    try:
+        harness_items = _harness_catalog()
+        for h in harness_items:
+            if h["key"] not in existing_keys:
+                combined.append({
+                    "key": h["key"],
+                    "name": h["name"],
+                    "type": "safety" if h.get("is_frontier") else "academic",
+                    "domain": h["domain"],
+                    "description": h["description"],
+                    "metric": h["metric"].split(",")[0],
+                    "num_samples": 50,
+                    "dataset_path": "",
+                    "tags": ["lm-eval", h["domain"], "harness"],
+                    "risk_threshold": None,
+                    "is_frontier": h.get("is_frontier", False),
+                    "methodology_note": f"lm-evaluation-harness task: {h['lm_eval_task']}. {h['few_shot']}-shot.",
+                    "paper_url": None,
+                    "year": None,
+                })
+    except Exception as e:
+        logger.warning(f"Could not load harness catalog: {e}")
+
     results = []
-    for b in BENCHMARK_CATALOG:
+    for b in combined:
+        if source == "inesia" and "lm-eval" in b.get("tags", []): continue
+        if source == "harness" and "lm-eval" not in b.get("tags", []): continue
         if type and b["type"] != type: continue
         if domain and domain.lower() not in b["domain"].lower(): continue
         if frontier_only and not b.get("is_frontier", False): continue
