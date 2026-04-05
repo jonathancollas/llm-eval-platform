@@ -6,6 +6,7 @@ import logging
 from core.models import Benchmark, BenchmarkType
 from eval_engine.base import BaseBenchmarkRunner
 from eval_engine.harness_runner import HARNESS_TASK_MAP
+from core.models import ModelProvider
 
 logger = logging.getLogger(__name__)
 

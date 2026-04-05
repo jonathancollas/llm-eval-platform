@@ -10,7 +10,7 @@ import { Spinner } from "@/components/Spinner";
 import { providerColor, formatCost, timeAgo } from "@/lib/utils";
 import { Plus, Trash2, Zap, CheckCircle, XCircle } from "lucide-react";
 
-const PROVIDERS: ModelProvider[] = ["ollama", "openai", "anthropic", "mistral", "groq", "custom"];
+const PROVIDERS: ModelProvider[] = ["openai", "anthropic", "mistral", "groq", "custom"];
 
 const PROVIDER_PRESETS: Record<string, { model_id: string; endpoint?: string; cost_in: number; cost_out: number }> = {
   "gpt-4o-mini": { model_id: "gpt-4o-mini", cost_in: 0.15, cost_out: 0.6 },
@@ -32,7 +32,7 @@ export default function ModelsPage() {
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, TestResult>>({});
   const [form, setForm] = useState({
-    name: "", provider: "ollama" as ModelProvider, model_id: "",
+    name: "", provider: "custom" as ModelProvider, model_id: "",
     endpoint: "", api_key: "", context_length: 4096,
     cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "",
   });
@@ -45,7 +45,7 @@ export default function ModelsPage() {
   const applyPreset = (preset: string) => {
     const p = PROVIDER_PRESETS[preset];
     if (!p) return;
-    const provider = p.endpoint ? "ollama" : "openai";
+    const provider = p.endpoint ? "custom" : "openai";
     setForm(f => ({
       ...f, name: preset, model_id: p.model_id,
       endpoint: p.endpoint ?? "", provider,
@@ -65,7 +65,7 @@ export default function ModelsPage() {
         cost_output_per_1k: form.cost_output_per_1k, notes: form.notes,
       });
       setShowForm(false);
-      setForm({ name: "", provider: "ollama", model_id: "", endpoint: "", api_key: "", context_length: 4096, cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "" });
+      setForm({ name: "", provider: model_id: "", endpoint: "", api_key: "", context_length: 4096, cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "" });
       load();
     } catch (err) { alert(String(err)); } finally { setSaving(false); }
   };

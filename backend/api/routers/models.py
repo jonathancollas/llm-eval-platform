@@ -85,11 +85,12 @@ def list_models(session: Session = Depends(get_session)):
 
 @router.post("/", response_model=ModelRead, status_code=status.HTTP_201_CREATED)
 def create_model(payload: ModelCreate, session: Session = Depends(get_session)):
+    # Deduplicate by model_id (prevents double-importing same OpenRouter model)
     existing = session.exec(
-        select(LLMModel).where(LLMModel.name == payload.name)
+        select(LLMModel).where(LLMModel.model_id == payload.model_id)
     ).first()
     if existing:
-        raise HTTPException(status_code=409, detail=f"Model '{payload.name}' already exists.")
+        raise HTTPException(status_code=409, detail=f"Model '{payload.model_id}' already registered.")
 
     model = LLMModel(
         name=payload.name,

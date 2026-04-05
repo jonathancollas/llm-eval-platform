@@ -1,7 +1,8 @@
 """
-LiteLLM wrapper — unified interface to all model providers.
-Handles Ollama (local), cloud APIs, and OpenRouter transparently.
+LiteLLM wrapper — unified interface to cloud LLM providers.
+Supports OpenRouter (300+ models), OpenAI, Anthropic, Mistral, Groq.
 """
+import asyncio
 import time
 import logging
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 litellm.set_verbose = False
+litellm.drop_params = True     # Ignore unsupported params silently
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -31,62 +33,46 @@ class CompletionResult:
 
 
 def _is_openrouter(model: LLMModel) -> bool:
-    """Detect OpenRouter models by endpoint or model_id prefix."""
-    return (
-        (model.endpoint or "").rstrip("/") == OPENROUTER_BASE_URL.rstrip("/")
-        or model.model_id.startswith("openrouter/")
-    )
+    return (model.endpoint or "").rstrip("/") == OPENROUTER_BASE_URL.rstrip("/")
 
 
 def _build_litellm_model_str(model: LLMModel) -> str:
-    """Map our model record to the LiteLLM model string format."""
     if _is_openrouter(model):
-        # Strip any leading "openrouter/" prefix — LiteLLM adds it
         raw_id = model.model_id.removeprefix("openrouter/")
         return f"openrouter/{raw_id}"
-
     match model.provider:
-        case ModelProvider.OLLAMA:
-            return f"ollama/{model.model_id}"
-        case ModelProvider.OPENAI:
-            return model.model_id           # e.g. "gpt-4o-mini"
-        case ModelProvider.ANTHROPIC:
-            return f"anthropic/{model.model_id}"
-        case ModelProvider.MISTRAL:
-            return f"mistral/{model.model_id}"
-        case ModelProvider.GROQ:
-            return f"groq/{model.model_id}"
+        case ModelProvider.OPENAI:    return model.model_id
+        case ModelProvider.ANTHROPIC: return f"anthropic/{model.model_id}"
+        case ModelProvider.MISTRAL:   return f"mistral/{model.model_id}"
+        case ModelProvider.GROQ:      return f"groq/{model.model_id}"
         case ModelProvider.CUSTOM:
-            return f"openai/{model.model_id}"   # assume OpenAI-compatible
+            # Custom endpoint — treat as OpenAI-compatible
+            return f"openai/{model.model_id}"
         case _:
             return model.model_id
 
 
 def _build_kwargs(model: LLMModel, temperature: float, max_tokens: int) -> dict:
-    """Build extra kwargs for LiteLLM call."""
     kwargs: dict = {}
     settings = get_settings()
 
-    # ── Endpoint ────────────────────────────────────────────────────────────────
-    if model.provider == ModelProvider.OLLAMA:
-        kwargs["api_base"] = model.endpoint or settings.ollama_base_url
-    elif _is_openrouter(model):
+    # Endpoint
+    if _is_openrouter(model):
         kwargs["api_base"] = OPENROUTER_BASE_URL
     elif model.provider == ModelProvider.CUSTOM and model.endpoint:
         kwargs["api_base"] = model.endpoint
 
-    # ── API key ─────────────────────────────────────────────────────────────────
+    # API key — encrypted stored key takes priority, then env vars
     if model.api_key_encrypted:
         api_key = decrypt_api_key(model.api_key_encrypted)
     elif _is_openrouter(model):
-        # Auto-pick OPENROUTER_API_KEY from env
         api_key = settings.openrouter_api_key
     else:
         api_key = {
-            ModelProvider.OPENAI:     settings.openai_api_key,
-            ModelProvider.ANTHROPIC:  settings.anthropic_api_key,
-            ModelProvider.MISTRAL:    settings.mistral_api_key,
-            ModelProvider.GROQ:       settings.groq_api_key,
+            ModelProvider.OPENAI:    settings.openai_api_key,
+            ModelProvider.ANTHROPIC: settings.anthropic_api_key,
+            ModelProvider.MISTRAL:   settings.mistral_api_key,
+            ModelProvider.GROQ:      settings.groq_api_key,
         }.get(model.provider, "")
 
     if api_key:
@@ -102,7 +88,7 @@ async def complete(
     max_tokens: int = 256,
     system_prompt: Optional[str] = None,
 ) -> CompletionResult:
-    """Single completion call via LiteLLM."""
+    settings = get_settings()
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -113,15 +99,20 @@ async def complete(
 
     t0 = time.monotonic()
     try:
-        response = await acompletion(
-            model=model_str,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **kwargs,
+        response = await asyncio.wait_for(
+            acompletion(
+                model=model_str,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            ),
+            timeout=settings.llm_timeout_seconds,
         )
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"LLM call timed out after {settings.llm_timeout_seconds}s ({model_str})")
     except Exception as e:
-        logger.error(f"LiteLLM call failed for {model_str}: {e}")
+        logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {e}")
         raise
 
     latency_ms = int((time.monotonic() - t0) * 1000)
@@ -147,7 +138,6 @@ async def complete(
 
 
 async def test_connection(model: LLMModel) -> dict:
-    """Quick connection test — returns latency and a sample response."""
     try:
         result = await complete(
             model=model,
@@ -155,11 +145,6 @@ async def test_connection(model: LLMModel) -> dict:
             temperature=0.0,
             max_tokens=10,
         )
-        return {
-            "ok": True,
-            "latency_ms": result.latency_ms,
-            "response": result.text,
-            "error": None,
-        }
+        return {"ok": True, "latency_ms": result.latency_ms, "response": result.text, "error": None}
     except Exception as e:
         return {"ok": False, "latency_ms": 0, "response": "", "error": str(e)}

@@ -4,6 +4,7 @@ Catalog endpoints — browse available models (OpenRouter) and benchmarks.
 import logging
 from typing import Optional
 
+import time
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -15,6 +16,10 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+
+# ── Simple TTL cache for OpenRouter catalog ──────────────────────────────────
+_catalog_cache: list = []
+_catalog_cache_ts: float = 0.0
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────────
@@ -47,13 +52,24 @@ async def get_model_catalog(
 ):
     api_key = getattr(settings, "openrouter_api_key", "")
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(OPENROUTER_MODELS_URL, headers=headers)
-            resp.raise_for_status()
-            raw = resp.json()
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"OpenRouter unreachable: {e}")
+    global _catalog_cache, _catalog_cache_ts
+    now = time.time()
+    if _catalog_cache and (now - _catalog_cache_ts) < settings.catalog_cache_ttl:
+        raw = {"data": _catalog_cache}
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.get(OPENROUTER_MODELS_URL, headers=headers)
+                resp.raise_for_status()
+                raw = resp.json()
+                _catalog_cache = raw.get("data", [])
+                _catalog_cache_ts = now
+        except httpx.HTTPError as e:
+            if _catalog_cache:
+                logger.warning(f"OpenRouter unreachable, serving cached catalog: {e}")
+                raw = {"data": _catalog_cache}
+            else:
+                raise HTTPException(status_code=502, detail=f"OpenRouter unreachable: {e}")
 
     models: list[CatalogModel] = []
     open_source_providers = {
