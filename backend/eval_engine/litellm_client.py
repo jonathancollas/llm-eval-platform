@@ -17,7 +17,12 @@ from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 litellm.set_verbose = False
-litellm.drop_params = True     # Ignore unsupported params silently
+litellm.drop_params = True
+
+# Silence LiteLLM's noisy internal loggers
+import logging as _logging
+for _noisy in ["LiteLLM", "LiteLLM Router", "LiteLLM Proxy"]:
+    _logging.getLogger(_noisy).setLevel(_logging.ERROR)     # Ignore unsupported params silently
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -98,22 +103,32 @@ async def complete(
     kwargs = _build_kwargs(model, temperature, max_tokens)
 
     t0 = time.monotonic()
-    try:
-        response = await asyncio.wait_for(
-            acompletion(
-                model=model_str,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            ),
-            timeout=settings.llm_timeout_seconds,
-        )
-    except asyncio.TimeoutError:
-        raise TimeoutError(f"LLM call timed out after {settings.llm_timeout_seconds}s ({model_str})")
-    except Exception as e:
-        logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {e}")
-        raise
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = await asyncio.wait_for(
+                acompletion(
+                    model=model_str,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                ),
+                timeout=settings.llm_timeout_seconds,
+            )
+            break  # Success
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"LLM call timed out after {settings.llm_timeout_seconds}s ({model_str})")
+        except Exception as e:
+            err_str = str(e).lower()
+            is_rate_limit = "ratelimit" in err_str or "rate limit" in err_str or "429" in err_str
+            if is_rate_limit and attempt < max_retries - 1:
+                wait = 10 * (attempt + 1)  # 10s, 20s
+                logger.warning(f"Rate limited on {model_str} (attempt {attempt+1}/{max_retries}), waiting {wait}s...")
+                await asyncio.sleep(wait)
+                continue
+            logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {str(e)[:200]}")
+            raise
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     text = response.choices[0].message.content or ""
