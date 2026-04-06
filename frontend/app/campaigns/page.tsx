@@ -54,6 +54,7 @@ export default function CampaignsPage() {
   const [saving, setSaving] = useState(false);
   const [runningId, setRunningId] = useState<number | null>(null);
   const [benchFilter, setBenchFilter] = useState("all");
+  const [modelFilter, setModelFilter] = useState<"all" | "free">("all");
   const [form, setForm] = useState({
     name: "", description: "", model_ids: [] as number[],
     benchmark_ids: [] as number[], seed: 42, max_samples: 50, temperature: 0.0,
@@ -201,8 +202,17 @@ export default function CampaignsPage() {
           {/* Step 1 — Modèles */}
           {step === 1 && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm text-slate-600">Sélectionnez un ou plusieurs modèles à évaluer.</p>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex gap-1.5">
+                  <button onClick={() => setModelFilter("all")}
+                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    Tous ({models.length})
+                  </button>
+                  <button onClick={() => setModelFilter("free")}
+                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "free" ? "bg-green-700 text-white border-green-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    🆓 Gratuits ({models.filter(m => (m as any).is_free).length})
+                  </button>
+                </div>
                 <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
                   {form.model_ids.length} sélectionné{form.model_ids.length !== 1 ? "s" : ""}
                 </span>
@@ -213,22 +223,28 @@ export default function CampaignsPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-                  {models.map(m => {
-                    const selected = form.model_ids.includes(m.id);
-                    return (
-                      <button key={m.id} type="button"
-                        onClick={() => setForm(f => ({ ...f, model_ids: toggleId(f.model_ids, m.id) }))}
-                        className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}>
-                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
-                          {selected && <Check size={11} className="text-slate-900" />}
-                        </div>
-                        <div className="min-w-0">
-                          <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
-                          <div className={`text-xs truncate ${selected ? "text-slate-300" : "text-slate-400"}`}>{m.provider}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {models
+                    .filter(m => modelFilter === "all" || (m as any).is_free)
+                    .map(m => {
+                      const selected = form.model_ids.includes(m.id);
+                      const isFree = (m as any).is_free;
+                      return (
+                        <button key={m.id} type="button"
+                          onClick={() => setForm(f => ({ ...f, model_ids: toggleId(f.model_ids, m.id) }))}
+                          className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}>
+                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
+                            {selected && <Check size={11} className="text-slate-900" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
+                            <div className={`text-xs truncate ${selected ? "text-slate-300" : "text-slate-400"}`}>
+                              {isFree && <span className={`font-bold mr-1 ${selected ? "text-green-300" : "text-green-600"}`}>FREE</span>}
+                              {m.provider}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                 </div>
               )}
             </div>
