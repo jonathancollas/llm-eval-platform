@@ -69,7 +69,7 @@ export default function CampaignsPage() {
     load();
     const interval = setInterval(() => {
       setCampaigns(prev => {
-        if (prev.some(c => c.status === "running")) { load(); }
+        if (prev.some(c => c.status === "running" || c.status === "pending")) { load(); }
         return prev;
       });
     }, 3000);
@@ -109,7 +109,12 @@ export default function CampaignsPage() {
           setRunningId(null);
         }
       }, 2000);
-    } catch (e) { alert(String(e)); setRunningId(null); }
+    } catch (e) {
+      const msg = String(e);
+      console.error("Run failed:", msg);
+      alert(`Erreur au lancement: ${msg}`);
+      setRunningId(null);
+    }
   };
 
   const handleCancel = async (id: number) => {
