@@ -29,13 +29,17 @@
 
 ## Pourquoi Mercury Retrograde ?
 
-**Mercury** est le dieu romain des communications, du langage et de la transmission — symbole de l'intelligence en mouvement.
+Dans le ciel, Mercure rétrograde est un mirage astronomique. La planète ne recule pas vraiment : son mouvement n’est qu’une illusion, née de la différence de vitesse entre nos orbites. Pourtant, ce simple phénomène s’est mué en mythe astrologique, symbole de chaos et de confusion — un bug céleste qu’on aime accuser quand tout déraille.
 
-**Retrograde** évoque le moment où les systèmes de communication deviennent instables : incompréhensions, dérives, comportements inattendus, défaillances silencieuses.
+L’évaluation des modèles d’IA suit parfois la même logique : un brouillard cognitif pris en otage d’enjeux géoéconomiques massifs. Les métriques montent, les benchmarks applaudissent, les études s’alarment sur des risques catastrophiques. On ne sait plus si l’IA nous fait réellement “rétrograder” — voire dérailler —, ou si c’est notre perspective qui manque de profondeur.
 
-> *We study the messenger when communication breaks down.*
+Il serait tentant d’en rire, ou de s’en accommoder, en disant qu’on ne comprend pas l’IA et que c’est bien normal, puisque le système est construit ainsi. “Le modèle apprend comme un humain.”
 
-C'est précisément ce que cette plateforme est construite pour mesurer :
+Ici, on refuse la boîte noire. Dans un champ aussi sensible que l’intelligence artificielle, ne pas comprendre comment ça fonctionne est une faille, pas une fatalité.
+
+Mercury Retrograde est donc un observatoire de ces phénomènes. Ni doomer, ni techno-messianique : un espace de mesure pour séparer le vrai mouvement du simple effet d’optique. Évaluer, c’est comprendre — et rester clairvoyant là où les récits s’entrechoquent.
+
+Cette plateforme est construite pour mesurer :
 
 - les hallucinations et dérives factuelles
 - les régressions de raisonnement sous pression
@@ -179,22 +183,9 @@ Extraits du catalogue complet (60+ tâches) :
 | v0.3 | lm-eval harness (60+ tâches), wizard campagne, sécurité | ✅ |
 | v0.4 | Benchmarks FR certifiés, LiveBench, badges modèles | 🔜 T2 2026 |
 | v0.5 | **Analyzers** — analyse comportementale avancée | 🔜 T4 2026 |
-| v1.0 | Interopérabilité INAIMES, multi-org, SSO | 🔜 T1 2027 |
+| v1.0 | Interopérabilité multi-org, SSO | 🔜 T1 2027 |
 
----
-
-## Réseau
-
-| Organisation | Rôle |
-|---|---|
-| [METR](https://metr.org) | Protocoles agentiques, Loss of Control |
-| [UK AISI](https://www.gov.uk/government/organisations/ai-safety-institute) | Méthodologie frontier |
-| [INAIMES](https://inaimes.org) | Réseau international évaluation IA |
-| [EleutherAI](https://github.com/EleutherAI/lm-evaluation-harness) | lm-evaluation-harness |
-| ANSSI | Protocoles cybersécurité offensive |
-| Viginum | Détection manipulation information étrangère |
-
----
+------
 
 ## Licence
 
