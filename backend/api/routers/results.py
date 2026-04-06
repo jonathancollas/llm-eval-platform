@@ -260,3 +260,81 @@ def export_csv(campaign_id: int, session: Session = Depends(get_session)):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=campaign_{campaign_id}_results.csv"},
     )
+
+@router.get("/campaign/{campaign_id}/live")
+def get_campaign_live_feed(
+    campaign_id: int,
+    limit: int = 15,
+    session: Session = Depends(get_session),
+):
+    """Live feed of most recent eval results for a running campaign."""
+    from sqlmodel import select, desc
+    from core.models import EvalRun, EvalResult, LLMModel, Benchmark
+
+    # Get all runs for this campaign
+    runs = session.exec(
+        select(EvalRun).where(EvalRun.campaign_id == campaign_id)
+    ).all()
+
+    if not runs:
+        return {"items": [], "total_items": 0, "completed_runs": 0, "total_runs": 0,
+                "items_per_sec": 0.0, "eta_seconds": None}
+
+    run_ids = [r.id for r in runs]
+    completed_runs = sum(1 for r in runs if r.status == "completed")
+
+    # Get latest results
+    results = session.exec(
+        select(EvalResult)
+        .where(EvalResult.run_id.in_(run_ids))
+        .order_by(desc(EvalResult.id))
+        .limit(limit)
+    ).all()
+
+    # Build enriched items
+    model_cache = {}
+    bench_cache = {}
+    items = []
+    for r in results:
+        run = next((x for x in runs if x.id == r.run_id), None)
+        if not run:
+            continue
+        if run.model_id not in model_cache:
+            m = session.get(LLMModel, run.model_id)
+            model_cache[run.model_id] = m.name if m else f"Model {run.model_id}"
+        if run.benchmark_id not in bench_cache:
+            b = session.get(Benchmark, run.benchmark_id)
+            bench_cache[run.benchmark_id] = b.name if b else f"Bench {run.benchmark_id}"
+        items.append({
+            "id": r.id,
+            "item_index": r.item_index,
+            "prompt": r.prompt[:500] if r.prompt else "",
+            "response": r.response[:500] if r.response else "",
+            "expected": r.expected[:200] if r.expected else None,
+            "score": r.score,
+            "latency_ms": r.latency_ms,
+            "model_name": model_cache[run.model_id],
+            "benchmark_name": bench_cache[run.benchmark_id],
+        })
+
+    # Compute rate from run timestamps
+    total_items = sum(r.num_items for r in runs if r.status == "completed")
+    items_per_sec = 0.0
+    eta_seconds = None
+
+    started_runs = [r for r in runs if r.started_at]
+    if started_runs and total_items > 0:
+        from datetime import datetime
+        earliest = min(r.started_at for r in started_runs)
+        elapsed = (datetime.utcnow() - earliest).total_seconds()
+        if elapsed > 0:
+            items_per_sec = round(total_items / elapsed, 2)
+
+    return {
+        "items": items,
+        "total_items": total_items,
+        "completed_runs": completed_runs,
+        "total_runs": len(runs),
+        "items_per_sec": items_per_sec,
+        "eta_seconds": eta_seconds,
+    }

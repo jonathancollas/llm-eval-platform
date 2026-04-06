@@ -7,29 +7,34 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { timeAgo } from "@/lib/utils";
-import { Plus, Play, Square, Trash2, BarChart2, RefreshCw, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { Plus, Play, Square, Trash2, BarChart2, RefreshCw,
+         ChevronRight, ChevronLeft, Check, Radio, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 
-type BenchmarkType = "academic" | "safety" | "coding" | "custom";
-const BENCH_FILTERS = ["all", "academic", "safety", "coding", "custom", "inesia"] as const;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
-const BENCH_FILTER_LABELS: Record<string, string> = {
-  all: "Tous", academic: "Académique", safety: "Safety",
-  coding: "Code", custom: "Custom", inesia: "☿ INESIA",
-};
+type BenchmarkFilterKey = "all" | "academic" | "safety" | "coding" | "custom" | "inesia";
+const BENCH_FILTERS: { key: BenchmarkFilterKey; label: string }[] = [
+  { key: "all", label: "Tous" },
+  { key: "inesia", label: "☿ INESIA" },
+  { key: "academic", label: "Académique" },
+  { key: "safety", label: "Safety" },
+  { key: "coding", label: "Code" },
+  { key: "custom", label: "Custom" },
+];
 
-function isBenchInFilter(b: Benchmark, f: string): boolean {
+function isBenchInFilter(b: Benchmark, f: BenchmarkFilterKey): boolean {
   if (f === "all") return true;
-  if (f === "inesia") return b.tags?.some(t => ["INESIA","frontier","cyber","CBRN-E","agentique","méta-éval","français"].includes(t));
+  if (f === "inesia") return (b.tags ?? []).some(t =>
+    ["INESIA","frontier","cyber","CBRN-E","agentique","méta-éval"].includes(t)) || b.type === "safety";
   return b.type === f;
 }
 
-// ── Wizard steps ─────────────────────────────────────────────────────────────
 const STEPS = ["Paramètres", "Modèles", "Benchmarks", "Lancer"];
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="flex items-center gap-2 mb-6">
+    <div className="flex items-center gap-2 mb-6 flex-wrap">
       {STEPS.map((label, i) => (
         <div key={label} className="flex items-center gap-2">
           <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium transition-colors
@@ -44,6 +49,98 @@ function StepIndicator({ current }: { current: number }) {
   );
 }
 
+// ── Live Feed ─────────────────────────────────────────────────────────────────
+interface LiveItem {
+  id: number; item_index: number; prompt: string; response: string;
+  expected: string | null; score: number; latency_ms: number;
+  model_name: string; benchmark_name: string;
+}
+interface LiveData {
+  items: LiveItem[]; total_items: number; completed_runs: number;
+  total_runs: number; items_per_sec: number; eta_seconds: number | null;
+}
+
+function LiveFeed({ campaignId }: { campaignId: number }) {
+  const [data, setData] = useState<LiveData | null>(null);
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=10`);
+        if (res.ok) setData(await res.json());
+      } catch {}
+    }, 1500);
+    return () => clearInterval(poll);
+  }, [campaignId]);
+
+  if (!data) return null;
+
+  const etaStr = data.eta_seconds != null
+    ? data.eta_seconds < 60 ? `${data.eta_seconds}s`
+      : data.eta_seconds < 3600 ? `${Math.floor(data.eta_seconds / 60)}m ${data.eta_seconds % 60}s`
+      : `${Math.floor(data.eta_seconds / 3600)}h ${Math.floor((data.eta_seconds % 3600) / 60)}m`
+    : null;
+
+  return (
+    <div className="border-t border-slate-100">
+      <button className="w-full flex items-center justify-between px-5 py-2.5 text-xs text-slate-500 hover:bg-slate-50"
+        onClick={() => setOpen(o => !o)}>
+        <div className="flex items-center gap-3">
+          <Radio size={12} className="text-red-500 animate-pulse" />
+          <span className="font-medium">Live Feed</span>
+          {data.items_per_sec > 0 && (
+            <span className="text-slate-400">
+              {data.items_per_sec} items/s
+              {etaStr && <> · ETA <span className="font-medium text-slate-700">{etaStr}</span></>}
+            </span>
+          )}
+          <span className="text-slate-400">{data.total_items} items · {data.completed_runs}/{data.total_runs} runs</span>
+        </div>
+        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+      </button>
+
+      {open && data.items.length > 0 && (
+        <div className="px-5 pb-4 space-y-2 max-h-72 overflow-y-auto">
+          {data.items.map(item => (
+            <div key={item.id} className="bg-slate-50 rounded-lg p-3 text-xs border border-slate-100">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="font-medium text-slate-600">{item.model_name}</span>
+                <span className="text-slate-300">·</span>
+                <span className="text-slate-500">{item.benchmark_name}</span>
+                <span className="text-slate-300">·</span>
+                <span className={`font-bold ${item.score >= 0.5 ? "text-green-600" : "text-red-500"}`}>
+                  {(item.score * 100).toFixed(0)}%
+                </span>
+                <span className="text-slate-400 ml-auto">{item.latency_ms}ms</span>
+              </div>
+              <div className="space-y-1">
+                <div className="text-slate-600 line-clamp-2">
+                  <span className="font-medium text-slate-400">Q: </span>{item.prompt}
+                </div>
+                {item.response && (
+                  <div className="text-slate-600 line-clamp-2">
+                    <span className="font-medium text-slate-400">A: </span>{item.response}
+                  </div>
+                )}
+                {item.expected && (
+                  <div className="text-slate-400 line-clamp-1">
+                    <span className="font-medium">Attendu: </span>{item.expected}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && data.items.length === 0 && (
+        <div className="px-5 pb-4 text-xs text-slate-400 italic">En attente des premiers résultats…</div>
+      )}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [models, setModels] = useState<LLMModel[]>([]);
@@ -53,11 +150,11 @@ export default function CampaignsPage() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [runningId, setRunningId] = useState<number | null>(null);
-  const [benchFilter, setBenchFilter] = useState("all");
+  const [benchFilter, setBenchFilter] = useState<BenchmarkFilterKey>("all");
   const [modelFilter, setModelFilter] = useState<"all" | "free">("all");
   const [form, setForm] = useState({
     name: "", description: "", model_ids: [] as number[],
-    benchmark_ids: [] as number[], seed: 42, max_samples: 50, temperature: 0.0,
+    benchmark_ids: [] as number[], max_samples: 50, temperature: 0.0,
   });
 
   const load = useCallback(() => {
@@ -70,7 +167,7 @@ export default function CampaignsPage() {
     load();
     const interval = setInterval(() => {
       setCampaigns(prev => {
-        if (prev.some(c => c.status === "running" || c.status === "pending")) { load(); }
+        if (prev.some(c => c.status === "running" || c.status === "pending")) load();
         return prev;
       });
     }, 3000);
@@ -82,9 +179,10 @@ export default function CampaignsPage() {
 
   const resetWizard = () => {
     setStep(0);
-    setForm({ name: "", description: "", model_ids: [], benchmark_ids: [], seed: 42, max_samples: 50, temperature: 0.0 });
+    setForm({ name: "", description: "", model_ids: [], benchmark_ids: [], max_samples: 50, temperature: 0.0 });
     setShowWizard(false);
     setBenchFilter("all");
+    setModelFilter("all");
   };
 
   const handleCreate = async () => {
@@ -101,21 +199,17 @@ export default function CampaignsPage() {
     try {
       await campaignsApi.run(id);
       load();
+      const TERMINAL = ["completed", "failed", "cancelled"];
       const poll = setInterval(async () => {
-        const updated = await campaignsApi.list();
-        setCampaigns(updated);
-        const c = updated.find((x: Campaign) => x.id === id);
-        if (c && c.status !== "running") {
-          clearInterval(poll);
-          setRunningId(null);
-        }
+        try {
+          const updated = await campaignsApi.list();
+          setCampaigns(updated);
+          const c = updated.find((x: Campaign) => x.id === id);
+          if (!c || TERMINAL.includes(c.status)) { clearInterval(poll); setRunningId(null); }
+        } catch { clearInterval(poll); setRunningId(null); }
       }, 2000);
-    } catch (e) {
-      const msg = String(e);
-      console.error("Run failed:", msg);
-      alert(`Erreur au lancement: ${msg}`);
-      setRunningId(null);
-    }
+      setTimeout(() => { clearInterval(poll); setRunningId(null); }, 30 * 60 * 1000);
+    } catch (e) { alert(`Erreur: ${String(e)}`); setRunningId(null); }
   };
 
   const handleCancel = async (id: number) => {
@@ -125,13 +219,16 @@ export default function CampaignsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Delete campaign and all results?")) return;
-    await campaignsApi.delete(id).catch(e => alert(String(e)));
+    if (!confirm("Supprimer la campagne et tous ses résultats ?")) return;
+    try { await campaignsApi.delete(id); }
+    catch (e) { alert(String(e)); return; }
     load();
   };
 
   const isRunning = (c: Campaign) => c.status === "running" || runningId === c.id;
   const filteredBenches = benches.filter(b => isBenchInFilter(b, benchFilter));
+  const filteredModels = models.filter(m => modelFilter === "all" || (m as any).is_free);
+  const freeCount = models.filter(m => (m as any).is_free).length;
 
   const canNext = [
     form.name.trim().length > 0,
@@ -155,7 +252,7 @@ export default function CampaignsPage() {
         }
       />
 
-      {/* ── WIZARD ────────────────────────────────────────────────────────── */}
+      {/* ── Wizard ─────────────────────────────────────────────────────────── */}
       {showWizard && (
         <div className="mx-8 mt-6 bg-white border border-slate-200 rounded-2xl p-7">
           <StepIndicator current={step} />
@@ -164,10 +261,10 @@ export default function CampaignsPage() {
           {step === 0 && (
             <div className="space-y-4 max-w-lg">
               <div>
-                <label className="text-xs font-medium text-slate-600 mb-1 block">Nom de la campagne *</label>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Nom *</label>
                 <input autoFocus required value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="ex. MMLU comparison v1"
+                  placeholder="ex. Frontier safety audit v1"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
               </div>
               <div>
@@ -176,17 +273,11 @@ export default function CampaignsPage() {
                   onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Max samples</label>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Max samples / bench</label>
                   <input type="number" value={form.max_samples}
                     onChange={e => setForm(f => ({ ...f, max_samples: +e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Seed</label>
-                  <input type="number" value={form.seed}
-                    onChange={e => setForm(f => ({ ...f, seed: +e.target.value }))}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
                 </div>
                 <div>
@@ -210,7 +301,7 @@ export default function CampaignsPage() {
                   </button>
                   <button onClick={() => setModelFilter("free")}
                     className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "free" ? "bg-green-700 text-white border-green-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    🆓 Gratuits ({models.filter(m => (m as any).is_free).length})
+                    🆓 Gratuits ({freeCount})
                   </button>
                 </div>
                 <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
@@ -218,33 +309,29 @@ export default function CampaignsPage() {
                 </span>
               </div>
               {models.length === 0 ? (
-                <div className="py-10 text-center text-slate-400 text-sm">
-                  Aucun modèle enregistré. <Link href="/models" className="text-blue-600 hover:underline">Ajouter →</Link>
-                </div>
+                <div className="py-10 text-center text-slate-400 text-sm">Aucun modèle enregistré.</div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-                  {models
-                    .filter(m => modelFilter === "all" || (m as any).is_free)
-                    .map(m => {
-                      const selected = form.model_ids.includes(m.id);
-                      const isFree = (m as any).is_free;
-                      return (
-                        <button key={m.id} type="button"
-                          onClick={() => setForm(f => ({ ...f, model_ids: toggleId(f.model_ids, m.id) }))}
-                          className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}>
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
-                            {selected && <Check size={11} className="text-slate-900" />}
+                  {filteredModels.map(m => {
+                    const selected = form.model_ids.includes(m.id);
+                    const isFree = (m as any).is_free;
+                    return (
+                      <button key={m.id} type="button"
+                        onClick={() => setForm(f => ({ ...f, model_ids: toggleId(f.model_ids, m.id) }))}
+                        className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
+                          {selected && <Check size={11} className="text-slate-900" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
+                          <div className={`text-xs ${selected ? "text-slate-300" : "text-slate-400"}`}>
+                            {isFree && <span className={`font-bold mr-1 ${selected ? "text-green-300" : "text-green-600"}`}>FREE</span>}
+                            {m.provider}
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
-                            <div className={`text-xs truncate ${selected ? "text-slate-300" : "text-slate-400"}`}>
-                              {isFree && <span className={`font-bold mr-1 ${selected ? "text-green-300" : "text-green-600"}`}>FREE</span>}
-                              {m.provider}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -253,24 +340,21 @@ export default function CampaignsPage() {
           {/* Step 2 — Benchmarks */}
           {step === 2 && (
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div className="flex gap-1.5 flex-wrap">
-                  {BENCH_FILTERS.map(f => (
-                    <button key={f} onClick={() => setBenchFilter(f)}
-                      className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${benchFilter === f ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                      {BENCH_FILTER_LABELS[f]}
-                      <span className="ml-1 opacity-50">{benches.filter(b => isBenchInFilter(b, f)).length}</span>
+                  {BENCH_FILTERS.map(({ key, label }) => (
+                    <button key={key} onClick={() => setBenchFilter(key)}
+                      className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${benchFilter === key ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                      {label} <span className="opacity-50">{benches.filter(b => isBenchInFilter(b, key)).length}</span>
                     </button>
                   ))}
                 </div>
-                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full ml-3 shrink-0">
+                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full shrink-0">
                   {form.benchmark_ids.length} sélectionné{form.benchmark_ids.length !== 1 ? "s" : ""}
                 </span>
               </div>
               <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {filteredBenches.length === 0 ? (
-                  <div className="py-8 text-center text-slate-400 text-sm">Aucun benchmark dans cette catégorie.</div>
-                ) : filteredBenches.map(b => {
+                {filteredBenches.map(b => {
                   const selected = form.benchmark_ids.includes(b.id);
                   return (
                     <button key={b.id} type="button"
@@ -281,7 +365,7 @@ export default function CampaignsPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-slate-900 truncate">{b.name}</div>
-                        <div className="text-xs text-slate-400 truncate">{b.metric} · {b.num_samples ?? "all"} items</div>
+                        <div className="text-xs text-slate-400">{b.metric} · {b.num_samples ?? "all"} items</div>
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${b.type === "safety" ? "bg-red-50 text-red-600" : b.type === "academic" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
                         {b.type}
@@ -293,51 +377,32 @@ export default function CampaignsPage() {
             </div>
           )}
 
-          {/* Step 3 — Review + Launch */}
+          {/* Step 3 — Recap */}
           {step === 3 && (
             <div className="space-y-4 max-w-lg">
               <div className="bg-slate-50 rounded-xl p-5 space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Campagne</span>
-                  <span className="font-medium text-slate-900">{form.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Modèles</span>
-                  <span className="font-medium text-slate-900">{form.model_ids.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Benchmarks</span>
-                  <span className="font-medium text-slate-900">{form.benchmark_ids.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Runs total</span>
-                  <span className="font-medium text-slate-900">{form.model_ids.length * form.benchmark_ids.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Max samples / bench</span>
-                  <span className="font-medium text-slate-900">{form.max_samples}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Temperature</span>
-                  <span className="font-medium text-slate-900">{form.temperature}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Seed</span>
-                  <span className="font-mono text-slate-900">{form.seed}</span>
-                </div>
-              </div>
-              <div className="text-xs text-slate-400">
-                La campagne sera créée en état <span className="font-mono">pending</span> — tu pourras la lancer depuis la liste.
+                {[
+                  ["Campagne", form.name],
+                  ["Modèles", form.model_ids.length],
+                  ["Benchmarks", form.benchmark_ids.length],
+                  ["Runs total", form.model_ids.length * form.benchmark_ids.length],
+                  ["Max samples / bench", form.max_samples],
+                  ["Temperature", form.temperature],
+                ].map(([label, val]) => (
+                  <div key={String(label)} className="flex justify-between">
+                    <span className="text-slate-500">{label}</span>
+                    <span className="font-medium text-slate-900">{val}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* Wizard nav */}
+          {/* Nav */}
           <div className="flex items-center justify-between mt-6 pt-5 border-t border-slate-100">
             <button onClick={step === 0 ? resetWizard : () => setStep(s => s - 1)}
               className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 transition-colors">
-              <ChevronLeft size={14} />
-              {step === 0 ? "Annuler" : "Retour"}
+              <ChevronLeft size={14} /> {step === 0 ? "Annuler" : "Retour"}
             </button>
             {step < 3 ? (
               <button onClick={() => setStep(s => s + 1)} disabled={!canNext}
@@ -355,7 +420,7 @@ export default function CampaignsPage() {
         </div>
       )}
 
-      {/* ── CAMPAIGN LIST ─────────────────────────────────────────────────── */}
+      {/* ── Campaign list ─────────────────────────────────────────────────── */}
       <div className="p-8 pt-6 space-y-3">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
@@ -364,58 +429,71 @@ export default function CampaignsPage() {
         ) : (
           campaigns.map(c => {
             const running = isRunning(c);
-            const modelCount = Array.isArray(c.model_ids) ? c.model_ids.length : JSON.parse(c.model_ids as any || "[]").length;
-            const benchCount = Array.isArray(c.benchmark_ids) ? c.benchmark_ids.length : JSON.parse(c.benchmark_ids as any || "[]").length;
+            const modelCount = Array.isArray(c.model_ids) ? c.model_ids.length : 0;
+            const benchCount = Array.isArray(c.benchmark_ids) ? c.benchmark_ids.length : 0;
             return (
-              <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-5">
-                <div className="flex items-start gap-4">
+              <div key={c.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="flex items-start gap-4 p-5">
                   <div className="flex-1 min-w-0">
+                    {/* Title row */}
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="font-medium text-slate-900">{c.name}</span>
                       <StatusBadge status={c.status} />
-                      {c.status === "running" && c.progress != null && (
-                        <span className="text-xs text-slate-400">{c.progress.toFixed(0)}%</span>
-                      )}
                     </div>
-                    {c.description && <p className="text-xs text-slate-500 mb-2">{c.description}</p>}
+
+                    {/* Description */}
+                    {c.description && <p className="text-xs text-slate-500 mb-1">{c.description}</p>}
+
+                    {/* Error message (failed runs) */}
                     {c.status === "failed" && c.error_message && !c.error_message.startsWith("ETA:") && (
-                      <p className="text-xs text-red-500 mb-2 font-mono">{c.error_message}</p>
+                      <p className="text-xs text-red-500 mb-1 font-mono">{c.error_message}</p>
                     )}
-                    <div className="flex gap-4 text-xs text-slate-400">
+
+                    {/* Meta */}
+                    <div className="flex gap-3 text-xs text-slate-400 flex-wrap">
                       <span>{modelCount} modèle{modelCount !== 1 ? "s" : ""}</span>
                       <span>{benchCount} benchmark{benchCount !== 1 ? "s" : ""}</span>
-                      <span>seed {c.seed}</span>
+                      <span>{c.max_samples ?? 50} samples</span>
                       {c.created_at && <span>{timeAgo(c.created_at)}</span>}
                     </div>
-                    {running && (
-                      <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-slate-900 rounded-full transition-all duration-500"
-                          style={{ width: `${c.progress ?? 0}%` }} />
+
+                    {/* Progress bar + ETA */}
+                    {c.status === "running" && (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                          <span>{c.progress.toFixed(0)}%</span>
+                          {c.error_message?.startsWith("ETA:") && (
+                            <span className="text-slate-500">{c.error_message}</span>
+                          )}
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-slate-900 rounded-full transition-all duration-500"
+                            style={{ width: `${c.progress ?? 0}%` }} />
+                        </div>
                       </div>
                     )}
                   </div>
+
+                  {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0">
-                    {c.status === "completed" && (
+                    {c.status === "completed" && !running && (
                       <Link href={`/dashboard?campaign=${c.id}`}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
-                        <BarChart2 size={13} /> Dashboard
+                        <BarChart2 size={13} /> Résultats
                       </Link>
                     )}
-                    {/* Run button — shown for pending and failed */}
                     {(c.status === "pending" || c.status === "failed") && !running && (
                       <button onClick={() => handleRun(c.id)}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-colors">
                         <Play size={13} /> Run
                       </button>
                     )}
-                    {/* Re-run button — shown for completed */}
                     {c.status === "completed" && !running && (
                       <button onClick={() => handleRun(c.id)}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
                         <RefreshCw size={13} /> Re-run
                       </button>
                     )}
-                    {/* Cancel button — only when actually running */}
                     {running && (
                       <button onClick={() => handleCancel(c.id)}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
@@ -433,6 +511,9 @@ export default function CampaignsPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Live feed — shown when running */}
+                {c.status === "running" && <LiveFeed campaignId={c.id} />}
               </div>
             );
           })
