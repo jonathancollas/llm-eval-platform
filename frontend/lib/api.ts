@@ -24,6 +24,13 @@ export interface LLMModel {
   supports_vision: boolean;
   supports_tools: boolean;
   supports_reasoning: boolean;
+  is_free: boolean;
+  max_output_tokens: number;
+  is_moderated: boolean;
+  tokenizer: string;
+  instruct_type: string;
+  hugging_face_id: string;
+  model_created_at: number;
   created_at: string; updated_at: string;
 }
 

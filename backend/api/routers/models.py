@@ -57,6 +57,13 @@ class ModelRead(BaseModel):
     supports_vision: bool
     supports_tools: bool
     supports_reasoning: bool
+    is_free: bool
+    max_output_tokens: int
+    is_moderated: bool
+    tokenizer: str
+    instruct_type: str
+    hugging_face_id: str
+    model_created_at: int
     created_at: datetime
     updated_at: datetime
 
@@ -78,6 +85,13 @@ def _to_read(m: LLMModel) -> ModelRead:
         supports_vision=getattr(m, 'supports_vision', False),
         supports_tools=getattr(m, 'supports_tools', False),
         supports_reasoning=getattr(m, 'supports_reasoning', False),
+        is_free=getattr(m, 'is_free', False),
+        max_output_tokens=getattr(m, 'max_output_tokens', 0),
+        is_moderated=getattr(m, 'is_moderated', False),
+        tokenizer=getattr(m, 'tokenizer', ''),
+        instruct_type=getattr(m, 'instruct_type', ''),
+        hugging_face_id=getattr(m, 'hugging_face_id', ''),
+        model_created_at=getattr(m, 'model_created_at', 0),
         created_at=m.created_at,
         updated_at=m.updated_at,
     )

@@ -42,10 +42,18 @@ class LLMModel(SQLModel, table=True):
     tags: str                  = Field(default="[]")
     notes: str                 = Field(default="")
     is_active: bool            = Field(default=True)
-    # Capability flags (extracted from OpenRouter modalities/supported_parameters)
+    # Capability flags (extracted from OpenRouter)
     supports_vision: bool      = Field(default=False)
     supports_tools: bool       = Field(default=False)
     supports_reasoning: bool   = Field(default=False)
+    # Extended metadata from OpenRouter
+    is_free: bool              = Field(default=False)  # zero cost + :free suffix
+    max_output_tokens: int     = Field(default=0)
+    is_moderated: bool         = Field(default=False)
+    tokenizer: str             = Field(default="")
+    instruct_type: str         = Field(default="")
+    hugging_face_id: str       = Field(default="")
+    model_created_at: int      = Field(default=0)  # unix timestamp
     created_at: datetime       = Field(default_factory=datetime.utcnow)
     updated_at: datetime       = Field(default_factory=datetime.utcnow)
 

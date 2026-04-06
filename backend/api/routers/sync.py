@@ -185,6 +185,17 @@ def _build_model(m: dict) -> LLMModel | None:
                               or "qwq" in model_id.lower()
                               for p in supported_params)
 
+    # Extended metadata
+    top_provider = m.get("top_provider") or {}
+    arch = m.get("architecture") or {}
+    max_output = int(top_provider.get("max_completion_tokens") or 0)
+    is_moderated = bool(top_provider.get("is_moderated", False))
+    tokenizer = arch.get("tokenizer") or ""
+    instruct_type = arch.get("instruct_type") or ""
+    hf_id = m.get("hugging_face_id") or ""
+    created_at = int(m.get("created") or 0)
+    is_free = (cost_in == 0.0 and cost_out == 0.0 and ":free" in model_id)
+
     return LLMModel(
         name=name,
         provider=ModelProvider.CUSTOM,
@@ -199,6 +210,13 @@ def _build_model(m: dict) -> LLMModel | None:
         supports_vision=supports_vision,
         supports_tools=supports_tools,
         supports_reasoning=supports_reasoning,
+        is_free=is_free,
+        max_output_tokens=max_output,
+        is_moderated=is_moderated,
+        tokenizer=tokenizer,
+        instruct_type=instruct_type,
+        hugging_face_id=hf_id,
+        model_created_at=created_at,
     )
 
 

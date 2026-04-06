@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModel, ModelProvider } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,25 +8,126 @@ import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { ModelCatalogModal } from "@/components/ModelCatalogModal";
 import { providerColor } from "@/lib/utils";
-import { Plus, Zap, Eye, Wrench, Brain, CheckCircle2, XCircle, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Plus, Zap, Eye, Wrench, Brain, CheckCircle2, XCircle,
+         ChevronDown, ChevronUp, Trash2, Search, ExternalLink, Shield } from "lucide-react";
 
 const PROVIDERS: ModelProvider[] = ["openai", "anthropic", "mistral", "groq", "custom"];
-
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI", anthropic: "Anthropic", mistral: "Mistral",
   groq: "Groq", custom: "Custom / OpenRouter",
 };
 
-function CapabilityBadge({ label, icon: Icon, active }: { label: string; icon: any; active: boolean }) {
-  if (!active) return null;
+// ── Filter bar ─────────────────────────────────────────────────────────────────
+interface Filters {
+  search: string;
+  onlyFree: boolean;
+  onlyVision: boolean;
+  onlyTools: boolean;
+  onlyReasoning: boolean;
+  provider: string;
+}
+
+function applyFilters(models: LLMModel[], f: Filters): LLMModel[] {
+  return models.filter(m => {
+    if (f.search) {
+      const q = f.search.toLowerCase();
+      if (!m.name.toLowerCase().includes(q) && !m.model_id.toLowerCase().includes(q)) return false;
+    }
+    if (f.onlyFree && !m.is_free) return false;
+    if (f.onlyVision && !m.supports_vision) return false;
+    if (f.onlyTools && !m.supports_tools) return false;
+    if (f.onlyReasoning && !m.supports_reasoning) return false;
+    if (f.provider && m.provider !== f.provider) return false;
+    return true;
+  });
+}
+
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">
-      <Icon size={10} />
+    <button onClick={onClick}
+      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+        active ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+      }`}>
       {label}
-    </span>
+    </button>
   );
 }
 
+// ── Model detail panel ─────────────────────────────────────────────────────────
+function ModelDetail({ m }: { m: LLMModel }) {
+  const createdDate = m.model_created_at
+    ? new Date(m.model_created_at * 1000).toLocaleDateString("fr-FR", { year: "numeric", month: "short" })
+    : null;
+
+  return (
+    <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-xs text-slate-600 space-y-3">
+      {/* Costs */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-lg p-2.5 border border-slate-100">
+          <div className="text-slate-400 mb-0.5">Input</div>
+          <div className="font-medium text-slate-800">
+            {m.is_free ? "🆓 Gratuit" : `$${m.cost_input_per_1k.toFixed(4)}/1k`}
+          </div>
+        </div>
+        <div className="bg-white rounded-lg p-2.5 border border-slate-100">
+          <div className="text-slate-400 mb-0.5">Output</div>
+          <div className="font-medium text-slate-800">
+            {m.is_free ? "🆓 Gratuit" : `$${m.cost_output_per_1k.toFixed(4)}/1k`}
+          </div>
+        </div>
+        <div className="bg-white rounded-lg p-2.5 border border-slate-100">
+          <div className="text-slate-400 mb-0.5">Contexte</div>
+          <div className="font-medium text-slate-800">{(m.context_length / 1000).toFixed(0)}k tokens</div>
+        </div>
+      </div>
+
+      {/* Capabilities */}
+      <div className="flex flex-wrap gap-1.5">
+        {m.supports_vision    && <Badge className="bg-purple-50 text-purple-700 border border-purple-100"><Eye size={10} className="inline mr-1" />Vision</Badge>}
+        {m.supports_tools     && <Badge className="bg-blue-50 text-blue-700 border border-blue-100"><Wrench size={10} className="inline mr-1" />Function Calling</Badge>}
+        {m.supports_reasoning && <Badge className="bg-amber-50 text-amber-700 border border-amber-100"><Brain size={10} className="inline mr-1" />Reasoning</Badge>}
+        {m.is_moderated       && <Badge className="bg-red-50 text-red-600 border border-red-100"><Shield size={10} className="inline mr-1" />Modéré</Badge>}
+        {m.max_output_tokens > 0 && <Badge className="bg-slate-100 text-slate-600">Max output: {(m.max_output_tokens / 1000).toFixed(0)}k</Badge>}
+      </div>
+
+      {/* Technical details */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+        {m.tokenizer      && <div><span className="text-slate-400">Tokenizer:</span> <span className="font-mono">{m.tokenizer}</span></div>}
+        {m.instruct_type  && <div><span className="text-slate-400">Format:</span> <span className="font-mono">{m.instruct_type}</span></div>}
+        {createdDate      && <div><span className="text-slate-400">Sortie:</span> {createdDate}</div>}
+        {m.endpoint       && <div className="col-span-2"><span className="text-slate-400">Endpoint:</span> <span className="font-mono text-xs">{m.endpoint}</span></div>}
+      </div>
+
+      {/* Tags */}
+      {m.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {m.tags.map(t => <Badge key={t} className="bg-white border border-slate-200 text-slate-500">{t}</Badge>)}
+        </div>
+      )}
+
+      {/* Notes */}
+      {m.notes && !m.notes.startsWith("Via OpenRouter") && (
+        <p className="text-slate-500 italic">{m.notes}</p>
+      )}
+
+      {/* Links */}
+      <div className="flex gap-3 pt-1">
+        {m.hugging_face_id && (
+          <a href={`https://huggingface.co/${m.hugging_face_id}`} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+            <ExternalLink size={11} /> HuggingFace
+          </a>
+        )}
+        <a href={`https://openrouter.ai/models/${m.model_id}`} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+          <ExternalLink size={11} /> OpenRouter
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function ModelsPage() {
   const [models, setModels] = useState<LLMModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,8 +135,12 @@ export default function ModelsPage() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
-  const [testResults, setTestResults] = useState<Record<number, { ok: boolean; latency_ms: number; response: string; error: string | null }>>({});
+  const [testResults, setTestResults] = useState<Record<number, any>>({});
   const [creating, setCreating] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    search: "", onlyFree: false, onlyVision: false,
+    onlyTools: false, onlyReasoning: false, provider: "",
+  });
   const [form, setForm] = useState({
     name: "", provider: "custom" as ModelProvider, model_id: "",
     endpoint: "", api_key: "", context_length: 4096,
@@ -44,8 +149,14 @@ export default function ModelsPage() {
 
   const load = useCallback(() =>
     modelsApi.list().then(setModels).finally(() => setLoading(false)), []);
-
   useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => applyFilters(models, filters), [models, filters]);
+
+  const freeCount       = useMemo(() => models.filter(m => m.is_free).length, [models]);
+  const visionCount     = useMemo(() => models.filter(m => m.supports_vision).length, [models]);
+  const toolsCount      = useMemo(() => models.filter(m => m.supports_tools).length, [models]);
+  const reasoningCount  = useMemo(() => models.filter(m => m.supports_reasoning).length, [models]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,11 +192,14 @@ export default function ModelsPage() {
     load();
   };
 
+  const setFilter = (key: keyof Filters, value: any) =>
+    setFilters(f => ({ ...f, [key]: value }));
+
   return (
     <div>
       <PageHeader
         title="Model Registry"
-        description="Gérez vos modèles LLM. Les modèles OpenRouter sont importés automatiquement au démarrage."
+        description={`${models.length} modèles · ${freeCount} gratuits`}
         action={
           <div className="flex gap-2">
             <button onClick={() => setShowCatalog(true)}
@@ -94,21 +208,50 @@ export default function ModelsPage() {
             </button>
             <button onClick={() => setShowForm(!showForm)}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
-              <Plus size={14} /> Ajouter manuellement
+              <Plus size={14} /> Ajouter
             </button>
           </div>
         }
       />
 
+      {/* ── Filter bar ────────────────────────────────────────────────────── */}
+      <div className="px-8 pt-4 pb-2 space-y-3">
+        {/* Search */}
+        <div className="relative max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={filters.search}
+            onChange={e => setFilter("search", e.target.value)}
+            placeholder="Rechercher par nom ou model ID…"
+            className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
+        </div>
+
+        {/* Filter chips */}
+        <div className="flex gap-2 flex-wrap">
+          <FilterChip label={`🆓 Gratuit (${freeCount})`}      active={filters.onlyFree}      onClick={() => setFilter("onlyFree", !filters.onlyFree)} />
+          <FilterChip label={`👁 Vision (${visionCount})`}     active={filters.onlyVision}    onClick={() => setFilter("onlyVision", !filters.onlyVision)} />
+          <FilterChip label={`🔧 Tools (${toolsCount})`}       active={filters.onlyTools}     onClick={() => setFilter("onlyTools", !filters.onlyTools)} />
+          <FilterChip label={`🧠 Reasoning (${reasoningCount})`} active={filters.onlyReasoning} onClick={() => setFilter("onlyReasoning", !filters.onlyReasoning)} />
+          {(filters.onlyFree || filters.onlyVision || filters.onlyTools || filters.onlyReasoning || filters.search || filters.provider) && (
+            <button onClick={() => setFilters({ search: "", onlyFree: false, onlyVision: false, onlyTools: false, onlyReasoning: false, provider: "" })}
+              className="text-xs px-3 py-1.5 text-slate-400 hover:text-slate-700">
+              Réinitialiser
+            </button>
+          )}
+          <span className="text-xs text-slate-400 self-center ml-auto">
+            {filtered.length} / {models.length} modèles
+          </span>
+        </div>
+      </div>
+
       {showForm && (
-        <div className="mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
+        <div className="mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-6">
           <h3 className="font-medium text-slate-900 mb-4">Nouveau modèle</h3>
           <form onSubmit={handleCreate} className="grid grid-cols-2 gap-4">
             {[
               { label: "Nom *", key: "name", type: "text", placeholder: "ex. GPT-4o Mini" },
               { label: "Model ID *", key: "model_id", type: "text", placeholder: "ex. gpt-4o-mini" },
-              { label: "Endpoint (optionnel)", key: "endpoint", type: "text", placeholder: "https://openrouter.ai/api/v1" },
-              { label: "API Key (optionnel)", key: "api_key", type: "password", placeholder: "sk-..." },
+              { label: "Endpoint", key: "endpoint", type: "text", placeholder: "https://openrouter.ai/api/v1" },
+              { label: "API Key", key: "api_key", type: "password", placeholder: "sk-..." },
             ].map(({ label, key, type, placeholder }) => (
               <div key={key}>
                 <label className="text-xs font-medium text-slate-600 mb-1 block">{label}</label>
@@ -119,8 +262,7 @@ export default function ModelsPage() {
             ))}
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Provider</label>
-              <select value={form.provider}
-                onChange={e => setForm(f => ({ ...f, provider: e.target.value as ModelProvider }))}
+              <select value={form.provider} onChange={e => setForm(f => ({ ...f, provider: e.target.value as ModelProvider }))}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
                 {PROVIDERS.map(p => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
               </select>
@@ -142,32 +284,42 @@ export default function ModelsPage() {
         </div>
       )}
 
-      <div className="p-8 pt-6 space-y-3">
+      {/* ── Model list ────────────────────────────────────────────────────── */}
+      <div className="p-8 pt-4 space-y-2">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
-        ) : models.length === 0 ? (
-          <EmptyState icon="🤖" title="Aucun modèle" description="Ajoutez des modèles depuis le catalogue OpenRouter ou manuellement." />
+        ) : filtered.length === 0 ? (
+          <EmptyState icon="🤖" title={models.length === 0 ? "Aucun modèle" : "Aucun résultat"}
+            description={models.length === 0 ? "Ajoutez des modèles depuis le catalogue OpenRouter." : "Modifiez vos filtres."} />
         ) : (
-          models.map(m => {
+          filtered.map(m => {
             const test = testResults[m.id];
+            const isExpanded = expanded === m.id;
             return (
               <div key={m.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                <div className="flex items-center gap-4 p-5 cursor-pointer hover:bg-slate-50 transition-colors"
-                  onClick={() => setExpanded(expanded === m.id ? null : m.id)}>
+                <div className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                  onClick={() => setExpanded(isExpanded ? null : m.id)}>
+
+                  {/* Free badge */}
+                  {m.is_free && (
+                    <span className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
+                      FREE
+                    </span>
+                  )}
+
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="font-medium text-slate-900">{m.name}</span>
                       <Badge className={providerColor(m.provider)}>{m.provider}</Badge>
-                      {/* Capability badges */}
-                      <CapabilityBadge label="Vision" icon={Eye} active={m.supports_vision} />
-                      <CapabilityBadge label="Tools" icon={Wrench} active={m.supports_tools} />
-                      <CapabilityBadge label="Reasoning" icon={Brain} active={m.supports_reasoning} />
+                      {m.supports_vision    && <Badge className="bg-purple-50 text-purple-600 border border-purple-100"><Eye size={9} className="inline mr-0.5" />Vision</Badge>}
+                      {m.supports_tools     && <Badge className="bg-blue-50 text-blue-600 border border-blue-100"><Wrench size={9} className="inline mr-0.5" />Tools</Badge>}
+                      {m.supports_reasoning && <Badge className="bg-amber-50 text-amber-600 border border-amber-100"><Brain size={9} className="inline mr-0.5" />Reasoning</Badge>}
                     </div>
                     <div className="flex gap-3 text-xs text-slate-400">
-                      <span className="font-mono">{m.model_id}</span>
-                      {m.context_length && <span>{(m.context_length / 1000).toFixed(0)}k ctx</span>}
-                      {m.cost_input_per_1k > 0 && <span>${m.cost_input_per_1k.toFixed(4)}/1k in</span>}
-                      {m.has_api_key && <span className="text-green-500">🔑 key</span>}
+                      <span className="font-mono truncate max-w-48">{m.model_id}</span>
+                      <span>{(m.context_length / 1000).toFixed(0)}k ctx</span>
+                      {!m.is_free && m.cost_input_per_1k > 0 && <span>${m.cost_input_per_1k.toFixed(4)}/1k</span>}
+                      {m.has_api_key && <span className="text-green-500">🔑</span>}
                     </div>
                   </div>
 
@@ -176,43 +328,24 @@ export default function ModelsPage() {
                       <div className="flex items-center gap-1.5 text-xs">
                         {test.ok
                           ? <><CheckCircle2 size={13} className="text-green-500" /><span className="text-green-600">{test.latency_ms}ms</span></>
-                          : <><XCircle size={13} className="text-red-500" /><span className="text-red-500 max-w-32 truncate">{test.error}</span></>
+                          : <><XCircle size={13} className="text-red-500" /><span className="text-red-500 max-w-32 truncate text-xs">{test.error}</span></>
                         }
                       </div>
                     )}
                     <button onClick={e => { e.stopPropagation(); handleTest(m.id); }} disabled={testing === m.id}
-                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50">
+                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors disabled:opacity-50">
                       {testing === m.id ? <Spinner size={11} /> : <Zap size={11} />}
-                      {testing === m.id ? "Test…" : "Tester"}
+                      {testing === m.id ? "…" : "Test"}
                     </button>
                     <button onClick={e => { e.stopPropagation(); handleDelete(m.id); }}
                       className="p-1.5 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors">
-                      <Trash2 size={14} />
+                      <Trash2 size={13} />
                     </button>
-                    {expanded === m.id ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                    {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                   </div>
                 </div>
 
-                {expanded === m.id && (
-                  <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-xs text-slate-600 space-y-1.5">
-                    {m.endpoint && <div><span className="font-medium">Endpoint :</span> <span className="font-mono">{m.endpoint}</span></div>}
-                    {m.notes && <div><span className="font-medium">Notes :</span> {m.notes}</div>}
-                    <div className="flex gap-4">
-                      <span><span className="font-medium">Input :</span> ${m.cost_input_per_1k}/1k tokens</span>
-                      <span><span className="font-medium">Output :</span> ${m.cost_output_per_1k}/1k tokens</span>
-                    </div>
-                    <div className="flex gap-3 pt-1">
-                      <CapabilityBadge label="Vision" icon={Eye} active={m.supports_vision} />
-                      <CapabilityBadge label="Function Calling" icon={Wrench} active={m.supports_tools} />
-                      <CapabilityBadge label="Reasoning / CoT" icon={Brain} active={m.supports_reasoning} />
-                    </div>
-                    {test?.ok && (
-                      <div className="mt-2 p-2 bg-green-50 rounded-lg border border-green-100">
-                        <span className="font-medium text-green-700">Réponse :</span> {test.response}
-                      </div>
-                    )}
-                  </div>
-                )}
+                {isExpanded && <ModelDetail m={m} />}
               </div>
             );
           })
