@@ -9,14 +9,11 @@ from typing import Callable
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from sqlmodel import Session
 
 from core.config import get_settings
-from core.database import create_db_and_tables
+from core.database import create_db_and_tables, engine
 from api.routers import models, benchmarks, campaigns, results, reports, catalog, leaderboard, sync
-
-from sqlmodel import Session
-from core.database import engine
-from api.routers.sync import sync_catalog_and_models
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,14 +22,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up — DB init + sync catalogue/models")
+    # 1. Create tables + reset stuck campaigns + update has_dataset flags
+    logger.info("Startup — initializing DB...")
     create_db_and_tables()
+
+    # 2. Sync catalog benchmarks (synchronous — no network, fast)
+    logger.info("Startup — syncing benchmark catalog...")
+    from api.routers.sync import sync_benchmarks_from_catalog, sync_starter_models
     with Session(engine) as session:
-        sync_catalog_and_models(session)
+        benches_added = sync_benchmarks_from_catalog(session)
+        logger.info(f"Startup — {benches_added} benchmarks added from catalog.")
+
+        # 3. Ensure at least starter models exist (sync — no network)
+        from sqlmodel import select
+        from core.models import LLMModel
+        model_count = len(session.exec(select(LLMModel)).all())
+        if model_count == 0:
+            models_added = sync_starter_models(session)
+            logger.info(f"Startup — {models_added} starter models imported.")
+
+    # 4. Async OpenRouter sync in background (non-blocking)
+    import asyncio
+    asyncio.create_task(_background_openrouter_sync())
+
+    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
     yield
-    
+    logger.info("Shutdown.")
+
+
+async def _background_openrouter_sync():
+    """Sync OpenRouter models after startup — runs in background, doesn't block requests."""
+    import asyncio
+    await asyncio.sleep(2)  # Let server fully start first
+    try:
+        from api.routers.sync import sync_openrouter_models
+        with Session(engine) as session:
+            added, synced = await sync_openrouter_models(session)
+            logger.info(f"Background OpenRouter sync: +{added} models (synced={synced})")
+    except Exception as e:
+        logger.warning(f"Background OpenRouter sync failed: {e}")
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -42,7 +75,7 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# ── Middleware ────────────────────────────────────────────────────────────────
+# ── Middleware ─────────────────────────────────────────────────────────────────
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
@@ -63,71 +96,47 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next: Callable) -> Response:
-    """Add security headers to every response."""
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cache-Control"] = "no-store"
     return response
 
 
-# ── Routers ───────────────────────────────────────────────────────────────────
+_ADMIN_API_KEY = _os.getenv("ADMIN_API_KEY", "")
 
-for router in [
-    models.router,
-    benchmarks.router,
-    campaigns.router,
-    results.router,
-    reports.router,
-    catalog.router,
-    leaderboard.router,
-    sync.router,
-]:
+@app.middleware("http")
+async def api_key_auth(request: Request, call_next: Callable) -> Response:
+    if (not _ADMIN_API_KEY
+        or request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json")
+        or request.method == "OPTIONS"):
+        return await call_next(request)
+    if request.headers.get("X-API-Key", "") != _ADMIN_API_KEY:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing X-API-Key"})
+    return await call_next(request)
+
+
+# ── Routers ────────────────────────────────────────────────────────────────────
+
+for router in [models.router, benchmarks.router, campaigns.router, results.router,
+               reports.router, catalog.router, leaderboard.router, sync.router]:
     app.include_router(router, prefix="/api")
 
 
-# ── Health ────────────────────────────────────────────────────────────────────
+# ── Health ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/health", tags=["health"])
 def health():
     from pathlib import Path
-    bench_ok = Path(settings.bench_library_path).exists()
+    bench_path = Path(settings.bench_library_path)
+    bench_exists = bench_path.exists()
+    bench_files = list(bench_path.rglob("*.json")) if bench_exists else []
     return {
         "status": "ok",
         "version": settings.app_version,
-        "bench_library": settings.bench_library_path,
-        "bench_library_exists": bench_ok,
+        "bench_library_path": str(bench_path),
+        "bench_library_exists": bench_exists,
+        "bench_files_count": len(bench_files),
     }
-
-
-# ── Optional API Key protection ───────────────────────────────────────────────
-
-_API_KEY = None
-
-@app.on_event("startup")
-async def _load_api_key():
-    global _API_KEY
-    import os
-    _API_KEY = os.getenv("ADMIN_API_KEY", "")
-
-
-@app.middleware("http")
-async def api_key_auth(request: Request, call_next: Callable) -> Response:
-    """Optional admin API key. Set ADMIN_API_KEY env var to enable."""
-    global _API_KEY
-    # Skip auth for health, docs, and OPTIONS
-    if request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json") \
-       or request.method == "OPTIONS" \
-       or not _API_KEY:
-        return await call_next(request)
-
-    key = request.headers.get("X-API-Key", "")
-    if key != _API_KEY:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Invalid or missing X-API-Key header"},
-        )
-    return await call_next(request)

@@ -192,6 +192,19 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
 
 async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, eval_run_id: int):
     """Run one model × benchmark. Returns (RunSummary, item_results) or raises."""
+    from pathlib import Path
+
+    # Validate local dataset exists before attempting run
+    if benchmark.dataset_path:
+        dataset_file = Path(settings.bench_library_path) / benchmark.dataset_path
+        logger.info(f"Benchmark '{benchmark.name}': dataset_path={dataset_file}")
+        if not dataset_file.exists():
+            logger.warning(
+                f"Dataset missing for '{benchmark.name}': {dataset_file}. "
+                f"bench_library_path={settings.bench_library_path}"
+            )
+            # Don't raise — let the runner handle gracefully (returns score=0, num_items=0)
+
     try:
         runner = get_runner(benchmark, settings.bench_library_path)
     except Exception as e:
