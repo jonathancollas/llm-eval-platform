@@ -53,12 +53,10 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             return
 
         # Status already set to RUNNING by the /run endpoint
-        # Just log the start
-        logger.info(f"Campaign {campaign_id} executing: '{campaign.name}' "
-                    f"({len(model_ids)} models × {len(benchmark_ids)} benchmarks = {len(model_ids)*len(benchmark_ids)} runs)")
-
         model_ids: list[int] = json.loads(campaign.model_ids or "[]")
         benchmark_ids: list[int] = json.loads(campaign.benchmark_ids or "[]")
+        logger.info(f"Campaign {campaign_id} executing: '{campaign.name}' "
+                    f"({len(model_ids)} models × {len(benchmark_ids)} benchmarks = {len(model_ids)*len(benchmark_ids)} runs)")
         total_runs = len(model_ids) * len(benchmark_ids)
 
         if total_runs == 0:
