@@ -104,7 +104,7 @@ export default function CampaignsPage() {
         const updated = await campaignsApi.list();
         setCampaigns(updated);
         const c = updated.find((x: Campaign) => x.id === id);
-        if (c && c.status !== "running" && c.status !== "pending") {
+        if (c && c.status !== "running") {
           clearInterval(poll);
           setRunningId(null);
         }
@@ -124,7 +124,7 @@ export default function CampaignsPage() {
     load();
   };
 
-  const isRunning = (c: Campaign) => c.status === "running" || c.status === "pending" || runningId === c.id;
+  const isRunning = (c: Campaign) => c.status === "running" || runningId === c.id;
   const filteredBenches = benches.filter(b => isBenchInFilter(b, benchFilter));
 
   const canNext = [
@@ -352,7 +352,7 @@ export default function CampaignsPage() {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="font-medium text-slate-900">{c.name}</span>
                       <StatusBadge status={c.status} />
-                      {running && c.progress != null && (
+                      {c.status === "running" && c.progress != null && (
                         <span className="text-xs text-slate-400">{c.progress.toFixed(0)}%</span>
                       )}
                     </div>
@@ -377,13 +377,21 @@ export default function CampaignsPage() {
                         <BarChart2 size={13} /> Dashboard
                       </Link>
                     )}
-                    {(c.status === "pending" || c.status === "failed" || c.status === "completed") && !running && (
+                    {/* Run button — shown for pending and failed */}
+                    {(c.status === "pending" || c.status === "failed") && !running && (
                       <button onClick={() => handleRun(c.id)}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-colors">
-                        {c.status === "completed" ? <RefreshCw size={13} /> : <Play size={13} />}
-                        {c.status === "completed" ? "Re-run" : "Run"}
+                        <Play size={13} /> Run
                       </button>
                     )}
+                    {/* Re-run button — shown for completed */}
+                    {c.status === "completed" && !running && (
+                      <button onClick={() => handleRun(c.id)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
+                        <RefreshCw size={13} /> Re-run
+                      </button>
+                    )}
+                    {/* Cancel button — only when actually running */}
                     {running && (
                       <button onClick={() => handleCancel(c.id)}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
