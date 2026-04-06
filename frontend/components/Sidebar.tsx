@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info, Microscope } from "lucide-react";
+import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info, Microscope, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [

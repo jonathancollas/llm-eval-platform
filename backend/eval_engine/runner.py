@@ -194,6 +194,14 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         session.commit()
         logger.info(f"Campaign {campaign_id} completed in {_format_eta(int(time.monotonic() - campaign_start))}.")
 
+        # Auto-compute Failure Genome
+        try:
+            from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
+            _compute_genome_for_campaign(campaign_id, session)
+            logger.info(f"Campaign {campaign_id}: Failure Genome computed.")
+        except Exception as e:
+            logger.warning(f"Genome computation failed (non-blocking): {e}")
+
 
 def _format_eta(seconds: int) -> str:
     if seconds < 60:
@@ -234,3 +242,47 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
         ) from e
 
     return summary, summary.item_results
+
+def _compute_genome_for_campaign(campaign_id: int, session: Session) -> None:
+    from sqlmodel import select as _sel_inner
+    """Compute and store Failure Genome profiles after campaign completes."""
+    from core.models import FailureProfile, ModelFingerprint
+    from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
+    from eval_engine.failure_genome.ontology import FAILURE_GENOME_VERSION
+    from core.utils import safe_json_load
+    import json as _json
+    from datetime import datetime as _dt
+
+    runs = session.exec(_sel_inner(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
+    for run in runs:
+        if run.status != JobStatus.COMPLETED:
+            continue
+        bench = session.get(Benchmark, run.benchmark_id)
+        bench_type = str(bench.type) if bench else "custom"
+        results = session.exec(_sel_inner(EvalResult).where(EvalResult.run_id == run.id)).all()
+
+        if results:
+            item_genomes = [classify_run(
+                prompt=r.prompt or "", response=r.response or "", expected=r.expected,
+                score=r.score, benchmark_type=bench_type,
+                latency_ms=r.latency_ms, num_items=len(results),
+            ) for r in results]
+            genome = aggregate_genome(item_genomes)
+        else:
+            genome = classify_run(
+                prompt="", response="", expected=None,
+                score=run.score or 0.0, benchmark_type=bench_type,
+                latency_ms=run.total_latency_ms, num_items=run.num_items,
+            )
+
+        existing = session.exec(_sel_inner(FailureProfile).where(FailureProfile.run_id == run.id)).first()
+        if existing:
+            existing.genome_json = _json.dumps(genome)
+            session.add(existing)
+        else:
+            session.add(FailureProfile(
+                run_id=run.id, campaign_id=campaign_id,
+                model_id=run.model_id, benchmark_id=run.benchmark_id,
+                genome_json=_json.dumps(genome), genome_version=FAILURE_GENOME_VERSION,
+            ))
+    session.commit()

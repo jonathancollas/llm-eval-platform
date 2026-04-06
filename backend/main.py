@@ -13,7 +13,7 @@ from sqlmodel import Session
 
 from core.config import get_settings
 from core.database import create_db_and_tables, engine
-from api.routers import models, benchmarks, campaigns, results, reports, catalog, leaderboard, sync
+from api.routers import models, benchmarks, campaigns, results, reports, catalog, leaderboard, sync, genome
 
 logging.basicConfig(
     level=logging.INFO,
@@ -121,7 +121,7 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
 # ── Routers ────────────────────────────────────────────────────────────────────
 
 for router in [models.router, benchmarks.router, campaigns.router, results.router,
-               reports.router, catalog.router, leaderboard.router, sync.router]:
+               reports.router, catalog.router, leaderboard.router, sync.router, genome.router]:
     app.include_router(router, prefix="/api")
 
 

@@ -90,6 +90,11 @@ class Campaign(SQLModel, table=True):
     status: JobStatus             = Field(default=JobStatus.PENDING, index=True)
     progress: float               = Field(default=0.0)
     error_message: Optional[str]  = Field(default=None)
+    # REGRESSION-1: Context store for causality analysis
+    system_prompt_hash: Optional[str] = Field(default=None)
+    dataset_version: str             = Field(default="")
+    judge_model: str                 = Field(default="")
+    run_context_json: str            = Field(default="{}")  # extra context
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
@@ -111,6 +116,11 @@ class EvalRun(SQLModel, table=True):
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
     error_message: Optional[str]  = Field(default=None)
+    # REGRESSION-1: Context store for causality analysis
+    system_prompt_hash: Optional[str] = Field(default=None)
+    dataset_version: str             = Field(default="")
+    judge_model: str                 = Field(default="")
+    run_context_json: str            = Field(default="{}")  # extra context
 
 
 class EvalResult(SQLModel, table=True):
@@ -129,6 +139,31 @@ class EvalResult(SQLModel, table=True):
     cost_usd: float        = Field(default=0.0)
     metadata_json: str     = Field(default="{}")
     created_at: datetime   = Field(default_factory=datetime.utcnow)
+
+
+class FailureProfile(SQLModel, table=True):
+    """Failure Genome DNA profile per eval run."""
+    __tablename__ = "failure_profiles"
+
+    id: Optional[int]        = Field(default=None, primary_key=True)
+    run_id: int              = Field(foreign_key="eval_runs.id", index=True, unique=True)
+    campaign_id: int         = Field(foreign_key="campaigns.id", index=True)
+    model_id: int            = Field(foreign_key="llm_models.id", index=True)
+    benchmark_id: int        = Field(foreign_key="benchmarks.id", index=True)
+    genome_json: str         = Field(default="{}")   # {failure_type: probability}
+    genome_version: str      = Field(default="1.0.0")
+    created_at: datetime     = Field(default_factory=datetime.utcnow)
+
+
+class ModelFingerprint(SQLModel, table=True):
+    """Behavioral fingerprint aggregated per model across all campaigns."""
+    __tablename__ = "model_fingerprints"
+
+    id: Optional[int]        = Field(default=None, primary_key=True)
+    model_id: int            = Field(foreign_key="llm_models.id", index=True, unique=True)
+    genome_json: str         = Field(default="{}")   # aggregate genome
+    stats_json: str          = Field(default="{}")   # {avg_score, refusal_rate, avg_latency, num_runs}
+    updated_at: datetime     = Field(default_factory=datetime.utcnow)
 
 
 class Report(SQLModel, table=True):
