@@ -27,15 +27,16 @@ OPEN_SOURCE_PROVIDERS = {
     "huggingfaceh4", "stabilityai",
 }
 
+# Only models with :free suffix are truly free on OpenRouter (no credits needed)
 STARTER_MODELS = [
-    {"name": "Llama 3.3 70B (free)",   "model_id": "meta-llama/llama-3.3-70b-instruct:free", "ctx": 65536,  "in": 0.0,    "out": 0.0},
-    {"name": "Llama 3.2 3B (free)",    "model_id": "meta-llama/llama-3.2-3b-instruct:free",  "ctx": 131072, "in": 0.0,    "out": 0.0},
-    {"name": "Gemma 3 27B (free)",     "model_id": "google/gemma-3-27b-it:free",              "ctx": 131072, "in": 0.0,    "out": 0.0},
-    {"name": "Gemma 3 12B (free)",     "model_id": "google/gemma-3-12b-it:free",              "ctx": 32768,  "in": 0.0,    "out": 0.0},
-    {"name": "Mistral 7B Instruct",    "model_id": "mistralai/mistral-7b-instruct-v0.1",      "ctx": 2824,   "in": 0.0001, "out": 0.0002},
-    {"name": "Qwen3 8B",               "model_id": "qwen/qwen3-8b",                           "ctx": 40960,  "in": 0.0,    "out": 0.0004},
-    {"name": "Hermes 3 405B (free)",   "model_id": "nousresearch/hermes-3-llama-3.1-405b:free","ctx": 131072, "in": 0.0,    "out": 0.0},
-    {"name": "DeepSeek V3",            "model_id": "deepseek/deepseek-chat",                  "ctx": 163840, "in": 0.0003, "out": 0.0009},
+    {"name": "Llama 3.3 70B (free)",   "model_id": "meta-llama/llama-3.3-70b-instruct:free", "ctx": 65536,  "in": 0.0, "out": 0.0},
+    {"name": "Llama 3.2 3B (free)",    "model_id": "meta-llama/llama-3.2-3b-instruct:free",  "ctx": 131072, "in": 0.0, "out": 0.0},
+    {"name": "Gemma 3 27B (free)",     "model_id": "google/gemma-3-27b-it:free",              "ctx": 131072, "in": 0.0, "out": 0.0},
+    {"name": "Gemma 3 12B (free)",     "model_id": "google/gemma-3-12b-it:free",              "ctx": 32768,  "in": 0.0, "out": 0.0},
+    {"name": "Gemma 2 9B (free)",      "model_id": "google/gemma-2-9b-it:free",               "ctx": 8192,   "in": 0.0, "out": 0.0},
+    {"name": "Hermes 3 405B (free)",   "model_id": "nousresearch/hermes-3-llama-3.1-405b:free","ctx": 131072,"in": 0.0, "out": 0.0},
+    {"name": "Mistral 7B (free)",      "model_id": "mistralai/mistral-7b-instruct:free",      "ctx": 32768,  "in": 0.0, "out": 0.0},
+    {"name": "Qwen 2.5 7B (free)",     "model_id": "qwen/qwen-2.5-7b-instruct:free",          "ctx": 32768,  "in": 0.0, "out": 0.0},
 ]
 
 

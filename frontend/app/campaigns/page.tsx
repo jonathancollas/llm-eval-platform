@@ -362,6 +362,9 @@ export default function CampaignsPage() {
                       )}
                     </div>
                     {c.description && <p className="text-xs text-slate-500 mb-2">{c.description}</p>}
+                    {c.status === "failed" && c.error_message && !c.error_message.startsWith("ETA:") && (
+                      <p className="text-xs text-red-500 mb-2 font-mono">{c.error_message}</p>
+                    )}
                     <div className="flex gap-4 text-xs text-slate-400">
                       <span>{modelCount} modèle{modelCount !== 1 ? "s" : ""}</span>
                       <span>{benchCount} benchmark{benchCount !== 1 ? "s" : ""}</span>

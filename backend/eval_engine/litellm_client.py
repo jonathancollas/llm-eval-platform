@@ -18,10 +18,14 @@ from core.config import get_settings
 logger = logging.getLogger(__name__)
 litellm.set_verbose = False
 litellm.drop_params = True
+litellm.suppress_debug_info = True  # Suppress stdout spam
 
-# Silence LiteLLM's noisy internal loggers
+# Silence ALL LiteLLM loggers
 import logging as _logging
-for _noisy in ["LiteLLM", "LiteLLM Router", "LiteLLM Proxy"]:
+for _name in list(_logging.Logger.manager.loggerDict.keys()):
+    if "litellm" in _name.lower() or "LiteLLM" in _name:
+        _logging.getLogger(_name).setLevel(_logging.ERROR)
+for _noisy in ["LiteLLM", "LiteLLM Router", "LiteLLM Proxy", "litellm"]:
     _logging.getLogger(_noisy).setLevel(_logging.ERROR)     # Ignore unsupported params silently
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

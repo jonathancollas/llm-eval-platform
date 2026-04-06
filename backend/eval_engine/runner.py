@@ -1,10 +1,11 @@
 """
-Campaign runner — orchestrates N models × M benchmarks.
-Runs benchmarks in parallel (asyncio.gather) for maximum throughput.
+Campaign runner — orchestrates N models × M benchmarks in parallel.
+Tracks rate limits and estimates ETA.
 """
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 
 from sqlmodel import Session, select
@@ -19,44 +20,38 @@ settings = get_settings()
 
 
 async def execute_campaign(campaign_id: int) -> None:
-    """
-    Top-level campaign executor.
-    Any unhandled exception is caught here and persisted to DB — 
-    no campaign can silently disappear from the queue.
-    """
+    """Top-level executor. Any exception → DB marked FAILED."""
     try:
         await _execute_campaign_inner(campaign_id)
     except asyncio.CancelledError:
-        logger.info(f"Campaign {campaign_id} was cancelled.")
+        logger.info(f"Campaign {campaign_id} cancelled.")
         _mark_campaign(campaign_id, JobStatus.CANCELLED, "Cancelled by user.")
     except Exception as e:
-        logger.exception(f"Campaign {campaign_id} crashed unexpectedly: {e}")
+        logger.exception(f"Campaign {campaign_id} crashed: {e}")
         _mark_campaign(campaign_id, JobStatus.FAILED, f"Unexpected error: {str(e)[:400]}")
 
 
 def _mark_campaign(campaign_id: int, status: JobStatus, error: str | None = None) -> None:
-    """Force-write campaign status to DB (called from exception handlers)."""
     try:
         with Session(engine) as session:
-            campaign = session.get(Campaign, campaign_id)
-            if campaign:
-                campaign.status = status
-                campaign.error_message = error
-                campaign.completed_at = datetime.utcnow()
-                session.add(campaign)
+            c = session.get(Campaign, campaign_id)
+            if c:
+                c.status = status
+                c.error_message = error
+                c.completed_at = datetime.utcnow()
+                session.add(c)
                 session.commit()
-    except Exception as db_err:
-        logger.error(f"Failed to persist campaign {campaign_id} status: {db_err}")
+    except Exception as e:
+        logger.error(f"Could not persist status for campaign {campaign_id}: {e}")
 
 
 async def _execute_campaign_inner(campaign_id: int) -> None:
     with Session(engine) as session:
         campaign = session.get(Campaign, campaign_id)
         if not campaign:
-            logger.error(f"Campaign {campaign_id} not found in DB.")
+            logger.error(f"Campaign {campaign_id} not found.")
             return
 
-        # Mark as RUNNING
         campaign.status = JobStatus.RUNNING
         campaign.started_at = datetime.utcnow()
         campaign.error_message = None
@@ -74,10 +69,10 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             campaign.completed_at = datetime.utcnow()
             session.add(campaign)
             session.commit()
-            logger.info(f"Campaign {campaign_id} completed (no runs).")
             return
 
         completed_runs = 0
+        campaign_start = time.monotonic()
 
         for model_id in model_ids:
             model = session.get(LLMModel, model_id)
@@ -86,16 +81,14 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                 completed_runs += len(benchmark_ids)
                 continue
 
-            logger.info(f"Campaign {campaign_id}: running model '{model.name}' against {len(benchmark_ids)} benchmarks")
+            logger.info(f"Campaign {campaign_id}: model '{model.name}' × {len(benchmark_ids)} benchmarks")
 
-            # Create EvalRun records and gather coroutines
             run_coroutines = []
             eval_run_ids = []
 
             for benchmark_id in benchmark_ids:
                 benchmark = session.get(Benchmark, benchmark_id)
                 if not benchmark:
-                    logger.warning(f"Benchmark {benchmark_id} not found, skipping.")
                     completed_runs += 1
                     continue
 
@@ -110,18 +103,11 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                 session.commit()
                 session.refresh(eval_run)
                 eval_run_ids.append(eval_run.id)
-
-                run_coroutines.append(_run_one(
-                    model=model,
-                    benchmark=benchmark,
-                    campaign=campaign,
-                    eval_run_id=eval_run.id,
-                ))
+                run_coroutines.append(_run_one(model, benchmark, campaign, eval_run.id))
 
             if not run_coroutines:
                 continue
 
-            # Execute in parallel with concurrency limit
             semaphore = asyncio.Semaphore(settings.max_concurrent_runs)
 
             async def bounded(coro):
@@ -133,16 +119,23 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                 return_exceptions=True,
             )
 
-            # Persist results
             for eval_run_id, result in zip(eval_run_ids, results):
                 eval_run = session.get(EvalRun, eval_run_id)
                 if not eval_run:
                     continue
 
                 if isinstance(result, BaseException):
-                    logger.error(f"EvalRun {eval_run_id} failed: {result}")
+                    err_str = str(result)
+                    # Classify error type for better UX
+                    if "insufficient credits" in err_str.lower():
+                        friendly = "Model requires credits on OpenRouter. Use a :free model or add credits to your account."
+                    elif "rate limit" in err_str.lower() or "ratelimit" in err_str.lower():
+                        friendly = f"Rate limited after retries: {err_str[:200]}"
+                    else:
+                        friendly = err_str[:300]
+                    logger.error(f"EvalRun {eval_run_id} failed: {friendly}")
                     eval_run.status = JobStatus.FAILED
-                    eval_run.error_message = str(result)[:400]
+                    eval_run.error_message = friendly
                 else:
                     summary, item_results = result
                     eval_run.status = JobStatus.COMPLETED
@@ -176,34 +169,49 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                 session.add(eval_run)
                 completed_runs += 1
 
-            # Update campaign progress
+            # Update progress + ETA
+            elapsed = time.monotonic() - campaign_start
             campaign.progress = round((completed_runs / total_runs) * 100, 1)
+
+            if completed_runs > 0 and completed_runs < total_runs:
+                avg_per_run = elapsed / completed_runs
+                remaining = total_runs - completed_runs
+                eta_seconds = int(avg_per_run * remaining)
+                eta_str = _format_eta(eta_seconds)
+                campaign.error_message = f"ETA: {eta_str} ({completed_runs}/{total_runs} runs terminés)"
+                logger.info(f"Campaign {campaign_id}: {campaign.progress}% — ETA {eta_str}")
+            else:
+                campaign.error_message = None
+
             session.add(campaign)
             session.commit()
-            logger.info(f"Campaign {campaign_id}: progress {campaign.progress}%")
 
         campaign.status = JobStatus.COMPLETED
         campaign.progress = 100.0
+        campaign.error_message = None
         campaign.completed_at = datetime.utcnow()
         session.add(campaign)
         session.commit()
-        logger.info(f"Campaign {campaign_id} completed successfully.")
+        logger.info(f"Campaign {campaign_id} completed in {_format_eta(int(time.monotonic() - campaign_start))}.")
+
+
+def _format_eta(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    else:
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h {m}m"
 
 
 async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, eval_run_id: int):
     """Run one model × benchmark. Returns (RunSummary, item_results) or raises."""
     from pathlib import Path
-
-    # Validate local dataset exists before attempting run
     if benchmark.dataset_path:
         dataset_file = Path(settings.bench_library_path) / benchmark.dataset_path
-        logger.info(f"Benchmark '{benchmark.name}': dataset_path={dataset_file}")
-        if not dataset_file.exists():
-            logger.warning(
-                f"Dataset missing for '{benchmark.name}': {dataset_file}. "
-                f"bench_library_path={settings.bench_library_path}"
-            )
-            # Don't raise — let the runner handle gracefully (returns score=0, num_items=0)
+        logger.info(f"Benchmark '{benchmark.name}': {dataset_file} (exists={dataset_file.exists()})")
 
     try:
         runner = get_runner(benchmark, settings.bench_library_path)
@@ -222,7 +230,7 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
         )
     except Exception as e:
         raise RuntimeError(
-            f"Runner failed for benchmark='{benchmark.name}' model='{model.name}': {e}"
+            f"Runner failed — benchmark='{benchmark.name}' model='{model.name}': {e}"
         ) from e
 
     return summary, summary.item_results
