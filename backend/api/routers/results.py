@@ -330,6 +330,16 @@ def get_campaign_live_feed(
         if elapsed > 0:
             items_per_sec = round(total_items / elapsed, 2)
 
+    # Compute ETA from rate
+    if items_per_sec > 0 and campaign_id:
+        from core.models import Campaign
+        from datetime import datetime
+        campaign = session.get(Campaign, campaign_id)
+        if campaign and campaign.max_samples:
+            total_expected = len(runs) * campaign.max_samples
+            remaining_items = max(0, total_expected - total_items)
+            eta_seconds = int(remaining_items / items_per_sec)
+
     return {
         "items": items,
         "total_items": total_items,
@@ -337,4 +347,5 @@ def get_campaign_live_feed(
         "total_runs": len(runs),
         "items_per_sec": items_per_sec,
         "eta_seconds": eta_seconds,
+        "pending_runs": sum(1 for r in runs if r.status == "running"),
     }

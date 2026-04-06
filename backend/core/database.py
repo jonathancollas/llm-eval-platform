@@ -32,9 +32,45 @@ engine = create_engine(
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
+    _migrate_add_columns()   # Safe ALTER TABLE for new columns
     _reset_stuck_campaigns()
     _update_has_dataset()
     _seed_builtin_benchmarks()
+
+
+def _migrate_add_columns() -> None:
+    """Add new columns to existing tables (idempotent ALTER TABLE)."""
+    new_columns = [
+        # (table, column, type, default)
+        ("campaigns", "system_prompt_hash", "TEXT", "NULL"),
+        ("campaigns", "dataset_version", "TEXT", "NULL"),
+        ("campaigns", "judge_model", "TEXT", "NULL"),
+        ("campaigns", "run_context_json", "TEXT", "NULL"),
+        ("llm_models", "is_free", "INTEGER", "0"),
+        ("llm_models", "max_output_tokens", "INTEGER", "0"),
+        ("llm_models", "is_moderated", "INTEGER", "0"),
+        ("llm_models", "tokenizer", "TEXT", "''"),
+        ("llm_models", "instruct_type", "TEXT", "''"),
+        ("llm_models", "hugging_face_id", "TEXT", "''"),
+        ("llm_models", "model_created_at", "INTEGER", "0"),
+    ]
+    import sqlite3
+    db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")
+    if not db_path or db_path == ":memory:":
+        return
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        for table, col, col_type, default in new_columns:
+            try:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} DEFAULT {default}")
+                logger.info(f"Migration: added {table}.{col}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"Migration warning (non-fatal): {e}")
 
 
 def _reset_stuck_campaigns() -> None:

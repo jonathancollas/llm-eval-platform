@@ -58,16 +58,37 @@ interface LiveItem {
 interface LiveData {
   items: LiveItem[]; total_items: number; completed_runs: number;
   total_runs: number; items_per_sec: number; eta_seconds: number | null;
+  pending_runs: number;
+}
+
+function useCountdown(etaSeconds: number | null) {
+  const [remaining, setRemaining] = useState<number | null>(etaSeconds);
+  useEffect(() => {
+    if (etaSeconds == null) { setRemaining(null); return; }
+    setRemaining(etaSeconds);
+    const t = setInterval(() => setRemaining(s => s != null && s > 0 ? s - 1 : s), 1000);
+    return () => clearInterval(t);
+  }, [etaSeconds]);
+  return remaining;
+}
+
+function fmtTime(s: number | null): string {
+  if (s == null || s < 0) return "—";
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
 function LiveFeed({ campaignId }: { campaignId: number }) {
   const [data, setData] = useState<LiveData | null>(null);
   const [open, setOpen] = useState(true);
+  const [selectedItem, setSelectedItem] = useState<LiveItem | null>(null);
+  const countdown = useCountdown(data?.eta_seconds ?? null);
 
   useEffect(() => {
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=10`);
+        const res = await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=8`);
         if (res.ok) setData(await res.json());
       } catch {}
     }, 1500);
@@ -76,65 +97,97 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
 
   if (!data) return null;
 
-  const etaStr = data.eta_seconds != null
-    ? data.eta_seconds < 60 ? `${data.eta_seconds}s`
-      : data.eta_seconds < 3600 ? `${Math.floor(data.eta_seconds / 60)}m ${data.eta_seconds % 60}s`
-      : `${Math.floor(data.eta_seconds / 3600)}h ${Math.floor((data.eta_seconds % 3600) / 60)}m`
-    : null;
+  const latest = data.items[0] ?? null;
 
   return (
     <div className="border-t border-slate-100">
-      <button className="w-full flex items-center justify-between px-5 py-2.5 text-xs text-slate-500 hover:bg-slate-50"
+      {/* Header bar */}
+      <button className="w-full flex items-center justify-between px-5 py-2.5 text-xs hover:bg-slate-50"
         onClick={() => setOpen(o => !o)}>
-        <div className="flex items-center gap-3">
-          <Radio size={12} className="text-red-500 animate-pulse" />
-          <span className="font-medium">Live Feed</span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Radio size={12} className="text-red-500 animate-pulse shrink-0" />
+          <span className="font-semibold text-slate-700">Live</span>
           {data.items_per_sec > 0 && (
-            <span className="text-slate-400">
-              {data.items_per_sec} items/s
-              {etaStr && <> · ETA <span className="font-medium text-slate-700">{etaStr}</span></>}
+            <span className="text-slate-500 font-mono">{data.items_per_sec} items/s</span>
+          )}
+          {countdown != null && countdown > 0 && (
+            <span className="bg-slate-900 text-white px-2 py-0.5 rounded font-mono font-bold text-xs">
+              ⏱ {fmtTime(countdown)}
             </span>
           )}
-          <span className="text-slate-400">{data.total_items} items · {data.completed_runs}/{data.total_runs} runs</span>
+          {latest && (
+            <span className="text-slate-400 truncate max-w-48">
+              {latest.model_name} → {latest.benchmark_name}
+            </span>
+          )}
+          <span className="text-slate-300 ml-auto">{data.total_items} items · {data.completed_runs}/{data.total_runs} runs</span>
         </div>
-        {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {open ? <ChevronUp size={13} className="text-slate-300 shrink-0" /> : <ChevronDown size={13} className="text-slate-300 shrink-0" />}
       </button>
 
-      {open && data.items.length > 0 && (
-        <div className="px-5 pb-4 space-y-2 max-h-72 overflow-y-auto">
-          {data.items.map(item => (
-            <div key={item.id} className="bg-slate-50 rounded-lg p-3 text-xs border border-slate-100">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="font-medium text-slate-600">{item.model_name}</span>
-                <span className="text-slate-300">·</span>
-                <span className="text-slate-500">{item.benchmark_name}</span>
-                <span className="text-slate-300">·</span>
-                <span className={`font-bold ${item.score >= 0.5 ? "text-green-600" : "text-red-500"}`}>
-                  {(item.score * 100).toFixed(0)}%
+      {open && (
+        <div className="border-t border-slate-50">
+          {/* Latest item highlight */}
+          {latest && (
+            <div className="px-5 py-3 bg-blue-50 border-b border-blue-100">
+              <div className="flex items-center gap-2 mb-2 text-xs">
+                <span className="font-semibold text-blue-700">{latest.model_name}</span>
+                <span className="text-blue-300">→</span>
+                <span className="text-blue-600">{latest.benchmark_name}</span>
+                <span className="text-blue-300">·</span>
+                <span className="text-blue-500">Q#{latest.item_index + 1}</span>
+                <span className={`ml-auto font-bold ${latest.score >= 0.5 ? "text-green-600" : "text-red-500"}`}>
+                  {latest.score >= 0.5 ? "✓" : "✗"} {(latest.score * 100).toFixed(0)}%
                 </span>
-                <span className="text-slate-400 ml-auto">{item.latency_ms}ms</span>
+                <span className="text-slate-400">{latest.latency_ms}ms</span>
               </div>
-              <div className="space-y-1">
-                <div className="text-slate-600 line-clamp-2">
-                  <span className="font-medium text-slate-400">Q: </span>{item.prompt}
+              <div className="text-xs text-slate-700 bg-white rounded-lg p-2.5 border border-blue-100 space-y-1.5">
+                <div><span className="font-medium text-slate-400 uppercase text-[10px] tracking-wide">Question envoyée</span>
+                  <p className="mt-0.5 line-clamp-2">{latest.prompt}</p>
                 </div>
-                {item.response && (
-                  <div className="text-slate-600 line-clamp-2">
-                    <span className="font-medium text-slate-400">A: </span>{item.response}
+                {latest.response && (
+                  <div><span className="font-medium text-slate-400 uppercase text-[10px] tracking-wide">Réponse du modèle</span>
+                    <p className="mt-0.5 line-clamp-2">{latest.response}</p>
                   </div>
                 )}
-                {item.expected && (
-                  <div className="text-slate-400 line-clamp-1">
-                    <span className="font-medium">Attendu: </span>{item.expected}
+                {latest.expected && (
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-slate-400">Attendu:</span>
+                    <span className="font-mono font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{latest.expected}</span>
                   </div>
                 )}
               </div>
             </div>
-          ))}
+          )}
+
+          {/* History list */}
+          {data.items.length === 0 ? (
+            <div className="px-5 py-4 text-xs text-slate-400 italic">En attente des premiers résultats…</div>
+          ) : (
+            <div className="px-5 py-3 space-y-1.5 max-h-48 overflow-y-auto">
+              {data.items.slice(1).map(item => (
+                <button key={item.id} onClick={() => setSelectedItem(selectedItem?.id === item.id ? null : item)}
+                  className="w-full flex items-center gap-2 text-xs text-left hover:bg-slate-50 rounded-lg px-2 py-1.5 transition-colors">
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] shrink-0 ${item.score >= 0.5 ? "bg-green-500" : "bg-red-400"}`}>
+                    {item.score >= 0.5 ? "✓" : "✗"}
+                  </span>
+                  <span className="text-slate-500 w-24 shrink-0 truncate">{item.model_name}</span>
+                  <span className="text-slate-400 flex-1 truncate">{item.prompt}</span>
+                  <span className="text-slate-300 shrink-0">{item.latency_ms}ms</span>
+                </button>
+              ))}
+              {/* Expanded detail */}
+              {selectedItem && selectedItem.id !== latest?.id && (
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-xs space-y-1.5 mt-1">
+                  <div className="font-medium text-slate-600">{selectedItem.model_name} → {selectedItem.benchmark_name} Q#{selectedItem.item_index + 1}</div>
+                  <div><span className="text-slate-400">Q: </span>{selectedItem.prompt}</div>
+                  {selectedItem.response && <div><span className="text-slate-400">A: </span>{selectedItem.response}</div>}
+                  {selectedItem.expected && <div><span className="text-slate-400">Attendu: </span><span className="font-mono text-green-700">{selectedItem.expected}</span></div>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
-      {open && data.items.length === 0 && (
-        <div className="px-5 pb-4 text-xs text-slate-400 italic">En attente des premiers résultats…</div>
       )}
     </div>
   );

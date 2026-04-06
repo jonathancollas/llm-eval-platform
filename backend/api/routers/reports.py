@@ -100,8 +100,8 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
     campaign = session.get(Campaign, payload.campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
-    if campaign.status != JobStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="Campaign must be completed first.")
+    if campaign.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
+        raise HTTPException(status_code=400, detail="Campaign must be completed or failed first.")
 
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == payload.campaign_id)).all()
     model_ids = list({r.model_id for r in runs})

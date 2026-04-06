@@ -90,11 +90,11 @@ class Campaign(SQLModel, table=True):
     status: JobStatus             = Field(default=JobStatus.PENDING, index=True)
     progress: float               = Field(default=0.0)
     error_message: Optional[str]  = Field(default=None)
-    # REGRESSION-1: Context store for causality analysis
-    system_prompt_hash: Optional[str] = Field(default=None)
-    dataset_version: str             = Field(default="")
-    judge_model: str                 = Field(default="")
-    run_context_json: str            = Field(default="{}")  # extra context
+    # REGRESSION-1: Context store (added post-v0.3, may not exist in old DBs)
+    system_prompt_hash: Optional[str] = Field(default=None, sa_column_kwargs={"nullable": True})
+    dataset_version: Optional[str]   = Field(default=None)
+    judge_model: Optional[str]       = Field(default=None)
+    run_context_json: Optional[str]  = Field(default=None)
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
@@ -116,11 +116,11 @@ class EvalRun(SQLModel, table=True):
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
     error_message: Optional[str]  = Field(default=None)
-    # REGRESSION-1: Context store for causality analysis
-    system_prompt_hash: Optional[str] = Field(default=None)
-    dataset_version: str             = Field(default="")
-    judge_model: str                 = Field(default="")
-    run_context_json: str            = Field(default="{}")  # extra context
+    # REGRESSION-1: Context store (added post-v0.3, may not exist in old DBs)
+    system_prompt_hash: Optional[str] = Field(default=None, sa_column_kwargs={"nullable": True})
+    dataset_version: Optional[str]   = Field(default=None)
+    judge_model: Optional[str]       = Field(default=None)
+    run_context_json: Optional[str]  = Field(default=None)
 
 
 class EvalResult(SQLModel, table=True):
