@@ -249,9 +249,12 @@ export default function CampaignsPage() {
 
   const handleRun = async (id: number) => {
     setRunningId(id);
+    // Optimistic update — show RUNNING immediately without waiting for API
+    setCampaigns(prev => prev.map(c =>
+      c.id === id ? { ...c, status: "running" as const, progress: 0 } : c
+    ));
     try {
       await campaignsApi.run(id);
-      load();
       const TERMINAL = ["completed", "failed", "cancelled"];
       const poll = setInterval(async () => {
         try {
@@ -262,7 +265,12 @@ export default function CampaignsPage() {
         } catch { clearInterval(poll); setRunningId(null); }
       }, 2000);
       setTimeout(() => { clearInterval(poll); setRunningId(null); }, 30 * 60 * 1000);
-    } catch (e) { alert(`Erreur: ${String(e)}`); setRunningId(null); }
+    } catch (e: any) {
+      console.error("RUN ERROR:", e);
+      alert(e?.message ?? String(e));
+      setRunningId(null);
+      load(); // Refresh to get real state
+    }
   };
 
   const handleCancel = async (id: number) => {

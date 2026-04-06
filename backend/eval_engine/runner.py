@@ -52,12 +52,10 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             logger.error(f"Campaign {campaign_id} not found.")
             return
 
-        campaign.status = JobStatus.RUNNING
-        campaign.started_at = datetime.utcnow()
-        campaign.error_message = None
-        session.add(campaign)
-        session.commit()
-        logger.info(f"Campaign {campaign_id} started: '{campaign.name}'")
+        # Status already set to RUNNING by the /run endpoint
+        # Just log the start
+        logger.info(f"Campaign {campaign_id} executing: '{campaign.name}' "
+                    f"({len(model_ids)} models × {len(benchmark_ids)} benchmarks = {len(model_ids)*len(benchmark_ids)} runs)")
 
         model_ids: list[int] = json.loads(campaign.model_ids or "[]")
         benchmark_ids: list[int] = json.loads(campaign.benchmark_ids or "[]")
@@ -229,16 +227,23 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
     max_samples = campaign.max_samples or benchmark.num_samples or settings.default_max_samples
 
     try:
-        summary = await runner.run(
-            model=model,
-            max_samples=max_samples,
-            seed=campaign.seed,
-            temperature=campaign.temperature,
-            progress_callback=None,
+        summary = await asyncio.wait_for(
+            runner.run(
+                model=model,
+                max_samples=max_samples,
+                seed=campaign.seed,
+                temperature=campaign.temperature,
+                progress_callback=None,
+            ),
+            timeout=600,  # 10 min max per benchmark run
+        )
+    except asyncio.TimeoutError:
+        raise RuntimeError(
+            f"Timeout (10min) — benchmark='{benchmark.name}' model='{model.name}'"
         )
     except Exception as e:
         raise RuntimeError(
-            f"Runner failed — benchmark='{benchmark.name}' model='{model.name}': {e}"
+            f"Runner failed — benchmark='{benchmark.name}' model='{model.name}': {type(e).__name__}: {str(e)[:200]}"
         ) from e
 
     return summary, summary.item_results
