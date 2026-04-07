@@ -116,7 +116,7 @@ export default function GenomePage() {
 
   return (
     <div>
-      <PageHeader title="Failure Genome" description="Diagnostic comportemental structurel des modèles — au-delà du score." />
+      <PageHeader title="Genomia" description="Diagnostic comportemental structurel des modèles — au-delà du score." />
 
       <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
         {TABS.map(({ key, label }) => (
@@ -155,7 +155,7 @@ export default function GenomePage() {
               : !genome?.computed ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
                   <div className="text-5xl mb-3">🧬</div>
-                  <h3 className="font-semibold text-slate-800 mb-1">Failure Genome non calculé</h3>
+                  <h3 className="font-semibold text-slate-800 mb-1">Genomia non calculé</h3>
                   <p className="text-sm text-slate-500">Sélectionnez une campagne terminée et cliquez "Analyser".</p>
                 </div>
               ) : (

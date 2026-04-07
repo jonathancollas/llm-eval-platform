@@ -2,20 +2,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
-         Microscope, FlaskConical, ShieldAlert, Shield } from "lucide-react";
+         Microscope, FlaskConical, ShieldAlert, Shield, Gavel, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV_MAIN = [
+const NAV_CORE = [
   { href: "/",           label: "Overview",       icon: Activity },
   { href: "/models",     label: "Models",          icon: Cpu },
   { href: "/benchmarks", label: "Benchmarks",      icon: Library },
   { href: "/campaigns",  label: "Campaigns",       icon: Rocket },
   { href: "/dashboard",  label: "Dashboard",       icon: BarChart3 },
   { href: "/leaderboard",label: "Leaderboard",     icon: Trophy },
-  { href: "/genome",     label: "Failure Genome",  icon: FlaskConical },
-  { href: "/judge",      label: "LLM Judge",       icon: FlaskConical },
+];
+
+const NAV_ANALYZERS = [
+  { href: "/genome",     label: "Genomia",         icon: FlaskConical },
+  { href: "/judge",      label: "LLM Judge",       icon: Gavel },
+  { href: "/agents",     label: "Agents",           icon: Bot },
   { href: "/policy",     label: "Compliance",       icon: Shield },
-  { href: "/about",      label: "About",           icon: Info },
 ];
 
 const MercurySymbol = () => (
@@ -41,6 +44,7 @@ const MercurySymbol = () => (
 export function Sidebar() {
   const pathname = usePathname();
   const isRedbox = pathname.startsWith("/redbox");
+  const isAnalyzer = NAV_ANALYZERS.some(a => pathname.startsWith(a.href) && a.href !== "/");
 
   return (
     <aside className="w-56 border-r border-slate-200 bg-white flex flex-col shrink-0">
@@ -59,7 +63,8 @@ export function Sidebar() {
       </Link>
 
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {NAV_MAIN.map(({ href, label, icon: Icon }) => (
+        {/* Core navigation */}
+        {NAV_CORE.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href}
             className={cn(
               "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
@@ -71,20 +76,24 @@ export function Sidebar() {
           </Link>
         ))}
 
-        {/* Analyzers — Agent Eval */}
-        <Link href="/agents"
-          className={cn(
-            "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors mt-1",
-            pathname.startsWith("/agents")
-              ? "bg-cyan-700 text-white font-medium"
-              : "text-cyan-500 hover:bg-cyan-50"
-          )}>
-          <Microscope size={15} />
-          <span>Agents</span>
-          <span className="ml-auto text-[8px] bg-cyan-50 text-cyan-400 border border-cyan-200 px-1.5 py-0.5 rounded-full tracking-wide">
-            NEW
-          </span>
-        </Link>
+        {/* Analyzers section */}
+        <div className="pt-2 mt-2 border-t border-slate-100">
+          <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
+            <Microscope size={12} className="text-cyan-400" />
+            <span className="text-[10px] font-semibold text-cyan-500 tracking-wider uppercase">Analyzers</span>
+          </div>
+          {NAV_ANALYZERS.map(({ href, label, icon: Icon }) => (
+            <Link key={href} href={href}
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
+                pathname === href || pathname.startsWith(href)
+                  ? "bg-cyan-700 text-white font-medium"
+                  : "text-slate-600 hover:bg-cyan-50 hover:text-cyan-700"
+              )}>
+              <Icon size={15} />{label}
+            </Link>
+          ))}
+        </div>
 
         {/* REDBOX — Red team lab */}
         <div className="pt-2 mt-2 border-t border-slate-100">
@@ -103,6 +112,17 @@ export function Sidebar() {
             )}>
               BETA
             </span>
+          </Link>
+        </div>
+
+        {/* About */}
+        <div className="pt-2 mt-1">
+          <Link href="/about"
+            className={cn(
+              "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
+              pathname === "/about" ? "bg-slate-900 text-white font-medium" : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+            )}>
+            <Info size={15} />About
           </Link>
         </div>
       </nav>

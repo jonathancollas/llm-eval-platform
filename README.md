@@ -68,37 +68,42 @@ Mercury Retrograde est construit autour de ce principe. L'objectif est de rendre
 
 ## Fonctionnalités
 
-### Registre de modèles
-- **300+ modèles OpenRouter** importés automatiquement (cloud : OpenAI, Anthropic, Google, Meta, Mistral, DeepSeek…)
-- Chiffrement des clés API (Fernet / AES-128)
-- Test de connexion live avec mesure de latence
-- Badges de capacités : vision, tools, reasoning
+### Core — Évaluation
+- **300+ modèles** via OpenRouter + **Ollama** pour modèles locaux open-weight
+- **128+ benchmarks** (68 INESIA + 60+ lm-eval) + import **HuggingFace** en 1 clic
+- Campagnes N modèles × M benchmarks, progression temps réel item par item
+- Dashboard 5 onglets : vue d'ensemble, Genomia, erreurs, signaux inter-modules, rapport
+- Rapports narratifs par Claude (async, retry, export MD + HTML)
+- Leaderboard 7 domaines + alertes seuil de risque
 
-### Catalogue de benchmarks
-- **68 benchmarks INESIA** + **60+ benchmarks lm-eval** = 128+ évaluations disponibles
-- Organisés par domaine : raisonnement, maths, code, factualité, français, safety, frontier
-- Import de benchmarks custom (format JSON)
-- Onglet ☿ INESIA pour les évaluations frontier
+### Analyzers — Intelligence avancée
+- **Genomia** — Diagnostic structurel d'échec (hallucination, reasoning collapse, instruction drift, safety bypass, over-refusal, truncation, calibration). Signal Extractor (25+ signaux), classification hybride rules + LLM.
+- **LLM Judge** — Évaluation multi-juges (Claude, GPT-4o, Gemini, Llama). Inter-judge agreement (Cohen's κ, Pearson r). Calibration CJE sur oracle humain. Détection de biais (longueur, préférence modèle).
+- **Agent Evaluation** — Trajectoires multi-step avec 6 axes : task completion, tool precision, planning coherence, error recovery, safety compliance, cost efficiency. Scoring hybride 60% LLM + 40% rules.
+- **Compliance** — Simulation réglementaire EU AI Act (6 checks), HIPAA (5 checks), Finance (5 checks). Intègre Genomia + REDBOX.
+- **Contamination Detection** — 4 méthodes : n-gram overlap, verbatim reproduction, confidence anomaly, first-token probability.
 
-### Moteur d'évaluation
-- **lm-evaluation-harness** (EleutherAI) — scores standardisés, directement comparables aux publications
-- **Runners INESIA** — protocoles propriétaires pour les risques systémiques
-- Exécution parallèle (asyncio.gather) avec sémaphore configurable
-- Reproductibilité complète : seed fixé, température configurable
+### 🔴 REDBOX — Laboratoire adversarial
+- Forge d'attaques : 6 types de mutations (injection, jailbreak, ambiguïté, contradiction, multilingue, contexte bruité)
+- Génération LLM (Claude) + templates rule-based
+- Exécution contre modèles cibles avec détection automatique de brèche
+- Severity scoring CVSS-like + Exploit Tracker
+- Attack Surface Heatmap (modèle × mutation)
+- Breach Replay cross-model + Smart Forge guidé par Genomia
 
-### Campagnes
-- Wizard 4 étapes : paramètres → modèles → benchmarks → lancement
-- N modèles × M benchmarks en une campagne
-- Barre de progression temps réel, annulation à la volée
-- Re-run avec reset automatique des runs précédents
+### Cross-Module Intelligence
+- **Auto-judge** post-campagne (Claude score 30 items automatiquement)
+- **Genomia → REDBOX** smart targeting (faiblesses → attaques ciblées)
+- **Agent → Genomia** bridge (trajectoires produisent des profils genome)
+- **Unified Insights** avec signaux d'alerte cross-module
 
-### Leaderboard
-- Vue globale + 7 domaines thématiques (Frontier, Cyber, CBRN-E, Agentique, Académique, Français, Code)
-- **Rapport narratif par Claude** — analyse générée à la demande par Claude Sonnet
-- Alertes si score sous le seuil de risque frontier
-
-### Dashboard
-- Radar chart multi-modèles / Heatmap scores / Win-rate / Export CSV
+### Infrastructure
+- SQLite (dev) / **PostgreSQL** (prod) — dual mode automatique
+- **Redis** job queue (optionnel, fallback in-memory)
+- **Ollama** — découverte et import automatiques de modèles locaux
+- Multi-tenant scaffolding (Tenant, User, API key auth)
+- Rate limiting, chiffrement clés API, headers sécurité
+- SQLite WAL mode pour performances concurrent
 
 ---
 
@@ -114,8 +119,17 @@ cp .env.example .env
 
 ```env
 SECRET_KEY=<python -c "import secrets; print(secrets.token_hex(32))">
-ANTHROPIC_API_KEY=sk-ant-...   # Pour les rapports narratifs
+ANTHROPIC_API_KEY=sk-ant-...   # Pour rapports + judge + REDBOX forge
 OPENROUTER_API_KEY=sk-or-...   # Pour 300+ modèles cloud
+
+# Optionnel — PostgreSQL (prod)
+# DATABASE_URL=postgresql://user:pass@host:5432/mercury
+
+# Optionnel — Redis (job queue)
+# REDIS_URL=redis://localhost:6379/0
+
+# Optionnel — Ollama (modèles locaux)
+# OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ```bash
@@ -123,7 +137,15 @@ docker-compose up --build
 # → http://localhost:3000
 ```
 
-Au premier chargement : import automatique et silencieux des 68 benchmarks INESIA + 300+ modèles OpenRouter.
+Pour utiliser des modèles locaux gratuitement :
+```bash
+# Dans un terminal séparé
+ollama pull llama3.2
+ollama pull gemma2
+# Les modèles apparaîtront automatiquement dans Mercury Retrograde
+```
+
+Au premier chargement : import automatique des 68 benchmarks INESIA + 300+ modèles OpenRouter + modèles Ollama locaux.
 
 ---
 

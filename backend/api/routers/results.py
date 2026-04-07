@@ -7,7 +7,7 @@ import csv
 import io
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, select, desc
 from pydantic import BaseModel
 from typing import Optional
 
@@ -268,8 +268,6 @@ def get_campaign_live_feed(
     session: Session = Depends(get_session),
 ):
     """Live feed of most recent eval results for a running campaign."""
-    from sqlmodel import select, desc
-    from core.models import EvalRun, EvalResult, LLMModel, Benchmark
 
     campaign = session.get(Campaign, campaign_id)
 
@@ -364,8 +362,6 @@ def get_failed_items(
     session: Session = Depends(get_session),
 ):
     """Get all failed/errored items for a campaign with error classification."""
-    from sqlmodel import select
-    from core.models import EvalRun, EvalResult, LLMModel, Benchmark
 
     runs = session.exec(
         select(EvalRun).where(EvalRun.campaign_id == campaign_id)
