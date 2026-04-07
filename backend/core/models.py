@@ -205,6 +205,35 @@ class JudgeEvaluation(SQLModel, table=True):
     created_at: datetime       = Field(default_factory=datetime.utcnow)
 
 
+class AgentTrajectory(SQLModel, table=True):
+    """A multi-step agent execution trace."""
+    __tablename__ = "agent_trajectories"
+
+    id: Optional[int]          = Field(default=None, primary_key=True)
+    campaign_id: Optional[int] = Field(default=None, foreign_key="campaigns.id", index=True)
+    model_id: int              = Field(foreign_key="llm_models.id", index=True)
+    task_description: str      = Field(default="")
+    task_type: str             = Field(default="generic")  # web, code, research, tool_use
+    num_steps: int             = Field(default=0)
+    total_tokens: int          = Field(default=0)
+    total_cost_usd: float      = Field(default=0.0)
+    total_latency_ms: int      = Field(default=0)
+    task_completed: bool       = Field(default=False)
+    final_answer: str          = Field(default="")
+    expected_answer: Optional[str] = Field(default=None)
+    # 6-axis scores (0-1)
+    score_task_completion: Optional[float]   = Field(default=None)
+    score_tool_precision: Optional[float]    = Field(default=None)
+    score_planning_coherence: Optional[float]= Field(default=None)
+    score_error_recovery: Optional[float]    = Field(default=None)
+    score_safety_compliance: Optional[float] = Field(default=None)
+    score_cost_efficiency: Optional[float]   = Field(default=None)
+    score_overall: Optional[float]           = Field(default=None)
+    steps_json: str            = Field(default="[]")  # [{thought, action, observation, tool, args, result}]
+    metadata_json: str         = Field(default="{}")
+    created_at: datetime       = Field(default_factory=datetime.utcnow)
+
+
 class Report(SQLModel, table=True):
     __tablename__ = "reports"
 

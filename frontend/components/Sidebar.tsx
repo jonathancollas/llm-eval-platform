@@ -70,14 +70,20 @@ export function Sidebar() {
           </Link>
         ))}
 
-        {/* Analyzers — coming soon */}
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm cursor-not-allowed opacity-60 mt-1">
-          <Microscope size={15} className="text-cyan-400" />
-          <span className="text-cyan-400 font-medium">Analyzers</span>
+        {/* Analyzers — Agent Eval */}
+        <Link href="/agents"
+          className={cn(
+            "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors mt-1",
+            pathname.startsWith("/agents")
+              ? "bg-cyan-700 text-white font-medium"
+              : "text-cyan-500 hover:bg-cyan-50"
+          )}>
+          <Microscope size={15} />
+          <span>Agents</span>
           <span className="ml-auto text-[8px] bg-cyan-50 text-cyan-400 border border-cyan-200 px-1.5 py-0.5 rounded-full tracking-wide">
-            IDLE
+            NEW
           </span>
-        </div>
+        </Link>
 
         {/* REDBOX — Red team lab */}
         <div className="pt-2 mt-2 border-t border-slate-100">
