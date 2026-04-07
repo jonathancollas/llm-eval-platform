@@ -33,11 +33,11 @@ Dans le ciel, Mercure rétrograde est un mirage astronomique. La planète ne rec
 
 L’évaluation des modèles d’IA suit parfois la même logique : un brouillard cognitif pris en otage d’enjeux géoéconomiques massifs. Les métriques montent, les benchmarks applaudissent, les études s’alarment sur des risques catastrophiques. On ne sait plus si l’IA nous fait réellement “rétrograder” — voire dérailler —, ou si c’est notre perspective qui manque de profondeur.
 
-Il serait tentant d’en rire, ou de s’en accommoder, en disant qu’on ne comprend pas l’IA et que c’est bien normal, puisque le système est construit ainsi. “Le modèle apprend comme un humain.”
+Pourtant, le mystère de Mercure n’a jamais tenu à la magie, mais à la mesure. La planète poursuit sans relâche sa course autour du Soleil dans le même sens. Mais comme son orbite est plus rapide et plus proche que celle de la Terre, elle nous dépasse régulièrement. À ce moment précis, la ligne de visée change par rapport au fond des étoiles (donnant l’illusion d’un mouvement en arrière).
 
-Ici, on refuse la boîte noire. Dans un champ aussi sensible que l’intelligence artificielle, ne pas comprendre comment ça fonctionne est une faille, pas une fatalité.
+De la même manière, nous refusons ce brouillard d’interprétation appliqué à l’IA. Dans un champ aussi sensible que l’intelligence artificielle, ne pas comprendre comment ça fonctionne est une faille, pas une fatalité.
 
-Mercury Retrograde est donc un observatoire de ces phénomènes. Ni doomer, ni techno-messianique : un espace de mesure pour séparer le vrai mouvement du simple effet d’optique. Évaluer, c’est comprendre — et rester clairvoyant là où les récits s’entrechoquent.
+Mercury Retrograde est donc un observatoire de ces phénomènes. Ni doomer, ni techno-messianique : un espace de mesure pour séparer le vrai mouvement du simple effet d’optique. Évaluer, c’est comprendre et rester clairvoyant là où les récits s’entrechoquent.
 
 Cette plateforme est construite pour mesurer :
 
