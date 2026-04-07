@@ -13,6 +13,7 @@ const NAV_MAIN = [
   { href: "/dashboard",  label: "Dashboard",       icon: BarChart3 },
   { href: "/leaderboard",label: "Leaderboard",     icon: Trophy },
   { href: "/genome",     label: "Failure Genome",  icon: FlaskConical },
+  { href: "/judge",      label: "LLM Judge",       icon: FlaskConical },
   { href: "/about",      label: "About",           icon: Info },
 ];
 

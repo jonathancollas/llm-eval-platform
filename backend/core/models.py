@@ -190,6 +190,21 @@ class RedboxExploit(SQLModel, table=True):
     created_at: datetime      = Field(default_factory=datetime.utcnow)
 
 
+class JudgeEvaluation(SQLModel, table=True):
+    """LLM-as-Judge score for an eval result item."""
+    __tablename__ = "judge_evaluations"
+
+    id: Optional[int]          = Field(default=None, primary_key=True)
+    campaign_id: int           = Field(foreign_key="campaigns.id", index=True)
+    run_id: int                = Field(foreign_key="eval_runs.id", index=True)
+    result_id: int             = Field(foreign_key="eval_results.id", index=True)
+    judge_model: str           = Field(default="", index=True)
+    judge_score: float         = Field(default=0.0)          # 0-1
+    judge_reasoning: str       = Field(default="")
+    oracle_score: Optional[float] = Field(default=None)      # human label
+    created_at: datetime       = Field(default_factory=datetime.utcnow)
+
+
 class Report(SQLModel, table=True):
     __tablename__ = "reports"
 

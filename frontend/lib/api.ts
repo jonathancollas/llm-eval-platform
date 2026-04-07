@@ -154,3 +154,17 @@ export const genomeApi = {
   campaign: (campaignId: number) => apiFetch<GenomeData>(`/genome/campaigns/${campaignId}`),
   compute: (campaignId: number) => apiFetch<{ profiles_created: number }>(`/genome/campaigns/${campaignId}/compute`, { method: "POST" }),
 };
+
+export const judgeApi = {
+  evaluate: (campaignId: number, judgeModels: string[], criteria = "correctness", maxItems = 50) =>
+    apiFetch<any>("/judge/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ campaign_id: campaignId, judge_models: judgeModels, criteria, max_items: maxItems }),
+      timeoutMs: 300000, // 5 min — many LLM calls
+    }),
+  agreement: (campaignId: number) => apiFetch<any>(`/judge/agreement/${campaignId}`),
+  calibrate: (campaignId: number, oracleLabels: { result_id: number; score: number }[]) =>
+    apiFetch<any>("/judge/calibrate", { method: "POST", body: JSON.stringify({ campaign_id: campaignId, oracle_labels: oracleLabels }) }),
+  bias: (campaignId: number) => apiFetch<any>(`/judge/bias/${campaignId}`),
+  summary: (campaignId: number) => apiFetch<any>(`/judge/summary/${campaignId}`),
+};
