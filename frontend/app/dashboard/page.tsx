@@ -15,7 +15,7 @@ import { Download, FileText, AlertTriangle, XCircle, Zap, Bug, ChevronDown, Chev
 const CHART_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4"];
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-type Tab = "overview" | "genome" | "errors" | "report";
+type Tab = "overview" | "genome" | "errors" | "signals" | "report";
 
 // ── Radar — performance by benchmark ──────────────────────────────────────────
 function RadarSection({ radar }: { radar: Record<string, Record<string, number>> }) {
@@ -382,6 +382,7 @@ function DashboardContent() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [genome, setGenome] = useState<GenomeData | null>(null);
   const [failedData, setFailedData] = useState<FailedItemsData | null>(null);
+  const [insights, setInsights] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -394,22 +395,27 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!selectedId) return;
-    setLoading(true); setData(null); setGenome(null); setFailedData(null);
+    setLoading(true); setData(null); setGenome(null); setFailedData(null); setInsights(null);
     Promise.all([
       resultsApi.dashboard(selectedId),
       genomeApi.campaign(selectedId).catch(() => null),
       resultsApi.failedItems(selectedId).catch(() => null),
-    ]).then(([d, g, f]) => {
+      resultsApi.insights(selectedId).catch(() => null),
+    ]).then(([d, g, f, ins]) => {
       setData(d);
       setGenome(g);
       setFailedData(f);
+      setInsights(ins);
     }).finally(() => setLoading(false));
   }, [selectedId]);
+
+  const signalCount = insights?.signals?.length ?? 0;
 
   const TABS: { key: Tab; label: string; badge?: number }[] = [
     { key: "overview", label: "📊 Vue d'ensemble" },
     { key: "genome", label: "🧬 Génome" },
     { key: "errors", label: "⚠️ Erreurs", badge: failedData ? failedData.total_failed + failedData.failed_runs.length : 0 },
+    { key: "signals" as Tab, label: "🔗 Signaux", badge: signalCount },
     { key: "report", label: "📝 Rapport" },
   ];
 
@@ -500,6 +506,94 @@ function DashboardContent() {
             {tab === "genome" && genome && <GenomeSection genome={genome} />}
 
             {tab === "errors" && failedData && <FailedItemsSection failedData={failedData} />}
+
+            {tab === "signals" && insights && (
+              <div className="space-y-4 max-w-3xl">
+                {/* Cross-module signals */}
+                {insights.signals?.length > 0 ? (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium text-slate-900 mb-2">Signaux inter-modules</h3>
+                    {insights.signals.map((sig: any, i: number) => (
+                      <div key={i} className={`border rounded-xl p-4 ${
+                        sig.severity === "high" ? "border-red-200 bg-red-50" : "border-yellow-200 bg-yellow-50"
+                      }`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                            sig.type === "genome_redbox" ? "bg-red-100 text-red-700" :
+                            sig.type === "judge_disagreement" ? "bg-purple-100 text-purple-700" :
+                            "bg-orange-100 text-orange-700"
+                          }`}>{
+                            sig.type === "genome_redbox" ? "🧬→🔴 Genome → REDBOX" :
+                            sig.type === "judge_disagreement" ? "⚖️ Judge Disagreement" :
+                            "🔴 REDBOX Alert"
+                          }</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            sig.severity === "high" ? "bg-red-600 text-white" : "bg-yellow-500 text-white"
+                          }`}>{sig.severity}</span>
+                        </div>
+                        <p className="text-xs text-slate-700">{sig.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+                    <div className="text-2xl mb-1">✅</div>
+                    <p className="text-sm text-green-700">Aucun signal d'alerte inter-modules</p>
+                  </div>
+                )}
+
+                {/* Module status */}
+                <div className="bg-white border border-slate-200 rounded-xl p-5">
+                  <h3 className="text-sm font-medium text-slate-900 mb-3">Modules actifs</h3>
+                  <div className="grid grid-cols-4 gap-3">
+                    {Object.entries(insights.modules_active ?? {}).map(([mod, active]: any) => (
+                      <div key={mod} className={`text-center p-3 rounded-lg border ${active ? "bg-green-50 border-green-200" : "bg-slate-50 border-slate-200"}`}>
+                        <div className="text-lg">{mod === "eval" ? "📊" : mod === "genome" ? "🧬" : mod === "judge" ? "⚖️" : "🔴"}</div>
+                        <div className="text-xs font-medium text-slate-700 capitalize">{mod}</div>
+                        <div className={`text-[10px] ${active ? "text-green-600" : "text-slate-400"}`}>{active ? "Active" : "Inactive"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Judge summary from insights */}
+                {insights.judge?.total_evaluations > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-5">
+                    <h3 className="text-sm font-medium text-slate-900 mb-3">⚖️ Judge Summary</h3>
+                    <div className="space-y-2">
+                      {Object.entries(insights.judge.judges ?? {}).map(([judge, stats]: any) => (
+                        <div key={judge} className="flex items-center gap-3 text-xs">
+                          <span className="text-slate-600 flex-1 truncate">{judge}</span>
+                          <span className="font-mono font-bold text-slate-900">{(stats.avg_score * 100).toFixed(1)}%</span>
+                          <span className="text-slate-400">{stats.n} evals</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* REDBOX summary from insights */}
+                {insights.redbox?.total_tested > 0 && (
+                  <div className={`border rounded-xl p-5 ${insights.redbox.breach_rate > 0.3 ? "bg-red-50 border-red-200" : "bg-white border-slate-200"}`}>
+                    <h3 className="text-sm font-medium text-slate-900 mb-3">🔴 REDBOX Summary</h3>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div>
+                        <div className="text-xs text-slate-400">Tested</div>
+                        <div className="text-lg font-bold text-slate-900">{insights.redbox.total_tested}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400">Breached</div>
+                        <div className="text-lg font-bold text-red-600">{insights.redbox.total_breached}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400">Avg Severity</div>
+                        <div className="text-lg font-bold text-slate-900">{Math.round(insights.redbox.avg_severity * 100)}%</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {tab === "report" && selectedId && <ReportPanel campaignId={selectedId} />}
           </div>

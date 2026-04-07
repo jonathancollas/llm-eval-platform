@@ -449,3 +449,149 @@ def get_failed_items(
         "total_failed": len(failed_items),
         "failed_runs": failed_runs,
     }
+
+
+# ── Unified Campaign Insights ──────────────────────────────────────────────────
+# Aggregates: eval results + genome + judge + redbox in a single response
+
+@router.get("/campaign/{campaign_id}/insights")
+def get_campaign_insights(campaign_id: int, session: Session = Depends(get_session)):
+    """
+    Unified view across all modules for one campaign.
+    Returns eval summary + genome + judge agreement + redbox exploits.
+    """
+    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit, ModelFingerprint
+    from core.utils import safe_json_load
+
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    runs = session.exec(
+        select(EvalRun).where(EvalRun.campaign_id == campaign_id)
+    ).all()
+
+    model_ids = list({r.model_id for r in runs})
+    models_map = {m.id: m for m in session.exec(
+        select(LLMModel).where(LLMModel.id.in_(model_ids))
+    ).all()} if model_ids else {}
+
+    # ── Eval summary ──
+    completed = [r for r in runs if r.status == JobStatus.COMPLETED]
+    failed = [r for r in runs if r.status == JobStatus.FAILED]
+    eval_summary = {
+        "total_runs": len(runs),
+        "completed": len(completed),
+        "failed": len(failed),
+        "avg_score": round(sum(r.score or 0 for r in completed) / max(len(completed), 1), 4),
+        "total_cost_usd": round(sum(r.total_cost_usd for r in completed), 6),
+        "avg_latency_ms": int(sum(r.total_latency_ms for r in completed) / max(len(completed), 1)),
+    }
+
+    # ── Genome ──
+    profiles = session.exec(
+        select(FailureProfile).where(FailureProfile.campaign_id == campaign_id)
+    ).all()
+
+    genome_by_model = {}
+    if profiles:
+        from eval_engine.failure_genome.classifiers import aggregate_genome
+        by_model_id: dict[int, list] = {}
+        for p in profiles:
+            by_model_id.setdefault(p.model_id, []).append(safe_json_load(p.genome_json, {}))
+        for mid, genomes in by_model_id.items():
+            name = models_map.get(mid, LLMModel(name=f"Model {mid}")).name
+            agg = aggregate_genome(genomes)
+            top_weakness = max(agg.items(), key=lambda x: x[1]) if agg else ("none", 0)
+            genome_by_model[name] = {
+                "genome": agg,
+                "top_weakness": top_weakness[0],
+                "top_weakness_score": round(top_weakness[1], 3),
+            }
+
+    # ── Judge ──
+    judge_evals = session.exec(
+        select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id)
+    ).all()
+
+    judge_summary = {}
+    if judge_evals:
+        by_judge: dict[str, list[float]] = {}
+        for e in judge_evals:
+            by_judge.setdefault(e.judge_model, []).append(e.judge_score)
+        judge_summary = {
+            "total_evaluations": len(judge_evals),
+            "judges": {
+                j: {"avg_score": round(sum(s) / len(s), 4), "n": len(s)}
+                for j, s in by_judge.items()
+            },
+            "has_oracle": any(e.oracle_score is not None for e in judge_evals),
+        }
+
+    # ── REDBOX ──
+    redbox_exploits = session.exec(
+        select(RedboxExploit).where(RedboxExploit.model_id.in_(model_ids))
+    ).all() if model_ids else []
+
+    redbox_summary = {}
+    if redbox_exploits:
+        breached = [e for e in redbox_exploits if e.breached]
+        by_mutation = {}
+        for e in breached:
+            by_mutation[e.mutation_type] = by_mutation.get(e.mutation_type, 0) + 1
+        redbox_summary = {
+            "total_tested": len(redbox_exploits),
+            "total_breached": len(breached),
+            "breach_rate": round(len(breached) / max(len(redbox_exploits), 1), 3),
+            "avg_severity": round(sum(e.severity for e in breached) / max(len(breached), 1), 3),
+            "breaches_by_mutation": by_mutation,
+        }
+
+    # ── Cross-module signals ──
+    signals = []
+    # Genome → REDBOX signal
+    for model_name, gdata in genome_by_model.items():
+        tw = gdata["top_weakness"]
+        tws = gdata["top_weakness_score"]
+        if tws > 0.3:
+            signals.append({
+                "type": "genome_redbox",
+                "severity": "high" if tws > 0.5 else "medium",
+                "message": f"{model_name}: high {tw} risk ({tws:.0%}) — recommend targeted REDBOX testing",
+            })
+
+    # Judge disagreement signal
+    if len(judge_summary.get("judges", {})) >= 2:
+        scores = [v["avg_score"] for v in judge_summary["judges"].values()]
+        spread = max(scores) - min(scores)
+        if spread > 0.15:
+            signals.append({
+                "type": "judge_disagreement",
+                "severity": "high" if spread > 0.25 else "medium",
+                "message": f"Judge disagreement detected (spread={spread:.2f}) — calibrate with oracle labels",
+            })
+
+    # REDBOX breach signal
+    if redbox_summary.get("breach_rate", 0) > 0.3:
+        signals.append({
+            "type": "redbox_alert",
+            "severity": "high",
+            "message": f"High breach rate ({redbox_summary['breach_rate']:.0%}) — model vulnerable to adversarial attacks",
+        })
+
+    return {
+        "campaign_id": campaign_id,
+        "campaign_name": campaign.name,
+        "status": campaign.status,
+        "eval": eval_summary,
+        "genome": genome_by_model,
+        "judge": judge_summary,
+        "redbox": redbox_summary,
+        "signals": signals,
+        "modules_active": {
+            "eval": True,
+            "genome": bool(profiles),
+            "judge": bool(judge_evals),
+            "redbox": bool(redbox_exploits),
+        },
+    }

@@ -135,6 +135,7 @@ export const resultsApi = {
   dashboard: (campaignId: number) => apiFetch<DashboardData>(`/results/campaign/${campaignId}/dashboard`),
   runItems: (runId: number, limit = 50, offset = 0) => apiFetch<{ items: unknown[]; total: number; score: number; metrics: Record<string, unknown> }>(`/results/run/${runId}/items?limit=${limit}&offset=${offset}`),
   failedItems: (campaignId: number) => apiFetch<FailedItemsData>(`/results/campaign/${campaignId}/failed-items`),
+  insights: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/insights`),
   exportUrl: (campaignId: number) => `${API_BASE}/results/campaign/${campaignId}/export.csv`,
 };
 

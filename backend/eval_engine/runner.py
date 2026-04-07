@@ -203,6 +203,87 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         except Exception as e:
             logger.warning(f"Genome computation failed (non-blocking): {e}")
 
+        # Auto-trigger LLM Judge (if Anthropic key available)
+        try:
+            if settings.anthropic_api_key:
+                await _auto_judge_campaign(campaign_id, session)
+                logger.info(f"Campaign {campaign_id}: Auto-judge evaluation completed.")
+        except Exception as e:
+            logger.warning(f"Auto-judge failed (non-blocking): {e}")
+
+
+async def _auto_judge_campaign(campaign_id: int, session: Session) -> None:
+    """Auto-run a single judge on campaign results after completion."""
+    import anthropic
+    from core.models import EvalResult, JudgeEvaluation
+
+    runs = session.exec(
+        select(EvalRun).where(EvalRun.campaign_id == campaign_id, EvalRun.status == JobStatus.COMPLETED)
+    ).all()
+    run_ids = [r.id for r in runs]
+    if not run_ids:
+        return
+
+    # Sample up to 30 items for auto-judge (don't judge everything — too expensive)
+    results = session.exec(
+        select(EvalResult).where(EvalResult.run_id.in_(run_ids)).limit(30)
+    ).all()
+    if not results:
+        return
+
+    # Check if already judged
+    existing = session.exec(
+        select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id).limit(1)
+    ).first()
+    if existing:
+        return  # Already judged
+
+    judge_model = "claude-sonnet-4-20250514"
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+    judge_evals = []
+    for result in results:
+        try:
+            prompt = f"""Score this model response on correctness (0.0-1.0).
+
+## Prompt
+{result.prompt[:800]}
+
+## Response
+{result.response[:1000]}
+
+{f"## Expected: {result.expected[:300]}" if result.expected else ""}
+
+JSON only: {{"score": <float>, "reasoning": "<brief>"}}"""
+
+            msg = await asyncio.wait_for(
+                client.messages.create(
+                    model=judge_model, max_tokens=200,
+                    messages=[{"role": "user", "content": prompt}],
+                ), timeout=15,
+            )
+            text = msg.content[0].text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            data = json.loads(text)
+            score = float(data.get("score", 0.5))
+            reasoning = str(data.get("reasoning", ""))[:300]
+        except Exception:
+            score, reasoning = 0.5, "auto-judge parse error"
+
+        judge_evals.append(JudgeEvaluation(
+            campaign_id=campaign_id,
+            run_id=result.run_id,
+            result_id=result.id,
+            judge_model=judge_model,
+            judge_score=score,
+            judge_reasoning=reasoning,
+        ))
+
+    if judge_evals:
+        session.add_all(judge_evals)
+        session.commit()
+
 
 def _format_eta(seconds: int) -> str:
     if seconds < 60:
