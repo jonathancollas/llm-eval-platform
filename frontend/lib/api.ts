@@ -147,6 +147,7 @@ export const reportsApi = {
     }),
   list: (campaignId: number) => apiFetch<Report[]>(`/reports/campaign/${campaignId}`),
   exportUrl: (reportId: number) => `${API_BASE}/reports/${reportId}/export.md`,
+  exportHtmlUrl: (reportId: number) => `${API_BASE}/reports/${reportId}/export.html`,
 };
 
 export const genomeApi = {

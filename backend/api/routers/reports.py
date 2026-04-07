@@ -1,28 +1,33 @@
 """
 Report generation: sends campaign results to Claude and returns a structured
 markdown analysis (strengths, weaknesses, recommendations, safety alerts).
+Now async with timeout, retry, and proper error handling.
 """
+import asyncio
 import json
+import logging
 from datetime import datetime
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core.database import get_session
 from core.config import get_settings
-from core.models import Campaign, EvalRun, LLMModel, Benchmark, Report, JobStatus
+from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Report, JobStatus, FailureProfile
+from core.utils import safe_json_load
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class ReportRequest(BaseModel):
     campaign_id: int
     custom_instructions: str = ""
-    stream: bool = False
+    include_genome: bool = True
 
 
 class ReportRead(BaseModel):
@@ -40,18 +45,18 @@ def _build_system_prompt() -> str:
         "Write clear, rigorous, actionable evaluation reports for ML engineers and safety researchers. "
         "Use Markdown with clear headings. Lead with an executive summary. "
         "Flag safety violations prominently. Be precise, not vague. "
-        "Tone: technical but readable."
+        "Tone: technical but readable. Write in French if the campaign description is in French."
     )
 
 
-def _build_user_prompt(campaign, runs, models, benches, custom_instructions):
+def _build_user_prompt(campaign, runs, models, benches, custom_instructions, genome_data=None, failed_summary=None):
     results_summary = []
     for run in runs:
         if run.status != JobStatus.COMPLETED:
             continue
         model_name = models.get(run.model_id, LLMModel(name=f"Model#{run.model_id}")).name
         bench_name = benches.get(run.benchmark_id, Benchmark(name=f"Bench#{run.benchmark_id}")).name
-        metrics = json.loads(run.metrics_json)
+        metrics = safe_json_load(run.metrics_json, {})
         results_summary.append({
             "model": model_name,
             "benchmark": bench_name,
@@ -73,10 +78,18 @@ def _build_user_prompt(campaign, runs, models, benches, custom_instructions):
                     f"(threshold: {bench.risk_threshold:.2%})"
                 )
 
-    return f"""# Evaluation Campaign: {campaign.name}
+    # Failed runs
+    failed_runs_info = []
+    for run in runs:
+        if run.status == JobStatus.FAILED:
+            model_name = models.get(run.model_id, LLMModel(name="?")).name
+            bench_name = benches.get(run.benchmark_id, Benchmark(name="?")).name
+            failed_runs_info.append(f"{model_name} × {bench_name}: {run.error_message or 'Unknown error'}")
+
+    prompt = f"""# Evaluation Campaign: {campaign.name}
 
 Description: {campaign.description or "N/A"}
-Seed: {campaign.seed} | Temperature: {campaign.temperature}
+Seed: {campaign.seed} | Temperature: {campaign.temperature} | Max samples: {campaign.max_samples}
 
 ## Results
 ```json
@@ -86,13 +99,35 @@ Seed: {campaign.seed} | Temperature: {campaign.temperature}
 ## Safety Threshold Violations
 {chr(10).join(f"- {v}" for v in violations) if violations else "None detected."}
 
+## Failed Runs ({len(failed_runs_info)})
+{chr(10).join(f"- {f}" for f in failed_runs_info) if failed_runs_info else "None."}
+"""
+
+    if genome_data:
+        prompt += f"""
+## Failure Genome Analysis
+```json
+{json.dumps(genome_data, indent=2)}
+```
+Analyze the failure genome patterns. Identify which models are most prone to hallucination, reasoning collapse, safety bypass, etc.
+"""
+
+    if failed_summary:
+        prompt += f"""
+## Failed Items Summary
+{failed_summary}
+Analyze the error patterns: are they concentrated on specific models? benchmarks? error types?
+"""
+
+    prompt += f"""
 ## Custom Instructions
 {custom_instructions or "None."}
 
 Write a comprehensive report: Executive Summary, Per-Model Analysis,
-Benchmark Breakdown, Safety Assessment, Cost/Efficiency, Head-to-Head
-Comparison, Recommendations, Methodological Limitations.
+Benchmark Breakdown, Safety Assessment, Failure Genome Analysis (if data available),
+Cost/Efficiency, Head-to-Head Comparison, Recommendations, Methodological Limitations.
 """
+    return prompt
 
 
 @router.post("/generate", response_model=ReportRead)
@@ -109,19 +144,90 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
     models_map = {m.id: m for m in session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()}
     benches_map = {b.id: b for b in session.exec(select(Benchmark).where(Benchmark.id.in_(bench_ids))).all()}
 
-    user_prompt = _build_user_prompt(campaign, list(runs), models_map, benches_map, payload.custom_instructions)
+    # Gather genome data if available
+    genome_data = None
+    if payload.include_genome:
+        profiles = session.exec(
+            select(FailureProfile).where(FailureProfile.campaign_id == payload.campaign_id)
+        ).all()
+        if profiles:
+            genome_data = {}
+            for p in profiles:
+                model = session.get(LLMModel, p.model_id)
+                name = model.name if model else f"Model {p.model_id}"
+                genome_data[name] = safe_json_load(p.genome_json, {})
+
+    # Gather failed items summary
+    failed_summary = None
+    completed_run_ids = [r.id for r in runs if r.status == JobStatus.COMPLETED]
+    if completed_run_ids:
+        failed_results = session.exec(
+            select(EvalResult).where(
+                EvalResult.run_id.in_(completed_run_ids),
+                EvalResult.score == 0.0,
+            )
+        ).all()
+        if failed_results:
+            by_type = {}
+            for r in failed_results:
+                resp = r.response or ""
+                if resp.startswith("ERROR:"):
+                    etype = "api_error"
+                else:
+                    etype = "wrong_answer"
+                by_type[etype] = by_type.get(etype, 0) + 1
+            failed_summary = f"Total failed items: {len(failed_results)}. Breakdown: {json.dumps(by_type)}"
+
+    user_prompt = _build_user_prompt(
+        campaign, list(runs), models_map, benches_map,
+        payload.custom_instructions, genome_data, failed_summary,
+    )
 
     if not settings.anthropic_api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured.")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured on backend.")
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    message = client.messages.create(
-        model=settings.report_model,
-        max_tokens=settings.report_max_tokens,
-        system=_build_system_prompt(),
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-    content = message.content[0].text
+    # Async call with timeout and retry
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    max_retries = 2
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            message = await asyncio.wait_for(
+                client.messages.create(
+                    model=settings.report_model,
+                    max_tokens=settings.report_max_tokens,
+                    system=_build_system_prompt(),
+                    messages=[{"role": "user", "content": user_prompt}],
+                ),
+                timeout=settings.report_timeout_seconds,
+            )
+            content = message.content[0].text
+            break
+        except asyncio.TimeoutError:
+            last_error = f"Claude API timeout after {settings.report_timeout_seconds}s (attempt {attempt+1}/{max_retries})"
+            logger.warning(last_error)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)
+                continue
+            raise HTTPException(status_code=504, detail=last_error)
+        except anthropic.RateLimitError as e:
+            last_error = f"Claude rate limited: {e}"
+            logger.warning(last_error)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(10)
+                continue
+            raise HTTPException(status_code=429, detail="Claude API rate limited. Réessayez dans quelques secondes.")
+        except anthropic.APIError as e:
+            last_error = f"Claude API error: {e}"
+            logger.error(last_error)
+            if e.status_code and e.status_code >= 500 and attempt < max_retries - 1:
+                await asyncio.sleep(3)
+                continue
+            raise HTTPException(status_code=502, detail=f"Claude API error: {str(e)[:200]}")
+        except Exception as e:
+            logger.exception(f"Unexpected error generating report: {e}")
+            raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)[:200]}")
 
     report = Report(
         campaign_id=payload.campaign_id,
@@ -160,4 +266,67 @@ def export_report_markdown(report_id: int, session: Session = Depends(get_sessio
         iter([report.content_markdown]),
         media_type="text/markdown",
         headers={"Content-Disposition": f"attachment; filename=report_{report_id}.md"},
+    )
+
+
+@router.get("/{report_id}/export.html")
+def export_report_html(report_id: int, session: Session = Depends(get_session)):
+    """Export report as styled HTML."""
+    report = session.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    campaign = session.get(Campaign, report.campaign_id)
+    campaign_name = campaign.name if campaign else "Unknown"
+
+    # Convert markdown to HTML (basic conversion)
+    import re
+    md = report.content_markdown
+
+    # Headers
+    html_body = md
+    html_body = re.sub(r'^#### (.+)$', r'<h4>\1</h4>', html_body, flags=re.MULTILINE)
+    html_body = re.sub(r'^### (.+)$', r'<h3>\1</h3>', html_body, flags=re.MULTILINE)
+    html_body = re.sub(r'^## (.+)$', r'<h2>\1</h2>', html_body, flags=re.MULTILINE)
+    html_body = re.sub(r'^# (.+)$', r'<h1>\1</h1>', html_body, flags=re.MULTILINE)
+    # Bold, italic
+    html_body = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_body)
+    html_body = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html_body)
+    # Code blocks
+    html_body = re.sub(r'```(\w*)\n(.*?)```', r'<pre><code>\2</code></pre>', html_body, flags=re.DOTALL)
+    html_body = re.sub(r'`(.+?)`', r'<code>\1</code>', html_body)
+    # Lists
+    html_body = re.sub(r'^- (.+)$', r'<li>\1</li>', html_body, flags=re.MULTILINE)
+    # Paragraphs
+    html_body = re.sub(r'\n\n', '</p><p>', html_body)
+
+    html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{report.title}</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }}
+  h1 {{ color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }}
+  h2 {{ color: #334155; margin-top: 2em; }}
+  h3 {{ color: #475569; }}
+  code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }}
+  pre {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; overflow-x: auto; }}
+  pre code {{ background: none; padding: 0; }}
+  li {{ margin: 4px 0; }}
+  strong {{ color: #0f172a; }}
+  .meta {{ color: #94a3b8; font-size: 0.85em; margin-bottom: 2em; }}
+</style>
+</head>
+<body>
+<div class="meta">Campaign: {campaign_name} · Model: {report.model_used} · {report.created_at.strftime('%Y-%m-%d %H:%M')}</div>
+<p>{html_body}</p>
+</body>
+</html>"""
+
+    return HTMLResponse(
+        content=html,
+        headers={"Content-Disposition": f"attachment; filename=report_{report_id}.html"},
     )

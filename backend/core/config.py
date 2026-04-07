@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 60          # Timeout per LLM call
     max_concurrent_runs: int = 3           # Parallel benchmark runs per campaign
     report_model: str = "claude-sonnet-4-20250514"
+    report_max_tokens: int = 4096             # Max tokens for report generation
+    report_timeout_seconds: int = 120         # Timeout for Claude report call
 
     # ── Rate limiting ────────────────────────────────────────────────────────────
     catalog_cache_ttl: int = 300           # Seconds to cache OpenRouter catalog

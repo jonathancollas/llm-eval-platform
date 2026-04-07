@@ -356,10 +356,16 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
           {reports.map(r => (
             <div key={r.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2">
               <span className="text-slate-700 font-medium">{r.title}</span>
-              <a href={reportsApi.exportUrl(r.id)} download
-                className="flex items-center gap-1 text-blue-600 hover:underline">
-                <Download size={10} /> .md
-              </a>
+              <div className="flex items-center gap-2">
+                <a href={reportsApi.exportUrl(r.id)} download
+                  className="flex items-center gap-1 text-blue-600 hover:underline">
+                  <Download size={10} /> .md
+                </a>
+                <a href={reportsApi.exportHtmlUrl(r.id)} download
+                  className="flex items-center gap-1 text-purple-600 hover:underline">
+                  <Download size={10} /> .html
+                </a>
+              </div>
             </div>
           ))}
         </div>

@@ -126,9 +126,15 @@ async def complete(
         except Exception as e:
             err_str = str(e).lower()
             is_rate_limit = "ratelimit" in err_str or "rate limit" in err_str or "429" in err_str
+            is_server_error = "500" in err_str or "502" in err_str or "503" in err_str or "server error" in err_str
             if is_rate_limit and attempt < max_retries - 1:
                 wait = 10 * (attempt + 1)  # 10s, 20s
                 logger.warning(f"Rate limited on {model_str} (attempt {attempt+1}/{max_retries}), waiting {wait}s...")
+                await asyncio.sleep(wait)
+                continue
+            if is_server_error and attempt < max_retries - 1:
+                wait = 5 * (attempt + 1)  # 5s, 10s
+                logger.warning(f"Server error on {model_str} (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
                 await asyncio.sleep(wait)
                 continue
             logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {str(e)[:200]}")
