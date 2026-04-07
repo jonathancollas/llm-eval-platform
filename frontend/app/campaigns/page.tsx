@@ -135,6 +135,16 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
 
       {open && (
         <div className="border-t border-slate-50">
+          {/* Currently processing indicator */}
+          {data.current_item_index != null && data.current_item_label && (
+            <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs">
+              <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0" />
+              <span className="text-amber-700 font-medium">En cours :</span>
+              <span className="text-amber-600">{data.current_item_label}</span>
+              <span className="text-amber-500 font-mono ml-auto">item {data.current_item_index}/{data.current_item_total}</span>
+            </div>
+          )}
+
           {/* Latest item highlight */}
           {latest && (
             <div className="px-5 py-3 bg-blue-50 border-b border-blue-100">
@@ -170,7 +180,11 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
 
           {/* History list */}
           {data.items.length === 0 ? (
-            <div className="px-5 py-4 text-xs text-slate-400 italic">En attente des premiers résultats…</div>
+            <div className="px-5 py-4 text-xs text-slate-400 flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-slate-300 border-t-transparent rounded-full animate-spin shrink-0" />
+              En attente des premiers résultats…
+              {data.current_item_label && <span className="text-slate-500 ml-1">({data.current_item_label})</span>}
+            </div>
           ) : (
             <div className="px-5 py-3 space-y-1.5 max-h-48 overflow-y-auto">
               {data.items.slice(1).map(item => (
@@ -527,26 +541,37 @@ export default function CampaignsPage() {
                     </div>
 
                     {/* Progress bar + ETA + Live item */}
-                    {c.status === "running" && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs text-slate-400 mb-1 flex-wrap gap-1">
-                          <span>{c.progress.toFixed(0)}%</span>
-                          {c.current_item_index != null && c.current_item_total != null && (
-                            <span className="text-slate-500 font-mono">
-                              Item {c.current_item_index}/{c.current_item_total}
-                              {c.current_item_label && <span className="text-slate-400 ml-1.5">· {c.current_item_label}</span>}
-                            </span>
-                          )}
-                          {c.error_message?.startsWith("ETA:") && (
-                            <span className="text-slate-500">{c.error_message}</span>
-                          )}
+                    {c.status === "running" && (() => {
+                      const totalRuns = modelCount * benchCount;
+                      // Compute visual progress: run-level + item-level sub-progress
+                      let visualProgress = c.progress;
+                      if (c.current_item_index != null && c.current_item_total != null && c.current_item_total > 0 && totalRuns > 0) {
+                        const runShare = 100 / totalRuns;
+                        const itemSubProgress = (c.current_item_index / c.current_item_total) * runShare;
+                        visualProgress = Math.max(c.progress, c.progress + itemSubProgress);
+                      }
+                      visualProgress = Math.min(visualProgress, 99.9); // Never show 100% until truly done
+                      return (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between text-xs text-slate-400 mb-1 flex-wrap gap-1">
+                            <span className="font-mono">{visualProgress.toFixed(0)}%</span>
+                            {c.current_item_index != null && c.current_item_total != null && (
+                              <span className="text-slate-500 font-mono">
+                                🔄 Item {c.current_item_index}/{c.current_item_total}
+                                {c.current_item_label && <span className="text-slate-400 ml-1.5">· {c.current_item_label}</span>}
+                              </span>
+                            )}
+                            {c.error_message?.startsWith("ETA:") && (
+                              <span className="text-slate-500 font-medium">{c.error_message}</span>
+                            )}
+                          </div>
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-slate-800 to-slate-600 rounded-full transition-all duration-700 ease-out"
+                              style={{ width: `${visualProgress}%` }} />
+                          </div>
                         </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-slate-900 rounded-full transition-all duration-500"
-                            style={{ width: `${c.progress ?? 0}%` }} />
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
 
                   {/* Actions */}

@@ -140,23 +140,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     eval_run.total_cost_usd = summary.total_cost_usd
                     eval_run.total_latency_ms = summary.total_latency_ms
                     eval_run.num_items = summary.num_items
-
-                    session.add_all([
-                        EvalResult(
-                            run_id=eval_run_id,
-                            item_index=item.item_index,
-                            prompt=item.prompt[:2000],
-                            response=item.response[:2000],
-                            expected=item.expected,
-                            score=item.score,
-                            latency_ms=item.latency_ms,
-                            input_tokens=item.input_tokens,
-                            output_tokens=item.output_tokens,
-                            cost_usd=item.cost_usd,
-                            metadata_json=json.dumps(item.metadata),
-                        )
-                        for item in item_results
-                    ])
+                    # Items already streamed to DB via progress_callback — no batch insert needed
 
                     logger.info(
                         f"EvalRun {eval_run_id}: score={summary.score:.3f} "
@@ -297,8 +281,10 @@ def _format_eta(seconds: int) -> str:
 
 
 async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, eval_run_id: int):
-    """Run one model × benchmark. Returns (RunSummary, item_results) or raises."""
+    """Run one model × benchmark. Streams items to DB as they complete."""
     from pathlib import Path
+    from eval_engine.base import ItemResult as _ItemResult
+
     if benchmark.dataset_path:
         dataset_file = Path(settings.bench_library_path) / benchmark.dataset_path
         logger.info(f"Benchmark '{benchmark.name}': {dataset_file} (exists={dataset_file.exists()})")
@@ -310,19 +296,38 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
 
     max_samples = campaign.max_samples or benchmark.num_samples or settings.default_max_samples
 
-    # Live item tracking callback
-    def _progress(current: int, total: int):
+    # Live item tracking + streaming callback
+    # Each item is persisted to DB immediately so LiveFeed can show it
+    def _progress(current: int, total: int, item_result: _ItemResult = None):
         try:
             with Session(engine) as s:
+                # Update campaign live tracking
                 c = s.get(Campaign, campaign.id)
                 if c:
                     c.current_item_index = current
                     c.current_item_total = total
                     c.current_item_label = f"{model.name} → {benchmark.name}"
                     s.add(c)
-                    s.commit()
-        except Exception:
-            pass  # non-blocking
+
+                # Stream item to DB immediately (powers the LiveFeed)
+                if item_result is not None:
+                    s.add(EvalResult(
+                        run_id=eval_run_id,
+                        item_index=item_result.item_index,
+                        prompt=item_result.prompt[:2000],
+                        response=item_result.response[:2000],
+                        expected=item_result.expected,
+                        score=item_result.score,
+                        latency_ms=item_result.latency_ms,
+                        input_tokens=item_result.input_tokens,
+                        output_tokens=item_result.output_tokens,
+                        cost_usd=item_result.cost_usd,
+                        metadata_json=json.dumps(item_result.metadata),
+                    ))
+
+                s.commit()
+        except Exception as ex:
+            logger.debug(f"Progress callback error (non-blocking): {ex}")
 
     try:
         summary = await asyncio.wait_for(

@@ -157,7 +157,7 @@ class BaseBenchmarkRunner(ABC):
                 ))
 
             if progress_callback:
-                progress_callback(idx + 1, len(items))
+                progress_callback(idx + 1, len(items), item_results[-1])
 
         metrics = self.compute_summary_metrics(item_results)
         primary_score = metrics.get(
