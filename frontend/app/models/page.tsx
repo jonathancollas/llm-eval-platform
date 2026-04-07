@@ -171,10 +171,6 @@ export default function ModelsPage() {
     finally { setImportingOllama(false); };
   };
 
-  const load = useCallback(() =>
-    modelsApi.list().then(setModels).finally(() => setLoading(false)), []);
-  useEffect(() => { load(); }, [load]);
-
   const filtered = useMemo(() => applyFilters(models, filters), [models, filters]);
 
   const freeCount       = useMemo(() => models.filter(m => m.is_free).length, [models]);
