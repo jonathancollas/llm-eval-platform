@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
-         Microscope, FlaskConical, ShieldAlert } from "lucide-react";
+         Microscope, FlaskConical, ShieldAlert, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_MAIN = [
@@ -14,6 +14,7 @@ const NAV_MAIN = [
   { href: "/leaderboard",label: "Leaderboard",     icon: Trophy },
   { href: "/genome",     label: "Failure Genome",  icon: FlaskConical },
   { href: "/judge",      label: "LLM Judge",       icon: FlaskConical },
+  { href: "/policy",     label: "Compliance",       icon: Shield },
   { href: "/about",      label: "About",           icon: Info },
 ];
 

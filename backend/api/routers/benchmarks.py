@@ -275,3 +275,140 @@ def _load_hf_items(task_name: str, limit: int = 60) -> list[dict]:
     except Exception as e:
         logger.warning(f"HuggingFace load failed for '{task_name}': {e}")
         raise
+
+
+# ── CATALOG-2: HuggingFace Dataset Import ──────────────────────────────────────
+
+class HuggingFaceImportRequest(BaseModel):
+    repo_id: str = Field(..., description="HuggingFace repo ID (e.g. 'cais/mmlu', 'tatsu-lab/alpaca_eval')")
+    split: str = Field(default="test", description="Dataset split: train, test, validation")
+    subset: Optional[str] = Field(default=None, description="Dataset subset/config name")
+    max_items: int = Field(default=500, ge=10, le=5000)
+    benchmark_name: Optional[str] = Field(default=None, description="Custom name, defaults to repo_id")
+    benchmark_type: BenchmarkType = Field(default=BenchmarkType.CUSTOM)
+
+
+@router.post("/import-huggingface")
+async def import_huggingface_dataset(
+    payload: HuggingFaceImportRequest,
+    session: Session = Depends(get_session),
+):
+    """Import a dataset from HuggingFace Hub and create a benchmark."""
+    import httpx
+    import logging as _log
+
+    logger = _log.getLogger(__name__)
+
+    # Build HuggingFace API URL
+    base = "https://datasets-server.huggingface.co/rows"
+    params = {
+        "dataset": payload.repo_id,
+        "split": payload.split,
+        "offset": 0,
+        "length": min(payload.max_items, 100),  # API max 100 per page
+    }
+    if payload.subset:
+        params["config"] = payload.subset
+
+    all_items = []
+    offset = 0
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while len(all_items) < payload.max_items:
+                params["offset"] = offset
+                params["length"] = min(100, payload.max_items - len(all_items))
+
+                resp = await client.get(base, params=params)
+                if resp.status_code == 404:
+                    raise HTTPException(404, detail=f"Dataset '{payload.repo_id}' not found on HuggingFace.")
+                resp.raise_for_status()
+                data = resp.json()
+
+                rows = data.get("rows", [])
+                if not rows:
+                    break
+
+                for row in rows:
+                    item = row.get("row", {})
+                    # Normalize common field names
+                    normalized = {}
+                    for k, v in item.items():
+                        normalized[k] = v
+                    # Try to detect question/answer fields
+                    q_fields = ["question", "input", "prompt", "text", "query", "instruction"]
+                    a_fields = ["answer", "output", "target", "expected", "response", "label"]
+                    for qf in q_fields:
+                        if qf in normalized and "question" not in normalized:
+                            normalized["question"] = normalized[qf]
+                            break
+                    for af in a_fields:
+                        if af in normalized and "answer" not in normalized:
+                            normalized["answer"] = str(normalized[af])
+                            break
+                    all_items.append(normalized)
+
+                offset += len(rows)
+                if len(rows) < params["length"]:
+                    break  # No more data
+
+    except httpx.HTTPError as e:
+        raise HTTPException(502, detail=f"HuggingFace API error: {str(e)[:200]}")
+
+    if not all_items:
+        raise HTTPException(400, detail=f"No items found in '{payload.repo_id}' split='{payload.split}'")
+
+    # Save as JSON
+    bench_name = payload.benchmark_name or payload.repo_id.replace("/", "_")
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in bench_name)
+    filename = f"huggingface_{safe_name}_{payload.split}.json"
+    dataset_dir = Path(settings.bench_library_path) / "custom"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    dataset_path = dataset_dir / filename
+
+    with open(dataset_path, "w", encoding="utf-8") as f:
+        json.dump(all_items, f, ensure_ascii=False, indent=2)
+
+    # Create or update benchmark
+    existing = session.exec(
+        select(Benchmark).where(Benchmark.name == bench_name)
+    ).first()
+
+    if existing:
+        existing.dataset_path = f"custom/{filename}"
+        existing.has_dataset = True
+        existing.num_samples = len(all_items)
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        bench = existing
+    else:
+        bench = Benchmark(
+            name=bench_name,
+            type=payload.benchmark_type,
+            description=f"Imported from HuggingFace: {payload.repo_id} ({payload.split} split, {len(all_items)} items)",
+            tags=json.dumps(["huggingface", payload.repo_id.split("/")[0], payload.split]),
+            dataset_path=f"custom/{filename}",
+            metric="accuracy",
+            num_samples=min(len(all_items), 50),
+            config_json=json.dumps({"source": "huggingface", "repo_id": payload.repo_id, "split": payload.split, "subset": payload.subset}),
+            is_builtin=False,
+            has_dataset=True,
+        )
+        session.add(bench)
+        session.commit()
+        session.refresh(bench)
+
+    # Detect fields for preview
+    sample = all_items[0] if all_items else {}
+    detected_fields = list(sample.keys())[:10]
+
+    return {
+        "benchmark_id": bench.id,
+        "benchmark_name": bench.name,
+        "items_imported": len(all_items),
+        "dataset_path": f"custom/{filename}",
+        "detected_fields": detected_fields,
+        "sample_item": {k: str(v)[:200] for k, v in sample.items()} if sample else {},
+        "source": f"huggingface:{payload.repo_id}/{payload.split}",
+    }

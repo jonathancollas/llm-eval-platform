@@ -246,6 +246,30 @@ export default function BenchmarksPage() {
     } finally { setImporting(false); }
   };
 
+  // HuggingFace import
+  const [showHfImport, setShowHfImport] = useState(false);
+  const [hfForm, setHfForm] = useState({ repo_id: "", split: "test", subset: "", max_items: 500 });
+  const [hfLoading, setHfLoading] = useState(false);
+
+  const handleHfImport = async () => {
+    if (!hfForm.repo_id.trim()) return;
+    setHfLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/benchmarks/import-huggingface`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...hfForm, subset: hfForm.subset || undefined }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+      const data = await res.json();
+      alert(`✅ ${data.items_imported} items importés depuis ${data.source}\nBenchmark: ${data.benchmark_name}`);
+      setShowHfImport(false);
+      setHfForm({ repo_id: "", split: "test", subset: "", max_items: 500 });
+      load();
+    } catch (e: any) { alert(`Erreur: ${e.message}`); }
+    finally { setHfLoading(false); }
+  };
+
   return (
     <div>
       <PageHeader
@@ -264,6 +288,10 @@ export default function BenchmarksPage() {
               className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
               🔍 Catalogue
             </button>
+            <button onClick={() => setShowHfImport(!showHfImport)}
+              className="flex items-center gap-2 border border-yellow-300 px-4 py-2 rounded-lg text-sm hover:bg-yellow-50 text-yellow-700 transition-colors">
+              🤗 HuggingFace
+            </button>
             <button onClick={() => setShowCustomForm(!showCustomForm)}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
               <Plus size={14} /> Import Custom
@@ -275,6 +303,50 @@ export default function BenchmarksPage() {
       {importMsg && (
         <div className="mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
           ✅ {importMsg}
+        </div>
+      )}
+
+      {/* HuggingFace import form */}
+      {showHfImport && (
+        <div className="mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
+          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 Importer depuis HuggingFace</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Repository ID *</label>
+              <input value={hfForm.repo_id} onChange={e => setHfForm(f => ({ ...f, repo_id: e.target.value }))}
+                placeholder="ex. cais/mmlu, tatsu-lab/alpaca_eval, Anthropic/hh-rlhf"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Split</label>
+              <select value={hfForm.split} onChange={e => setHfForm(f => ({ ...f, split: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                <option value="test">test</option>
+                <option value="train">train</option>
+                <option value="validation">validation</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Subset (optionnel)</label>
+              <input value={hfForm.subset} onChange={e => setHfForm(f => ({ ...f, subset: e.target.value }))}
+                placeholder="ex. abstract_algebra, anatomy"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Max items</label>
+              <input type="number" value={hfForm.max_items} onChange={e => setHfForm(f => ({ ...f, max_items: +e.target.value }))}
+                min={10} max={5000}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mt-4">
+            <button onClick={handleHfImport} disabled={hfLoading || !hfForm.repo_id.trim()}
+              className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-40">
+              {hfLoading ? <Spinner size={13} /> : null}
+              {hfLoading ? "Import en cours…" : "Importer"}
+            </button>
+            <button onClick={() => setShowHfImport(false)} className="text-sm text-slate-500 hover:text-slate-700">Annuler</button>
+          </div>
         </div>
       )}
 
