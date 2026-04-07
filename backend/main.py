@@ -80,6 +80,32 @@ app = FastAPI(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 import os as _os
+import time as _time
+from collections import defaultdict as _defaultdict
+
+# ── Simple in-memory rate limiter ──────────────────────────────────────────────
+_rate_limit_store: dict[str, list[float]] = _defaultdict(list)
+_RATE_LIMIT_RPM = int(_os.getenv("RATE_LIMIT_RPM", "120"))  # requests per minute
+_RATE_LIMIT_ENABLED = _os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
+    if not _RATE_LIMIT_ENABLED or request.method == "OPTIONS":
+        return await call_next(request)
+    # Skip health and docs
+    if request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json"):
+        return await call_next(request)
+    client_ip = request.client.host if request.client else "unknown"
+    now = _time.time()
+    window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
+    _rate_limit_store[client_ip] = window
+    if len(window) >= _RATE_LIMIT_RPM:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
+    _rate_limit_store[client_ip].append(now)
+    return await call_next(request)
+
+
 _ALLOWED_ORIGINS = [o.strip() for o in _os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()] or [
     "https://llm-eval-frontend.onrender.com",
     "http://localhost:3000",

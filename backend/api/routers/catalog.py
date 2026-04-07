@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
-# ── Simple TTL cache for OpenRouter catalog ──────────────────────────────────
+# ── Simple TTL cache for OpenRouter catalog (thread-safe) ─────────────────────
+import threading
+_catalog_lock = threading.Lock()
 _catalog_cache: list = []
 _catalog_cache_ts: float = 0.0
 
@@ -55,20 +57,26 @@ async def get_model_catalog(
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     global _catalog_cache, _catalog_cache_ts
     now = time.time()
-    if _catalog_cache and (now - _catalog_cache_ts) < settings.catalog_cache_ttl:
-        raw = {"data": _catalog_cache}
+    with _catalog_lock:
+        cache_valid = _catalog_cache and (now - _catalog_cache_ts) < settings.catalog_cache_ttl
+        cached_data = list(_catalog_cache) if cache_valid else []
+    if cached_data:
+        raw = {"data": cached_data}
     else:
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.get(OPENROUTER_MODELS_URL, headers=headers)
                 resp.raise_for_status()
                 raw = resp.json()
-                _catalog_cache = raw.get("data", [])
-                _catalog_cache_ts = now
+                with _catalog_lock:
+                    _catalog_cache = raw.get("data", [])
+                    _catalog_cache_ts = now
         except httpx.HTTPError as e:
-            if _catalog_cache:
+            with _catalog_lock:
+                fallback = list(_catalog_cache)
+            if fallback:
                 logger.warning(f"OpenRouter unreachable, serving cached catalog: {e}")
-                raw = {"data": _catalog_cache}
+                raw = {"data": fallback}
             else:
                 raise HTTPException(status_code=502, detail=f"OpenRouter unreachable: {e}")
 

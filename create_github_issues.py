@@ -4,10 +4,15 @@ Crée toutes les issues GitHub pour la roadmap Mercury Retrograde.
 Usage: python3 create_github_issues.py
 Nécessite: pip install requests
 """
+import os
+import sys
 import requests
 import time
 
-TOKEN = "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"
+TOKEN = os.environ.get("GITHUB_TOKEN", "")
+if not TOKEN:
+    print("ERROR: Set GITHUB_TOKEN environment variable")
+    sys.exit(1)
 REPO  = "jonathancollas/llm-eval-platform"
 BASE  = "https://api.github.com"
 

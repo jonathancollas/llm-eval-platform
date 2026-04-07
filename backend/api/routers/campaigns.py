@@ -14,13 +14,13 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 
 class CampaignCreate(BaseModel):
-    name: str
-    description: str = ""
-    model_ids: list[int]
-    benchmark_ids: list[int]
-    seed: int = 42
-    max_samples: Optional[int] = None
-    temperature: float = 0.0
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    model_ids: list[int] = Field(..., min_length=1, max_length=50)
+    benchmark_ids: list[int] = Field(..., min_length=1, max_length=50)
+    seed: int = Field(default=42, ge=0, le=999999)
+    max_samples: Optional[int] = Field(default=None, ge=1, le=10000)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
 
 
 class CampaignRead(BaseModel):

@@ -137,8 +137,14 @@ async def complete(
                 logger.warning(f"Server error on {model_str} (attempt {attempt+1}/{max_retries}), retrying in {wait}s...")
                 await asyncio.sleep(wait)
                 continue
-            logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {str(e)[:200]}")
+            logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {_sanitize_error(str(e)[:200])}")
             raise
+
+
+def _sanitize_error(msg: str) -> str:
+    """Strip potential API keys from error messages."""
+    import re
+    return re.sub(r'(sk-|key-|Bearer )[a-zA-Z0-9\-_]{10,}', r'\1***REDACTED***', msg)
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     text = response.choices[0].message.content or ""

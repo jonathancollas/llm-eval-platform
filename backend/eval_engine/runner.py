@@ -141,8 +141,8 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     eval_run.total_latency_ms = summary.total_latency_ms
                     eval_run.num_items = summary.num_items
 
-                    for item in item_results:
-                        session.add(EvalResult(
+                    session.add_all([
+                        EvalResult(
                             run_id=eval_run_id,
                             item_index=item.item_index,
                             prompt=item.prompt[:2000],
@@ -154,7 +154,9 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                             output_tokens=item.output_tokens,
                             cost_usd=item.cost_usd,
                             metadata_json=json.dumps(item.metadata),
-                        ))
+                        )
+                        for item in item_results
+                    ])
 
                     logger.info(
                         f"EvalRun {eval_run_id}: score={summary.score:.3f} "

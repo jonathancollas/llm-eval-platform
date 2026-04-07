@@ -136,7 +136,7 @@ class EvalResult(SQLModel, table=True):
     prompt: str            = Field(default="")
     response: str          = Field(default="")
     expected: Optional[str] = Field(default=None)
-    score: float
+    score: float           = Field(index=True)
     latency_ms: int        = Field(default=0)
     input_tokens: int      = Field(default=0)
     output_tokens: int     = Field(default=0)
