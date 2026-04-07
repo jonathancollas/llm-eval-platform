@@ -1,18 +1,32 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "API error");
+async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const { timeoutMs = 30000, ...fetchInit } = init ?? {};
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...fetchInit?.headers },
+      signal: controller.signal,
+      ...fetchInit,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail ?? `API error ${res.status}`);
+    }
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      return null as unknown as T;
+    }
+    return res.json() as Promise<T>;
+  } catch (e: any) {
+    if (e.name === "AbortError") {
+      throw new Error("Request timeout — le backend met trop de temps à répondre. Réessayez.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  if (res.status === 204 || res.headers.get("content-length") === "0") {
-    return null as unknown as T;
-  }
-  return res.json() as Promise<T>;
 }
 
 export type ModelProvider = "ollama" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
@@ -24,17 +38,10 @@ export interface LLMModel {
   endpoint: string | null; has_api_key: boolean; context_length: number;
   cost_input_per_1k: number; cost_output_per_1k: number; tags: string[];
   notes: string; is_active: boolean;
-  supports_vision: boolean;
-  supports_tools: boolean;
-  supports_reasoning: boolean;
-  is_free: boolean;
-  max_output_tokens: number;
-  is_moderated: boolean;
-  tokenizer: string;
-  instruct_type: string;
-  hugging_face_id: string;
-  model_created_at: number;
-  created_at: string; updated_at: string;
+  supports_vision: boolean; supports_tools: boolean; supports_reasoning: boolean;
+  is_free: boolean; max_output_tokens: number; is_moderated: boolean;
+  tokenizer: string; instruct_type: string; hugging_face_id: string;
+  model_created_at: number; created_at: string; updated_at: string;
 }
 
 export interface Benchmark {
@@ -48,13 +55,18 @@ export interface EvalRunSummary {
   id: number; model_id: number; benchmark_id: number; status: JobStatus;
   score: number | null; metrics: Record<string, unknown>;
   total_cost_usd: number; total_latency_ms: number; num_items: number;
+  error_message?: string | null;
 }
 
 export interface Campaign {
   id: number; name: string; description: string; model_ids: number[];
   benchmark_ids: number[]; seed: number; max_samples: number | null;
   temperature: number; status: JobStatus; progress: number;
-  error_message: string | null; created_at: string; started_at: string | null;
+  error_message: string | null;
+  current_item_index: number | null;
+  current_item_total: number | null;
+  current_item_label: string | null;
+  created_at: string; started_at: string | null;
   completed_at: string | null; runs: EvalRunSummary[];
 }
 
@@ -68,6 +80,26 @@ export interface DashboardData {
 export interface Report {
   id: number; campaign_id: number; title: string;
   content_markdown: string; model_used: string; created_at: string;
+}
+
+export interface GenomeData {
+  models: Record<string, Record<string, number>>;
+  ontology: Record<string, { id: string; label: string; color: string; description: string; severity: number }>;
+  computed: boolean;
+  genome_version?: string;
+}
+
+export interface FailedItem {
+  id: number; item_index: number; prompt: string; response: string;
+  expected: string | null; score: number; latency_ms: number;
+  model_name: string; benchmark_name: string; error_type: string;
+}
+export interface FailedRun {
+  run_id: number; model_name: string; benchmark_name: string;
+  error_message: string | null; error_type: string;
+}
+export interface FailedItemsData {
+  items: FailedItem[]; total_failed: number; failed_runs: FailedRun[];
 }
 
 export const modelsApi = {
@@ -102,12 +134,22 @@ export const campaignsApi = {
 export const resultsApi = {
   dashboard: (campaignId: number) => apiFetch<DashboardData>(`/results/campaign/${campaignId}/dashboard`),
   runItems: (runId: number, limit = 50, offset = 0) => apiFetch<{ items: unknown[]; total: number; score: number; metrics: Record<string, unknown> }>(`/results/run/${runId}/items?limit=${limit}&offset=${offset}`),
+  failedItems: (campaignId: number) => apiFetch<FailedItemsData>(`/results/campaign/${campaignId}/failed-items`),
   exportUrl: (campaignId: number) => `${API_BASE}/results/campaign/${campaignId}/export.csv`,
 };
 
 export const reportsApi = {
   generate: (campaignId: number, customInstructions = "") =>
-    apiFetch<Report>("/reports/generate", { method: "POST", body: JSON.stringify({ campaign_id: campaignId, custom_instructions: customInstructions }) }),
+    apiFetch<Report>("/reports/generate", {
+      method: "POST",
+      body: JSON.stringify({ campaign_id: campaignId, custom_instructions: customInstructions }),
+      timeoutMs: 120000,
+    }),
   list: (campaignId: number) => apiFetch<Report[]>(`/reports/campaign/${campaignId}`),
   exportUrl: (reportId: number) => `${API_BASE}/reports/${reportId}/export.md`,
+};
+
+export const genomeApi = {
+  campaign: (campaignId: number) => apiFetch<GenomeData>(`/genome/campaigns/${campaignId}`),
+  compute: (campaignId: number) => apiFetch<{ profiles_created: number }>(`/genome/campaigns/${campaignId}/compute`, { method: "POST" }),
 };

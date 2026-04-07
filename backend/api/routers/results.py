@@ -271,6 +271,8 @@ def get_campaign_live_feed(
     from sqlmodel import select, desc
     from core.models import EvalRun, EvalResult, LLMModel, Benchmark
 
+    campaign = session.get(Campaign, campaign_id)
+
     # Get all runs for this campaign
     runs = session.exec(
         select(EvalRun).where(EvalRun.campaign_id == campaign_id)
@@ -278,7 +280,8 @@ def get_campaign_live_feed(
 
     if not runs:
         return {"items": [], "total_items": 0, "completed_runs": 0, "total_runs": 0,
-                "items_per_sec": 0.0, "eta_seconds": None}
+                "items_per_sec": 0.0, "eta_seconds": None,
+                "current_item_index": None, "current_item_total": None, "current_item_label": None}
 
     run_ids = [r.id for r in runs]
     completed_runs = sum(1 for r in runs if r.status == "completed")
@@ -334,7 +337,6 @@ def get_campaign_live_feed(
     if items_per_sec > 0 and campaign_id:
         from core.models import Campaign
         from datetime import datetime
-        campaign = session.get(Campaign, campaign_id)
         if campaign and campaign.max_samples:
             total_expected = len(runs) * campaign.max_samples
             remaining_items = max(0, total_expected - total_items)
@@ -348,4 +350,102 @@ def get_campaign_live_feed(
         "items_per_sec": items_per_sec,
         "eta_seconds": eta_seconds,
         "pending_runs": sum(1 for r in runs if r.status == "running"),
+        "current_item_index": campaign.current_item_index if campaign else None,
+        "current_item_total": campaign.current_item_total if campaign else None,
+        "current_item_label": campaign.current_item_label if campaign else None,
+    }
+
+
+@router.get("/campaign/{campaign_id}/failed-items")
+def get_failed_items(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+):
+    """Get all failed/errored items for a campaign with error classification."""
+    from sqlmodel import select
+    from core.models import EvalRun, EvalResult, LLMModel, Benchmark
+
+    runs = session.exec(
+        select(EvalRun).where(EvalRun.campaign_id == campaign_id)
+    ).all()
+
+    if not runs:
+        return {"items": [], "total_failed": 0, "failed_runs": []}
+
+    run_ids = [r.id for r in runs]
+    model_cache = {}
+    bench_cache = {}
+
+    # Failed runs (infra errors)
+    failed_runs = []
+    for r in runs:
+        if r.status == JobStatus.FAILED:
+            if r.model_id not in model_cache:
+                m = session.get(LLMModel, r.model_id)
+                model_cache[r.model_id] = m.name if m else f"Model {r.model_id}"
+            if r.benchmark_id not in bench_cache:
+                b = session.get(Benchmark, r.benchmark_id)
+                bench_cache[r.benchmark_id] = b.name if b else f"Bench {r.benchmark_id}"
+            failed_runs.append({
+                "run_id": r.id,
+                "model_name": model_cache[r.model_id],
+                "benchmark_name": bench_cache[r.benchmark_id],
+                "error_message": r.error_message,
+                "error_type": "infra",
+            })
+
+    # Failed items (eval errors: score=0 or response starts with ERROR)
+    all_results = session.exec(
+        select(EvalResult).where(EvalResult.run_id.in_(run_ids))
+    ).all()
+
+    failed_items = []
+    for r in all_results:
+        is_error = (r.response or "").startswith("ERROR:")
+        is_zero = r.score == 0.0
+        if not (is_error or is_zero):
+            continue
+
+        run = next((x for x in runs if x.id == r.run_id), None)
+        if not run:
+            continue
+        if run.model_id not in model_cache:
+            m = session.get(LLMModel, run.model_id)
+            model_cache[run.model_id] = m.name if m else f"Model {run.model_id}"
+        if run.benchmark_id not in bench_cache:
+            b = session.get(Benchmark, run.benchmark_id)
+            bench_cache[run.benchmark_id] = b.name if b else f"Bench {run.benchmark_id}"
+
+        # Classify error
+        resp = r.response or ""
+        if resp.startswith("ERROR:"):
+            error_detail = resp[6:].strip()
+            if "timeout" in error_detail.lower():
+                error_type = "timeout"
+            elif "rate" in error_detail.lower() or "429" in error_detail:
+                error_type = "rate_limit"
+            elif "credit" in error_detail.lower():
+                error_type = "credits"
+            else:
+                error_type = "api_error"
+        else:
+            error_type = "wrong_answer"
+
+        failed_items.append({
+            "id": r.id,
+            "item_index": r.item_index,
+            "prompt": r.prompt[:300] if r.prompt else "",
+            "response": r.response[:300] if r.response else "",
+            "expected": r.expected[:200] if r.expected else None,
+            "score": r.score,
+            "latency_ms": r.latency_ms,
+            "model_name": model_cache[run.model_id],
+            "benchmark_name": bench_cache[run.benchmark_id],
+            "error_type": error_type,
+        })
+
+    return {
+        "items": failed_items,
+        "total_failed": len(failed_items),
+        "failed_runs": failed_runs,
     }

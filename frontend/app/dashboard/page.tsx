@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { resultsApi, campaignsApi, reportsApi } from "@/lib/api";
-import type { DashboardData, Campaign, Report } from "@/lib/api";
+import { resultsApi, campaignsApi, reportsApi, genomeApi } from "@/lib/api";
+import type { DashboardData, Campaign, Report, GenomeData, FailedItemsData, FailedItem, FailedRun } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { formatScore, formatCost, formatLatency, scoreColor } from "@/lib/utils";
@@ -10,20 +10,24 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
-import { Download, FileText, AlertTriangle } from "lucide-react";
+import { Download, FileText, AlertTriangle, XCircle, Zap, Bug, ChevronDown, ChevronUp } from "lucide-react";
 
 const CHART_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4"];
 
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+type Tab = "overview" | "genome" | "errors" | "report";
+
+// ── Radar — performance by benchmark ──────────────────────────────────────────
 function RadarSection({ radar }: { radar: Record<string, Record<string, number>> }) {
   const models = Object.keys(radar);
   const benchmarks = Array.from(new Set(models.flatMap(m => Object.keys(radar[m]))));
   if (!benchmarks.length) return null;
 
-  const data = benchmarks.map(bench => {
+  const data = useMemo(() => benchmarks.map(bench => {
     const row: Record<string, string | number> = { bench };
     models.forEach(m => { row[m] = radar[m]?.[bench] ?? 0; });
     return row;
-  });
+  }), [radar]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6">
@@ -45,6 +49,7 @@ function RadarSection({ radar }: { radar: Record<string, Record<string, number>>
   );
 }
 
+// ── Heatmap ───────────────────────────────────────────────────────────────────
 function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
   const models = [...new Set(heatmap.map(c => c.model_name))];
   const benchmarks = [...new Set(heatmap.map(c => c.benchmark_name))];
@@ -75,8 +80,8 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
                   const color = scoreColor(score ?? null);
                   return (
                     <td key={bench} className="px-3 py-2 text-center">
-                      <div className="inline-flex items-center justify-center w-16 h-10 rounded-lg text-xs font-mono font-medium text-white"
-                        style={{ backgroundColor: score !== null ? color : "#e2e8f0", color: score !== null ? "white" : "#94a3b8" }}>
+                      <div className="inline-flex items-center justify-center w-16 h-10 rounded-lg text-xs font-mono font-medium"
+                        style={{ backgroundColor: score != null ? color : "#e2e8f0", color: score != null ? "white" : "#94a3b8" }}>
                         {score != null ? `${(score * 100).toFixed(1)}%` : cell?.status ?? "—"}
                       </div>
                     </td>
@@ -87,7 +92,6 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
           </tbody>
         </table>
       </div>
-      {/* Color legend */}
       <div className="flex items-center gap-1 mt-4 text-xs text-slate-400">
         <span>Score:</span>
         {[["#ef4444", "<40%"], ["#f97316", "40-60%"], ["#eab308", "60-80%"], ["#22c55e", "≥80%"]].map(([c, l]) => (
@@ -100,6 +104,7 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
   );
 }
 
+// ── Win rates ─────────────────────────────────────────────────────────────────
 function WinRateSection({ winRates }: { winRates: DashboardData["win_rates"] }) {
   if (!winRates.length) return null;
   return (
@@ -141,20 +146,178 @@ function WinRateSection({ winRates }: { winRates: DashboardData["win_rates"] }) 
   );
 }
 
+// ── Genome Section ────────────────────────────────────────────────────────────
+function GenomeSection({ genome }: { genome: GenomeData }) {
+  if (!genome.computed || !Object.keys(genome.models).length) {
+    return (
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+        <div className="text-3xl mb-2">🧬</div>
+        <p className="text-sm text-slate-500">Failure Genome non calculé pour cette campagne.</p>
+        <p className="text-xs text-slate-400 mt-1">Il est calculé automatiquement à la fin du bench.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {Object.entries(genome.models).map(([modelName, dna]) => {
+        const entries = Object.entries(dna).filter(([k]) => genome.ontology[k]).sort(([, a], [, b]) => b - a);
+        const topFailure = entries[0];
+        return (
+          <div key={modelName} className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium text-slate-900 text-sm">{modelName}</h4>
+              {topFailure && topFailure[1] > 0.1 && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  style={{ backgroundColor: genome.ontology[topFailure[0]]?.color + "20", color: genome.ontology[topFailure[0]]?.color }}>
+                  {genome.ontology[topFailure[0]]?.label}: {Math.round(topFailure[1] * 100)}%
+                </span>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {entries.filter(([, v]) => v > 0).map(([key, val]) => {
+                const meta = genome.ontology[key];
+                if (!meta) return null;
+                const pct = Math.round(val * 100);
+                return (
+                  <div key={key} className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
+                    <span className="text-xs text-slate-600 w-36 shrink-0">{meta.label}</span>
+                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: meta.color }} />
+                    </div>
+                    <span className="text-xs font-mono text-slate-500 w-8 text-right">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Failed Items Section ──────────────────────────────────────────────────────
+const ERROR_TYPE_LABELS: Record<string, { label: string; color: string; icon: typeof Bug }> = {
+  wrong_answer: { label: "Mauvaise réponse", color: "text-orange-600 bg-orange-50", icon: XCircle },
+  timeout: { label: "Timeout", color: "text-red-600 bg-red-50", icon: Zap },
+  rate_limit: { label: "Rate limit", color: "text-amber-600 bg-amber-50", icon: Zap },
+  credits: { label: "Credits", color: "text-purple-600 bg-purple-50", icon: Zap },
+  api_error: { label: "API Error", color: "text-red-600 bg-red-50", icon: Bug },
+  infra: { label: "Infra Error", color: "text-red-700 bg-red-50", icon: Bug },
+};
+
+function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [filter, setFilter] = useState<string>("all");
+
+  const allErrors = [
+    ...failedData.failed_runs.map(r => ({ ...r, id: r.run_id, item_index: -1, prompt: "", response: r.error_message ?? "", expected: null, score: 0, latency_ms: 0, model_name: r.model_name, benchmark_name: r.benchmark_name, error_type: "infra" })),
+    ...failedData.items,
+  ];
+
+  const filtered = filter === "all" ? allErrors : allErrors.filter(e => e.error_type === filter);
+  const errorTypes = [...new Set(allErrors.map(e => e.error_type))];
+
+  if (!allErrors.length) {
+    return (
+      <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+        <div className="text-2xl mb-1">✅</div>
+        <p className="text-sm text-green-700 font-medium">Aucune erreur détectée</p>
+        <p className="text-xs text-green-500">Tous les items ont été traités correctement.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h3 className="font-medium text-slate-900 text-sm flex items-center gap-2">
+          <AlertTriangle size={14} className="text-red-500" />
+          Problèmes détectés ({allErrors.length})
+        </h3>
+        <div className="flex gap-1">
+          <button onClick={() => setFilter("all")}
+            className={`text-xs px-2 py-1 rounded-lg transition-colors ${filter === "all" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+            Tous
+          </button>
+          {errorTypes.map(et => {
+            const cfg = ERROR_TYPE_LABELS[et] ?? { label: et, color: "text-slate-600 bg-slate-50" };
+            return (
+              <button key={et} onClick={() => setFilter(et)}
+                className={`text-xs px-2 py-1 rounded-lg transition-colors ${filter === et ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                {cfg.label} ({allErrors.filter(e => e.error_type === et).length})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-1 max-h-96 overflow-y-auto">
+        {filtered.map((item, idx) => {
+          const cfg = ERROR_TYPE_LABELS[item.error_type] ?? { label: item.error_type, color: "text-slate-600 bg-slate-50", icon: Bug };
+          const isExpanded = expanded === idx;
+          const Icon = cfg.icon;
+          return (
+            <div key={idx}>
+              <button onClick={() => setExpanded(isExpanded ? null : idx)}
+                className="w-full flex items-center gap-2 text-xs text-left hover:bg-slate-50 rounded-lg px-3 py-2 transition-colors">
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.color} shrink-0`}>
+                  <Icon size={10} />{cfg.label}
+                </span>
+                <span className="text-slate-500 w-24 shrink-0 truncate">{item.model_name}</span>
+                <span className="text-slate-400 w-28 shrink-0 truncate">{item.benchmark_name}</span>
+                {item.item_index >= 0 && <span className="text-slate-300 shrink-0">Q#{item.item_index + 1}</span>}
+                <span className="text-slate-400 flex-1 truncate">{item.prompt || item.response}</span>
+                {isExpanded ? <ChevronUp size={12} className="text-slate-300 shrink-0" /> : <ChevronDown size={12} className="text-slate-300 shrink-0" />}
+              </button>
+              {isExpanded && (
+                <div className="bg-slate-50 rounded-lg p-3 mx-3 mb-1 border border-slate-100 text-xs space-y-1.5">
+                  {item.prompt && (
+                    <div><span className="font-medium text-slate-400 uppercase text-[10px]">Prompt</span>
+                      <p className="mt-0.5 text-slate-700">{item.prompt}</p></div>
+                  )}
+                  {item.response && (
+                    <div><span className="font-medium text-slate-400 uppercase text-[10px]">Réponse</span>
+                      <p className="mt-0.5 text-slate-700 font-mono">{item.response}</p></div>
+                  )}
+                  {item.expected && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">Attendu:</span>
+                      <span className="font-mono text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{item.expected}</span>
+                    </div>
+                  )}
+                  {item.latency_ms > 0 && <span className="text-slate-400">{item.latency_ms}ms</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Report Panel ──────────────────────────────────────────────────────────────
 function ReportPanel({ campaignId }: { campaignId: number }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [customInstructions, setCustomInstructions] = useState("");
   const [open, setOpen] = useState(false);
 
-  useEffect(() => { reportsApi.list(campaignId).then(setReports); }, [campaignId]);
+  useEffect(() => { reportsApi.list(campaignId).then(setReports).catch(() => {}); }, [campaignId]);
 
   const generate = async () => {
     setGenerating(true);
+    setError(null);
     try {
       await reportsApi.generate(campaignId, customInstructions);
       reportsApi.list(campaignId).then(setReports);
-    } catch (err) { alert(String(err)); } finally { setGenerating(false); }
+    } catch (err: any) {
+      setError(err?.message ?? String(err));
+    } finally { setGenerating(false); }
   };
 
   return (
@@ -164,19 +327,27 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
           <FileText size={14} /> AI Report (Claude)
         </h3>
         <button onClick={() => setOpen(!open)} className="text-xs text-slate-500 hover:text-slate-700">
-          {open ? "Hide" : "Generate"}
+          {open ? "Masquer" : "Générer"}
         </button>
       </div>
 
       {open && (
         <div className="space-y-3 mb-4">
-          <textarea rows={2} placeholder="Optional: custom instructions for the analyst…"
+          <textarea rows={2} placeholder="Instructions personnalisées pour l'analyste…"
             value={customInstructions} onChange={e => setCustomInstructions(e.target.value)}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none" />
-          <button onClick={generate} disabled={generating}
-            className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50">
-            {generating ? <><Spinner size={12} /> Generating…</> : "Generate Report"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={generate} disabled={generating}
+              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50">
+              {generating ? <><Spinner size={12} /> Génération en cours… (peut prendre 1-2 min)</> : "Générer le rapport"}
+            </button>
+          </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
+              <span className="font-medium">Erreur : </span>{error}
+              <p className="text-red-400 mt-1">Vérifiez que le backend est actif et que la clé Anthropic est configurée.</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -197,12 +368,16 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
   );
 }
 
+// ── Main Dashboard ────────────────────────────────────────────────────────────
 function DashboardContent() {
   const searchParams = useSearchParams();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
+  const [genome, setGenome] = useState<GenomeData | null>(null);
+  const [failedData, setFailedData] = useState<FailedItemsData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
 
   useEffect(() => { campaignsApi.list().then(c => setCampaigns(c.filter(x => x.status === "completed"))); }, []);
 
@@ -213,15 +388,30 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!selectedId) return;
-    setLoading(true); setData(null);
-    resultsApi.dashboard(selectedId).then(setData).finally(() => setLoading(false));
+    setLoading(true); setData(null); setGenome(null); setFailedData(null);
+    Promise.all([
+      resultsApi.dashboard(selectedId),
+      genomeApi.campaign(selectedId).catch(() => null),
+      resultsApi.failedItems(selectedId).catch(() => null),
+    ]).then(([d, g, f]) => {
+      setData(d);
+      setGenome(g);
+      setFailedData(f);
+    }).finally(() => setLoading(false));
   }, [selectedId]);
+
+  const TABS: { key: Tab; label: string; badge?: number }[] = [
+    { key: "overview", label: "📊 Vue d'ensemble" },
+    { key: "genome", label: "🧬 Génome" },
+    { key: "errors", label: "⚠️ Erreurs", badge: failedData ? failedData.total_failed + failedData.failed_runs.length : 0 },
+    { key: "report", label: "📝 Rapport" },
+  ];
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        description="Visual analysis of evaluation results."
+        description="Analyse visuelle des résultats d'évaluation."
         action={
           selectedId && data?.status === "completed" ? (
             <a href={resultsApi.exportUrl(selectedId)} download
@@ -235,11 +425,11 @@ function DashboardContent() {
       <div className="p-8">
         {/* Campaign selector */}
         <div className="mb-6">
-          <label className="text-xs font-medium text-slate-600 mb-1.5 block">Campaign</label>
+          <label className="text-xs font-medium text-slate-600 mb-1.5 block">Campagne</label>
           <select value={selectedId ?? ""}
             onChange={e => setSelectedId(e.target.value ? +e.target.value : null)}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white">
-            <option value="">— Select a completed campaign —</option>
+            <option value="">— Sélectionner une campagne terminée —</option>
             {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -249,15 +439,17 @@ function DashboardContent() {
         {data && (
           <div className="space-y-6">
             {/* KPI bar */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               {[
-                { label: "Total Cost", value: formatCost(data.total_cost_usd) },
-                { label: "Avg Latency / Run", value: formatLatency(data.avg_latency_ms) },
-                { label: "Models Compared", value: Object.keys(data.radar).length },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-white border border-slate-200 rounded-xl p-4">
+                { label: "Coût total", value: formatCost(data.total_cost_usd) },
+                { label: "Latence moyenne / run", value: formatLatency(data.avg_latency_ms) },
+                { label: "Modèles comparés", value: Object.keys(data.radar).length },
+                { label: "Erreurs", value: failedData ? failedData.total_failed + failedData.failed_runs.length : "—",
+                  alert: failedData && (failedData.total_failed + failedData.failed_runs.length) > 0 },
+              ].map(({ label, value, alert }) => (
+                <div key={label} className={`bg-white border rounded-xl p-4 ${alert ? "border-red-200" : "border-slate-200"}`}>
                   <div className="text-xs text-slate-500 mb-1">{label}</div>
-                  <div className="text-xl font-semibold text-slate-900">{value}</div>
+                  <div className={`text-xl font-semibold ${alert ? "text-red-600" : "text-slate-900"}`}>{value}</div>
                 </div>
               ))}
             </div>
@@ -274,20 +466,42 @@ function DashboardContent() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-6">
-              <RadarSection radar={data.radar} />
-              <WinRateSection winRates={data.win_rates} />
+            {/* Tab navigation */}
+            <div className="flex gap-1 border-b border-slate-100">
+              {TABS.map(({ key, label, badge }) => (
+                <button key={key} onClick={() => setTab(key)}
+                  className={`px-4 py-2.5 text-sm border-b-2 transition-colors flex items-center gap-1.5
+                    ${tab === key ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
+                  {label}
+                  {badge != null && badge > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>
+                  )}
+                </button>
+              ))}
             </div>
 
-            <HeatmapSection heatmap={data.heatmap} />
+            {/* Tab content */}
+            {tab === "overview" && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <RadarSection radar={data.radar} />
+                  <WinRateSection winRates={data.win_rates} />
+                </div>
+                <HeatmapSection heatmap={data.heatmap} />
+              </div>
+            )}
 
-            {selectedId && <ReportPanel campaignId={selectedId} />}
+            {tab === "genome" && genome && <GenomeSection genome={genome} />}
+
+            {tab === "errors" && failedData && <FailedItemsSection failedData={failedData} />}
+
+            {tab === "report" && selectedId && <ReportPanel campaignId={selectedId} />}
           </div>
         )}
 
         {!selectedId && !loading && (
           <div className="text-center py-20 text-slate-400 text-sm">
-            Select a completed campaign to view its dashboard.
+            Sélectionnez une campagne terminée pour afficher le dashboard.
           </div>
         )}
       </div>

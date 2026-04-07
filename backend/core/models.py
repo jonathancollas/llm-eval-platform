@@ -95,6 +95,10 @@ class Campaign(SQLModel, table=True):
     dataset_version: Optional[str]   = Field(default=None)
     judge_model: Optional[str]       = Field(default=None)
     run_context_json: Optional[str]  = Field(default=None)
+    # Live tracking fields
+    current_item_index: Optional[int] = Field(default=None)
+    current_item_total: Optional[int] = Field(default=None)
+    current_item_label: Optional[str] = Field(default=None)
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)

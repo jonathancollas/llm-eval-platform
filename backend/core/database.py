@@ -53,6 +53,10 @@ def _migrate_add_columns() -> None:
         ("llm_models", "instruct_type", "TEXT", "''"),
         ("llm_models", "hugging_face_id", "TEXT", "''"),
         ("llm_models", "model_created_at", "INTEGER", "0"),
+        # Live tracking columns (Sprint 1+2)
+        ("campaigns", "current_item_index", "INTEGER", "NULL"),
+        ("campaigns", "current_item_total", "INTEGER", "NULL"),
+        ("campaigns", "current_item_label", "TEXT", "NULL"),
     ]
     import sqlite3
     db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")

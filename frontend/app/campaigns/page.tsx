@@ -59,6 +59,9 @@ interface LiveData {
   items: LiveItem[]; total_items: number; completed_runs: number;
   total_runs: number; items_per_sec: number; eta_seconds: number | null;
   pending_runs: number;
+  current_item_index: number | null;
+  current_item_total: number | null;
+  current_item_label: string | null;
 }
 
 function useCountdown(etaSeconds: number | null) {
@@ -113,6 +116,11 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
           {countdown != null && countdown > 0 && (
             <span className="bg-slate-900 text-white px-2 py-0.5 rounded font-mono font-bold text-xs">
               ⏱ {fmtTime(countdown)}
+            </span>
+          )}
+          {data.current_item_index != null && data.current_item_total != null && (
+            <span className="text-blue-600 font-mono text-[11px]">
+              🔄 {data.current_item_index}/{data.current_item_total}
             </span>
           )}
           {latest && (
@@ -518,11 +526,17 @@ export default function CampaignsPage() {
                       {c.created_at && <span>{timeAgo(c.created_at)}</span>}
                     </div>
 
-                    {/* Progress bar + ETA */}
+                    {/* Progress bar + ETA + Live item */}
                     {c.status === "running" && (
                       <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                        <div className="flex items-center justify-between text-xs text-slate-400 mb-1 flex-wrap gap-1">
                           <span>{c.progress.toFixed(0)}%</span>
+                          {c.current_item_index != null && c.current_item_total != null && (
+                            <span className="text-slate-500 font-mono">
+                              Item {c.current_item_index}/{c.current_item_total}
+                              {c.current_item_label && <span className="text-slate-400 ml-1.5">· {c.current_item_label}</span>}
+                            </span>
+                          )}
                           {c.error_message?.startsWith("ETA:") && (
                             <span className="text-slate-500">{c.error_message}</span>
                           )}

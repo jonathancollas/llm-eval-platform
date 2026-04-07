@@ -35,6 +35,9 @@ class CampaignRead(BaseModel):
     status: JobStatus
     progress: float
     error_message: Optional[str]
+    current_item_index: Optional[int] = None
+    current_item_total: Optional[int] = None
+    current_item_label: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
@@ -54,6 +57,9 @@ def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
         status=c.status,
         progress=c.progress,
         error_message=c.error_message,
+        current_item_index=c.current_item_index,
+        current_item_total=c.current_item_total,
+        current_item_label=c.current_item_label,
         created_at=c.created_at,
         started_at=c.started_at,
         completed_at=c.completed_at,

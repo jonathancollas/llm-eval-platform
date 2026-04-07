@@ -185,6 +185,9 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         campaign.status = JobStatus.COMPLETED
         campaign.progress = 100.0
         campaign.error_message = None
+        campaign.current_item_index = None
+        campaign.current_item_total = None
+        campaign.current_item_label = None
         campaign.completed_at = datetime.utcnow()
         session.add(campaign)
         session.commit()
@@ -224,6 +227,20 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
 
     max_samples = campaign.max_samples or benchmark.num_samples or settings.default_max_samples
 
+    # Live item tracking callback
+    def _progress(current: int, total: int):
+        try:
+            with Session(engine) as s:
+                c = s.get(Campaign, campaign.id)
+                if c:
+                    c.current_item_index = current
+                    c.current_item_total = total
+                    c.current_item_label = f"{model.name} → {benchmark.name}"
+                    s.add(c)
+                    s.commit()
+        except Exception:
+            pass  # non-blocking
+
     try:
         summary = await asyncio.wait_for(
             runner.run(
@@ -231,7 +248,7 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
                 max_samples=max_samples,
                 seed=campaign.seed,
                 temperature=campaign.temperature,
-                progress_callback=None,
+                progress_callback=_progress,
             ),
             timeout=600,  # 10 min max per benchmark run
         )
