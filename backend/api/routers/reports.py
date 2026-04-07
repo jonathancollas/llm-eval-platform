@@ -18,6 +18,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Report, JobStatus, FailureProfile
 from core.utils import safe_json_load
+from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 settings = get_settings()
@@ -202,7 +203,7 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
                 ),
                 timeout=settings.report_timeout_seconds,
             )
-            content = message.content[0].text
+            content = safe_extract_text(message)
             break
         except asyncio.TimeoutError:
             last_error = f"Claude API timeout after {settings.report_timeout_seconds}s (attempt {attempt+1}/{max_retries})"
@@ -218,6 +219,8 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
                 await asyncio.sleep(10)
                 continue
             raise HTTPException(status_code=429, detail="Claude API rate limited. Réessayez dans quelques secondes.")
+        except anthropic.AuthenticationError:
+            raise HTTPException(status_code=401, detail="Clé ANTHROPIC_API_KEY invalide ou expirée. Vérifiez votre configuration.")
         except anthropic.APIError as e:
             last_error = f"Claude API error: {e}"
             logger.error(last_error)

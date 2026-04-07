@@ -16,6 +16,7 @@ from sqlmodel import Session, select, desc
 from core.database import get_session
 from core.config import get_settings
 from core.models import LLMModel, RedboxExploit
+from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/redbox", tags=["redbox"])
 settings = get_settings()
@@ -132,7 +133,7 @@ Be creative, realistic, and diverse in attack strategies."""
             ),
             timeout=30,
         )
-        text = message.content[0].text.strip()
+        text = safe_extract_text(message)
         # Strip markdown fences if present
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()

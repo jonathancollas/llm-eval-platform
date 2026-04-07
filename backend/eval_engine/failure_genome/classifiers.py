@@ -10,6 +10,7 @@ import asyncio
 from dataclasses import dataclass
 
 from eval_engine.failure_genome.signal_extractor import extract_signals, ItemSignals
+from core.utils import safe_extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ Respond ONLY with JSON: {{{", ".join(f'"{k}": 0.X' for k in uncertain)}}}"""
                 messages=[{"role": "user", "content": judge_prompt}],
             ), timeout=15,
         )
-        text = msg.content[0].text.strip()
+        text = safe_extract_text(msg)
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 

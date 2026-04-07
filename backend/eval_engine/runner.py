@@ -14,6 +14,7 @@ from core.database import engine
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
 from core.config import get_settings
 from eval_engine.registry import get_runner
+from core.utils import safe_extract_text
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -272,7 +273,7 @@ JSON only: {{"score": <float>, "reasoning": "<brief>"}}"""
                     messages=[{"role": "user", "content": prompt}],
                 ), timeout=15,
             )
-            text = msg.content[0].text.strip()
+            text = safe_extract_text(msg)
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
             data = json.loads(text)

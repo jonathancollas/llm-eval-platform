@@ -12,6 +12,7 @@ from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Fail
 from core.utils import safe_json_load
 from eval_engine.failure_genome.ontology import ONTOLOGY, GENOME_KEYS, FAILURE_GENOME_VERSION
 from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome, classify_run_hybrid
+from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/genome", tags=["genome"])
 logger = logging.getLogger(__name__)
@@ -450,7 +451,7 @@ Write in the same language as the campaign names. Be precise, cite numbers."""
                 messages=[{"role": "user", "content": prompt}],
             ), timeout=30,
         )
-        explanation = msg.content[0].text
+        explanation = safe_extract_text(msg)
     except Exception as e:
         explanation = f"Narrative generation failed: {e}"
 

@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from core.database import get_session
 from core.config import get_settings
 from core.models import EvalRun, LLMModel, Benchmark, JobStatus
+from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 settings = get_settings()
@@ -311,7 +312,7 @@ Sois concret, cite les modèles par nom, donne les scores précis."""
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
-    content = message.content[0].text
+    content = safe_extract_text(message)
 
     report = DomainReport(
         domain=domain,

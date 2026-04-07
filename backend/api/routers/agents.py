@@ -17,6 +17,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import AgentTrajectory, LLMModel, Campaign
 from core.utils import safe_json_load
+from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 settings = get_settings()
@@ -203,7 +204,7 @@ Respond ONLY with JSON: {{"task_completion": 0.X, "tool_precision": 0.X, "planni
                 messages=[{"role": "user", "content": prompt}],
             ), timeout=30,
         )
-        text = msg.content[0].text.strip()
+        text = safe_extract_text(msg)
         if text.startswith("```"):
             text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         return json.loads(text)

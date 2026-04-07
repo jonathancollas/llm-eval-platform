@@ -18,6 +18,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, JudgeEvaluation, JobStatus
 from core.utils import safe_json_load
+from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/judge", tags=["judge"])
 settings = get_settings()
@@ -82,7 +83,7 @@ async def _judge_item(judge_model: str, prompt: str, response: str,
                 messages=[{"role": "user", "content": user_msg}],
             ), timeout=30,
         )
-        text = msg.content[0].text.strip()
+        text = safe_extract_text(msg)
     else:
         # Use litellm for other providers
         from eval_engine.litellm_client import complete
