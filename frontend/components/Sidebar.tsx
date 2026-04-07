@@ -109,7 +109,7 @@ export function Sidebar() {
 
       <div className="p-3 border-t border-slate-100 text-center">
         <div className="text-slate-300" style={{ fontSize: "9px", letterSpacing: "1px" }}>
-          ☿ MR v0.4.0 · INESIA 2026
+          ☿ MR v0.5.0 · INESIA 2026
         </div>
       </div>
     </aside>

@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     app_name: str = "Mercury Retrograde — INESIA Eval Platform"
-    app_version: str = "0.3.0"
+    app_version: str = "0.5.0"
     debug: bool = False
 
     # ── Security ────────────────────────────────────────────────────────────────
