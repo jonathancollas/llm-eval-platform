@@ -229,7 +229,7 @@ export default function CampaignsPage() {
   const [saving, setSaving] = useState(false);
   const [runningId, setRunningId] = useState<number | null>(null);
   const [benchFilter, setBenchFilter] = useState<BenchmarkFilterKey>("all");
-  const [modelFilter, setModelFilter] = useState<"all" | "free">("all");
+  const [modelFilter, setModelFilter] = useState<"all" | "free" | "local">("all");
   const [form, setForm] = useState({
     name: "", description: "", model_ids: [] as number[],
     benchmark_ids: [] as number[], max_samples: 50, temperature: 0.0,
@@ -313,8 +313,13 @@ export default function CampaignsPage() {
 
   const isRunning = (c: Campaign) => c.status === "running" || runningId === c.id;
   const filteredBenches = benches.filter(b => isBenchInFilter(b, benchFilter));
-  const filteredModels = models.filter(m => modelFilter === "all" || (m as any).is_free);
+  const filteredModels = models.filter(m =>
+    modelFilter === "all" ? true :
+    modelFilter === "free" ? (m as any).is_free :
+    modelFilter === "local" ? (m as any).provider === "ollama" : true
+  );
   const freeCount = models.filter(m => (m as any).is_free).length;
+  const localCount = models.filter(m => (m as any).provider === "ollama").length;
 
   const canNext = [
     form.name.trim().length > 0,
@@ -389,6 +394,12 @@ export default function CampaignsPage() {
                     className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "free" ? "bg-green-700 text-white border-green-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                     🆓 Gratuits ({freeCount})
                   </button>
+                  {localCount > 0 && (
+                    <button onClick={() => setModelFilter("local")}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "local" ? "bg-purple-700 text-white border-purple-700" : "border-purple-200 text-purple-600 hover:bg-purple-50"}`}>
+                      🦙 Local ({localCount})
+                    </button>
+                  )}
                 </div>
                 <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
                   {form.model_ids.length} sélectionné{form.model_ids.length !== 1 ? "s" : ""}
@@ -401,17 +412,19 @@ export default function CampaignsPage() {
                   {filteredModels.map(m => {
                     const selected = form.model_ids.includes(m.id);
                     const isFree = (m as any).is_free;
+                    const isLocal = (m as any).provider === "ollama";
                     return (
                       <button key={m.id} type="button"
                         onClick={() => setForm(f => ({ ...f, model_ids: toggleId(f.model_ids, m.id) }))}
-                        className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                        className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : isLocal ? "border-purple-200 bg-purple-50 hover:border-purple-300" : "border-slate-200 bg-white hover:border-slate-300"}`}>
                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
                           {selected && <Check size={11} className="text-slate-900" />}
                         </div>
                         <div className="min-w-0">
                           <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
                           <div className={`text-xs ${selected ? "text-slate-300" : "text-slate-400"}`}>
-                            {isFree && <span className={`font-bold mr-1 ${selected ? "text-green-300" : "text-green-600"}`}>FREE</span>}
+                            {isLocal && <span className={`font-bold mr-1 ${selected ? "text-purple-300" : "text-purple-600"}`}>🦙 LOCAL</span>}
+                            {isFree && !isLocal && <span className={`font-bold mr-1 ${selected ? "text-green-300" : "text-green-600"}`}>FREE</span>}
                             {m.provider}
                           </div>
                         </div>
