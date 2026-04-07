@@ -1,3 +1,6 @@
+"""
+Model Registry — CRUD + connection testing.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field

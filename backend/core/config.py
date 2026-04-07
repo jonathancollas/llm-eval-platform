@@ -1,3 +1,6 @@
+"""
+Application settings — Pydantic BaseSettings with env var support.
+"""
 import os
 from functools import lru_cache
 from pydantic import Field, field_validator

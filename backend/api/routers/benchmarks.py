@@ -1,3 +1,6 @@
+"""
+Benchmarks — CRUD + dataset upload + HuggingFace import.
+"""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field

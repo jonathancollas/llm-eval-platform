@@ -1,3 +1,6 @@
+"""
+Failure Genome ontology — versioned taxonomy of LLM failure modes.
+"""
 FAILURE_GENOME_VERSION = "1.0.0"
 
 ONTOLOGY = {

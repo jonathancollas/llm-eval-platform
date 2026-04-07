@@ -1,3 +1,6 @@
+"""
+Campaigns — CRUD + run/cancel + live tracking.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field
