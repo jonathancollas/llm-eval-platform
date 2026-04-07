@@ -244,3 +244,36 @@ class Report(SQLModel, table=True):
     content_markdown: str   = Field(default="")
     model_used: str         = Field(default="")
     created_at: datetime    = Field(default_factory=datetime.utcnow)
+
+
+# ── INFRA-3: Multi-tenant models ──────────────────────────────────────────────
+
+class Tenant(SQLModel, table=True):
+    """Organization / team tenant for multi-tenant isolation."""
+    __tablename__ = "tenants"
+
+    id: Optional[int]        = Field(default=None, primary_key=True)
+    name: str                = Field(index=True, unique=True)
+    slug: str                = Field(index=True, unique=True)
+    api_key_hash: str        = Field(default="")  # SHA-256 of the tenant API key
+    plan: str                = Field(default="free")  # free, pro, enterprise
+    max_campaigns: int       = Field(default=10)
+    max_models: int          = Field(default=20)
+    is_active: bool          = Field(default=True)
+    settings_json: str       = Field(default="{}")  # tenant-specific settings
+    created_at: datetime     = Field(default_factory=datetime.utcnow)
+
+
+class User(SQLModel, table=True):
+    """User within a tenant."""
+    __tablename__ = "users"
+
+    id: Optional[int]        = Field(default=None, primary_key=True)
+    tenant_id: int           = Field(foreign_key="tenants.id", index=True)
+    email: str               = Field(index=True, unique=True)
+    name: str                = Field(default="")
+    role: str                = Field(default="viewer")  # viewer, runner, admin
+    password_hash: str       = Field(default="")
+    is_active: bool          = Field(default=True)
+    last_login: Optional[datetime] = Field(default=None)
+    created_at: datetime     = Field(default_factory=datetime.utcnow)
