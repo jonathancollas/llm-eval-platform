@@ -1,0 +1,68 @@
+site_name: Mercury Retrograde — Documentation
+site_description: AI Evaluation Platform — INESIA
+site_url: https://jonathancollas.github.io/llm-eval-platform/
+repo_url: https://github.com/jonathancollas/llm-eval-platform
+repo_name: jonathancollas/llm-eval-platform
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Mode clair
+    - scheme: default
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Mode sombre
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Accueil: index.md
+  - Architecture: architecture.md
+  - Guide:
+    - Démarrage rapide: guide/quickstart.md
+    - Configuration: guide/configuration.md
+    - Ollama (local): guide/ollama.md
+  - Modules:
+    - Core Eval: modules/core.md
+    - Genomia: modules/genomia.md
+    - REDBOX: modules/redbox.md
+    - LLM Judge: modules/judge.md
+    - Agent Eval: modules/agents.md
+    - Compliance: modules/compliance.md
+  - API Reference:
+    - Endpoints: api/endpoints.md
+    - Models: api/models.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
