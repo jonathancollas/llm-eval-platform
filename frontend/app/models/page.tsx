@@ -11,10 +11,10 @@ import { providerColor } from "@/lib/utils";
 import { Plus, Zap, Eye, Wrench, Brain, CheckCircle2, XCircle,
          ChevronDown, ChevronUp, Trash2, Search, ExternalLink, Shield } from "lucide-react";
 
-const PROVIDERS: ModelProvider[] = ["openai", "anthropic", "mistral", "groq", "custom"];
+const PROVIDERS: ModelProvider[] = ["openai", "anthropic", "mistral", "groq", "ollama", "custom"];
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI", anthropic: "Anthropic", mistral: "Mistral",
-  groq: "Groq", custom: "Custom / OpenRouter",
+  groq: "Groq", ollama: "Ollama (local)", custom: "Custom / OpenRouter",
 };
 
 // ── Filter bar ─────────────────────────────────────────────────────────────────
@@ -146,6 +146,30 @@ export default function ModelsPage() {
     endpoint: "", api_key: "", context_length: 4096,
     cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "",
   });
+  const [ollamaStatus, setOllamaStatus] = useState<{ available: boolean; total: number } | null>(null);
+  const [importingOllama, setImportingOllama] = useState(false);
+
+  const load = useCallback(() =>
+    modelsApi.list().then(setModels).finally(() => setLoading(false)), []);
+  useEffect(() => { load(); }, [load]);
+
+  // Check Ollama on mount
+  useEffect(() => {
+    import("@/lib/api").then(({ ollamaApi }) => {
+      ollamaApi.check().then(setOllamaStatus).catch(() => {});
+    });
+  }, []);
+
+  const handleImportOllama = async () => {
+    setImportingOllama(true);
+    try {
+      const { ollamaApi } = await import("@/lib/api");
+      const result = await ollamaApi.import();
+      if (result.added > 0) load();
+      alert(result.available ? `${result.added} modèle(s) Ollama importé(s)` : "Ollama non disponible");
+    } catch (e: any) { alert(String(e)); }
+    finally { setImportingOllama(false); };
+  };
 
   const load = useCallback(() =>
     modelsApi.list().then(setModels).finally(() => setLoading(false)), []);
@@ -202,6 +226,12 @@ export default function ModelsPage() {
         description={`${models.length} modèles · ${freeCount} gratuits`}
         action={
           <div className="flex gap-2">
+            {ollamaStatus?.available && (
+              <button onClick={handleImportOllama} disabled={importingOllama}
+                className="flex items-center gap-2 border border-purple-200 px-4 py-2 rounded-lg text-sm hover:bg-purple-50 text-purple-700 transition-colors disabled:opacity-50">
+                {importingOllama ? <Spinner size={13} /> : "🦙"} Ollama ({ollamaStatus.total})
+              </button>
+            )}
             <button onClick={() => setShowCatalog(true)}
               className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
               🔍 Catalogue OpenRouter

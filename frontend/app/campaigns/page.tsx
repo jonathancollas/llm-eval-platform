@@ -89,28 +89,31 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
   const countdown = useCountdown(data?.eta_seconds ?? null);
 
   useEffect(() => {
-    const poll = setInterval(async () => {
+    // Immediate first poll (don't wait 1.5s)
+    const fetchLive = async () => {
       try {
         const res = await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=8`);
         if (res.ok) setData(await res.json());
       } catch {}
-    }, 1500);
+    };
+    fetchLive();
+    const poll = setInterval(fetchLive, 1500);
     return () => clearInterval(poll);
   }, [campaignId]);
 
-  if (!data) return null;
+  const latest = data?.items?.[0] ?? null;
 
-  const latest = data.items[0] ?? null;
-
+  // Always render — show connecting state if no data yet
   return (
     <div className="border-t border-slate-100">
-      {/* Header bar */}
+      {/* Header bar — always visible with red pulse */}
       <button className="w-full flex items-center justify-between px-5 py-2.5 text-xs hover:bg-slate-50"
         onClick={() => setOpen(o => !o)}>
         <div className="flex items-center gap-3 flex-wrap">
           <Radio size={12} className="text-red-500 animate-pulse shrink-0" />
           <span className="font-semibold text-slate-700">Live</span>
-          {data.items_per_sec > 0 && (
+          {!data && <span className="text-slate-400 animate-pulse">Connexion…</span>}
+          {data && data.items_per_sec > 0 && (
             <span className="text-slate-500 font-mono">{data.items_per_sec} items/s</span>
           )}
           {countdown != null && countdown > 0 && (
@@ -118,7 +121,7 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
               ⏱ {fmtTime(countdown)}
             </span>
           )}
-          {data.current_item_index != null && data.current_item_total != null && (
+          {data?.current_item_index != null && data?.current_item_total != null && (
             <span className="text-blue-600 font-mono text-[11px]">
               🔄 {data.current_item_index}/{data.current_item_total}
             </span>
@@ -128,7 +131,7 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
               {latest.model_name} → {latest.benchmark_name}
             </span>
           )}
-          <span className="text-slate-300 ml-auto">{data.total_items} items · {data.completed_runs}/{data.total_runs} runs</span>
+          {data && <span className="text-slate-300 ml-auto">{data.total_items} items · {data.completed_runs}/{data.total_runs} runs</span>}
         </div>
         {open ? <ChevronUp size={13} className="text-slate-300 shrink-0" /> : <ChevronDown size={13} className="text-slate-300 shrink-0" />}
       </button>
@@ -136,7 +139,7 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
       {open && (
         <div className="border-t border-slate-50">
           {/* Currently processing indicator */}
-          {data.current_item_index != null && data.current_item_label && (
+          {data?.current_item_index != null && data?.current_item_label && (
             <div className="px-5 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs">
               <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0" />
               <span className="text-amber-700 font-medium">En cours :</span>
@@ -179,11 +182,11 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
           )}
 
           {/* History list */}
-          {data.items.length === 0 ? (
+          {!data || data.items.length === 0 ? (
             <div className="px-5 py-4 text-xs text-slate-400 flex items-center gap-2">
               <div className="w-3 h-3 border-2 border-slate-300 border-t-transparent rounded-full animate-spin shrink-0" />
               En attente des premiers résultats…
-              {data.current_item_label && <span className="text-slate-500 ml-1">({data.current_item_label})</span>}
+              {data?.current_item_label && <span className="text-slate-500 ml-1">({data.current_item_label})</span>}
             </div>
           ) : (
             <div className="px-5 py-3 space-y-1.5 max-h-48 overflow-y-auto">

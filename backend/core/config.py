@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     openrouter_api_key: str = ""
 
+    # ── Ollama (local models) ─────────────────────────────────────────────────
+    ollama_base_url: str = "http://localhost:11434"
+
     # ── Eval defaults ────────────────────────────────────────────────────────────
     default_max_samples: int = 50
     llm_timeout_seconds: int = 60          # Timeout per LLM call

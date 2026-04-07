@@ -54,8 +54,8 @@ def _build_litellm_model_str(model: LLMModel) -> str:
         case ModelProvider.ANTHROPIC: return f"anthropic/{model.model_id}"
         case ModelProvider.MISTRAL:   return f"mistral/{model.model_id}"
         case ModelProvider.GROQ:      return f"groq/{model.model_id}"
+        case ModelProvider.OLLAMA:    return f"ollama/{model.model_id}"
         case ModelProvider.CUSTOM:
-            # Custom endpoint — treat as OpenAI-compatible
             return f"openai/{model.model_id}"
         case _:
             return model.model_id
@@ -68,6 +68,8 @@ def _build_kwargs(model: LLMModel, temperature: float, max_tokens: int) -> dict:
     # Endpoint
     if _is_openrouter(model):
         kwargs["api_base"] = OPENROUTER_BASE_URL
+    elif model.provider == ModelProvider.OLLAMA:
+        kwargs["api_base"] = model.endpoint or settings.ollama_base_url
     elif model.provider == ModelProvider.CUSTOM and model.endpoint:
         kwargs["api_base"] = model.endpoint
 

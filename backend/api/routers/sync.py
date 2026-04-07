@@ -256,3 +256,114 @@ def sync_benchmarks_check(session: Session = Depends(get_session)):
 def import_all_benchmarks(session: Session = Depends(get_session)):
     added = sync_benchmarks_from_catalog(session)
     return {"added": added}
+
+
+# ── Ollama Local Models ────────────────────────────────────────────────────────
+
+async def sync_ollama_models(session: Session) -> tuple[int, bool]:
+    """Discover and import local Ollama models."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.info(f"Ollama not available at {settings.ollama_base_url}: {e}")
+        return 0, False
+
+    models_data = data.get("models", [])
+    if not models_data:
+        return 0, True
+
+    added = 0
+    for m in models_data:
+        name = m.get("name", "")
+        if not name:
+            continue
+
+        # Check if already exists
+        existing = session.exec(
+            select(LLMModel).where(
+                LLMModel.model_id == name,
+                LLMModel.provider == ModelProvider.OLLAMA,
+            )
+        ).first()
+        if existing:
+            continue
+
+        # Parse size info
+        size_bytes = m.get("size", 0)
+        size_gb = round(size_bytes / 1e9, 1) if size_bytes else 0
+
+        details = m.get("details", {})
+        param_size = details.get("parameter_size", "")
+        family = details.get("family", "")
+        quant = details.get("quantization_level", "")
+
+        display_name = f"{name} (Ollama)"
+        if param_size:
+            display_name = f"{name} [{param_size}]"
+
+        tags = ["ollama", "local", "free"]
+        if family:
+            tags.append(family)
+        if quant:
+            tags.append(quant)
+
+        session.add(LLMModel(
+            name=display_name,
+            provider=ModelProvider.OLLAMA,
+            model_id=name,
+            endpoint=settings.ollama_base_url,
+            context_length=int(details.get("context_length", 4096)),
+            cost_input_per_1k=0.0,
+            cost_output_per_1k=0.0,
+            is_free=True,
+            tags=json.dumps(tags),
+            notes=f"Local Ollama model. {param_size} params, {size_gb}GB on disk. Quantization: {quant}",
+        ))
+        added += 1
+
+    if added:
+        session.commit()
+    logger.info(f"Ollama sync: {added} new models from {len(models_data)} available")
+    return added, True
+
+
+@router.get("/ollama")
+async def check_ollama():
+    """Check Ollama availability and list local models."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        return {"available": False, "error": str(e), "url": settings.ollama_base_url, "models": []}
+
+    models = []
+    for m in data.get("models", []):
+        details = m.get("details", {})
+        models.append({
+            "name": m.get("name", ""),
+            "size_gb": round(m.get("size", 0) / 1e9, 1),
+            "family": details.get("family", ""),
+            "parameter_size": details.get("parameter_size", ""),
+            "quantization": details.get("quantization_level", ""),
+        })
+
+    return {
+        "available": True,
+        "url": settings.ollama_base_url,
+        "models": models,
+        "total": len(models),
+    }
+
+
+@router.post("/ollama/import")
+async def import_ollama_models(session: Session = Depends(get_session)):
+    """Import all local Ollama models into the platform."""
+    added, available = await sync_ollama_models(session)
+    if not available:
+        return {"added": 0, "available": False, "message": f"Ollama not reachable at {settings.ollama_base_url}"}
+    return {"added": added, "available": True}

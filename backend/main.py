@@ -57,9 +57,11 @@ async def lifespan(app: FastAPI):
 
 
 async def _background_openrouter_sync():
-    """Sync OpenRouter models after startup — runs in background, doesn't block requests."""
+    """Sync OpenRouter + Ollama models after startup — runs in background."""
     import asyncio
     await asyncio.sleep(2)  # Let server fully start first
+
+    # OpenRouter
     try:
         from api.routers.sync import sync_openrouter_models
         with Session(engine) as session:
@@ -67,6 +69,18 @@ async def _background_openrouter_sync():
             logger.info(f"Background OpenRouter sync: +{added} models (synced={synced})")
     except Exception as e:
         logger.warning(f"Background OpenRouter sync failed: {e}")
+
+    # Ollama (local models)
+    try:
+        from api.routers.sync import sync_ollama_models
+        with Session(engine) as session:
+            added, available = await sync_ollama_models(session)
+            if available:
+                logger.info(f"Background Ollama sync: +{added} local models")
+            else:
+                logger.info("Ollama not available (optional — install from ollama.com)")
+    except Exception as e:
+        logger.debug(f"Ollama sync skipped: {e}")
 
 
 app = FastAPI(

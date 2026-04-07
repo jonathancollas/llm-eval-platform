@@ -57,6 +57,7 @@ export function providerColor(provider: string): string {
     anthropic: "bg-amber-100 text-amber-700",
     mistral: "bg-orange-100 text-orange-700",
     groq: "bg-cyan-100 text-cyan-700",
+    ollama: "bg-purple-100 text-purple-700",
     custom: "bg-slate-100 text-slate-700",
   };
   return map[provider] ?? "bg-slate-100 text-slate-700";

@@ -320,31 +320,33 @@ def get_campaign_live_feed(
             "benchmark_name": bench_cache[run.benchmark_id],
         })
 
-    # Compute rate from run timestamps
-    total_items = sum(r.num_items for r in runs if r.status == "completed")
+    # Compute rate from ACTUAL items in DB (including streamed ones during execution)
+    all_item_ids = session.exec(
+        select(EvalResult.id).where(EvalResult.run_id.in_(run_ids))
+    ).all() if run_ids else []
+    total_items_in_db = len(all_item_ids)
+
     items_per_sec = 0.0
     eta_seconds = None
 
     started_runs = [r for r in runs if r.started_at]
-    if started_runs and total_items > 0:
+    if started_runs and total_items_in_db > 0:
         from datetime import datetime
         earliest = min(r.started_at for r in started_runs)
         elapsed = (datetime.utcnow() - earliest).total_seconds()
-        if elapsed > 0:
-            items_per_sec = round(total_items / elapsed, 2)
+        if elapsed > 1:
+            items_per_sec = round(total_items_in_db / elapsed, 2)
 
-    # Compute ETA from rate
-    if items_per_sec > 0 and campaign_id:
-        from core.models import Campaign
-        from datetime import datetime
-        if campaign and campaign.max_samples:
-            total_expected = len(runs) * campaign.max_samples
-            remaining_items = max(0, total_expected - total_items)
-            eta_seconds = int(remaining_items / items_per_sec)
+    # Compute ETA from rate + expected total
+    if items_per_sec > 0 and campaign:
+        max_samples = campaign.max_samples or 50
+        total_expected = len(runs) * max_samples
+        remaining_items = max(0, total_expected - total_items_in_db)
+        eta_seconds = int(remaining_items / items_per_sec)
 
     return {
         "items": items,
-        "total_items": total_items,
+        "total_items": total_items_in_db,
         "completed_runs": completed_runs,
         "total_runs": len(runs),
         "items_per_sec": items_per_sec,

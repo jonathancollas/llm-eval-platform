@@ -140,11 +140,37 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     eval_run.total_cost_usd = summary.total_cost_usd
                     eval_run.total_latency_ms = summary.total_latency_ms
                     eval_run.num_items = summary.num_items
-                    # Items already streamed to DB via progress_callback — no batch insert needed
+
+                    # Check how many items were already streamed via callback
+                    already_written = session.exec(
+                        select(EvalResult).where(EvalResult.run_id == eval_run_id)
+                    ).all()
+                    already_ids = {r.item_index for r in already_written}
+
+                    # Batch-insert any items NOT yet streamed (e.g. HarnessRunner)
+                    missing = [item for item in item_results if item.item_index not in already_ids]
+                    if missing:
+                        session.add_all([
+                            EvalResult(
+                                run_id=eval_run_id,
+                                item_index=item.item_index,
+                                prompt=item.prompt[:2000],
+                                response=item.response[:2000],
+                                expected=item.expected,
+                                score=item.score,
+                                latency_ms=item.latency_ms,
+                                input_tokens=item.input_tokens,
+                                output_tokens=item.output_tokens,
+                                cost_usd=item.cost_usd,
+                                metadata_json=json.dumps(item.metadata),
+                            )
+                            for item in missing
+                        ])
 
                     logger.info(
                         f"EvalRun {eval_run_id}: score={summary.score:.3f} "
-                        f"items={summary.num_items} latency={summary.total_latency_ms}ms"
+                        f"items={summary.num_items} (streamed={len(already_ids)}, batch={len(missing)}) "
+                        f"latency={summary.total_latency_ms}ms"
                     )
 
                 eval_run.completed_at = datetime.utcnow()

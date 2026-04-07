@@ -9,6 +9,7 @@ class ModelProvider(str, Enum):
     ANTHROPIC = "anthropic"
     MISTRAL   = "mistral"
     GROQ      = "groq"
+    OLLAMA    = "ollama"     # Local Ollama models
     CUSTOM    = "custom"     # OpenAI-compatible endpoints (OpenRouter, vLLM, etc.)
 
 

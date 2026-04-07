@@ -31,6 +31,12 @@ async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: numb
 
 export type ModelProvider = "ollama" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
 export type BenchmarkType = "academic" | "safety" | "coding" | "custom";
+
+// Ollama API
+export const ollamaApi = {
+  check: () => apiFetch<{ available: boolean; url: string; models: any[]; total: number }>("/sync/ollama"),
+  import: () => apiFetch<{ added: number; available: boolean }>("/sync/ollama/import", { method: "POST" }),
+};
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export interface LLMModel {
