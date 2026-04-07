@@ -142,12 +142,7 @@ async def complete(
             logger.error(f"LiteLLM call failed for {model_str}: {type(e).__name__}: {_sanitize_error(str(e)[:200])}")
             raise
 
-
-def _sanitize_error(msg: str) -> str:
-    """Strip potential API keys from error messages."""
-    import re
-    return re.sub(r'(sk-|key-|Bearer )[a-zA-Z0-9\-_]{10,}', r'\1***REDACTED***', msg)
-
+    # Success path — extract response
     latency_ms = int((time.monotonic() - t0) * 1000)
     text = response.choices[0].message.content or ""
 
@@ -168,6 +163,12 @@ def _sanitize_error(msg: str) -> str:
         cost_usd=cost,
         model_id=model_str,
     )
+
+
+def _sanitize_error(msg: str) -> str:
+    """Strip potential API keys from error messages."""
+    import re
+    return re.sub(r'(sk-|key-|Bearer )[a-zA-Z0-9\-_]{10,}', r'\1***REDACTED***', msg)
 
 
 async def test_connection(model: LLMModel) -> dict:
