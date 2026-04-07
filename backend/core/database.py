@@ -1,5 +1,5 @@
 """
-Database setup — SQLite with SQLModel.
+Database setup — supports SQLite (dev) and PostgreSQL (production).
 Auto-seeds built-in benchmarks at startup.
 """
 import json
@@ -14,20 +14,44 @@ from core.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Ensure data directory exists (SQLite)
-db_path = settings.database_url.replace("sqlite:///", "")
-if db_path and not db_path.startswith(":"):
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+_is_sqlite = settings.database_url.startswith("sqlite")
+_is_postgres = settings.database_url.startswith("postgres")
 
-engine = create_engine(
-    settings.database_url,
-    echo=settings.debug,
-    connect_args={
-        "check_same_thread": False,
-        "timeout": 30,                # Wait up to 30s if DB is locked
-    },
-    pool_pre_ping=True,
-)
+# ── Engine creation ────────────────────────────────────────────────────────────
+
+if _is_sqlite:
+    db_path = settings.database_url.replace("sqlite:///", "")
+    if db_path and not db_path.startswith(":"):
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    engine = create_engine(
+        settings.database_url,
+        echo=settings.debug,
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30,
+        },
+        pool_pre_ping=True,
+    )
+elif _is_postgres:
+    # PostgreSQL — connection pooling for production
+    db_url = settings.database_url
+    # Handle Render-style postgres:// vs postgresql://
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+    engine = create_engine(
+        db_url,
+        echo=settings.debug,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_pre_ping=True,
+        pool_recycle=300,
+    )
+    logger.info(f"PostgreSQL engine created (pool_size={settings.db_pool_size})")
+else:
+    # Fallback
+    engine = create_engine(settings.database_url, echo=settings.debug, pool_pre_ping=True)
 
 
 def create_db_and_tables() -> None:
@@ -39,7 +63,10 @@ def create_db_and_tables() -> None:
 
 
 def _migrate_add_columns() -> None:
-    """Add new columns to existing tables (idempotent ALTER TABLE)."""
+    """Add new columns to existing tables (idempotent). SQLite only — PostgreSQL uses create_all."""
+    if not _is_sqlite:
+        return  # PostgreSQL handles schema via SQLModel.metadata.create_all
+
     new_columns = [
         # (table, column, type, default)
         ("campaigns", "system_prompt_hash", "TEXT", "NULL"),

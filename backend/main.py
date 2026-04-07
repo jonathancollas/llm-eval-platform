@@ -175,13 +175,22 @@ for router in [models.router, benchmarks.router, campaigns.router, results.route
 @app.get("/api/health", tags=["health"])
 def health():
     from pathlib import Path
+    from core import job_queue
     bench_path = Path(settings.bench_library_path)
     bench_exists = bench_path.exists()
     bench_files = list(bench_path.rglob("*.json")) if bench_exists else []
+    queue = job_queue.get_queue_status()
+
+    is_postgres = settings.database_url.startswith("postgres")
+
     return {
         "status": "ok",
         "version": settings.app_version,
+        "database": "postgresql" if is_postgres else "sqlite",
+        "queue_mode": queue["mode"],
+        "queue_active": queue["in_memory_tasks"],
         "bench_library_path": str(bench_path),
         "bench_library_exists": bench_exists,
         "bench_files_count": len(bench_files),
+        "ollama_url": settings.ollama_base_url,
     }

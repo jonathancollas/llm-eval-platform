@@ -597,3 +597,69 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
             "redbox": bool(redbox_exploits),
         },
     }
+
+
+# ── CATALOG-1: Contamination Detection ─────────────────────────────────────────
+
+@router.get("/campaign/{campaign_id}/contamination")
+def check_contamination(campaign_id: int, session: Session = Depends(get_session)):
+    """Analyze benchmark results for signs of test data contamination."""
+    from eval_engine.contamination import analyze_contamination
+
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    runs = session.exec(
+        select(EvalRun).where(EvalRun.campaign_id == campaign_id, EvalRun.status == JobStatus.COMPLETED)
+    ).all()
+
+    if not runs:
+        return {"results": {}, "computed": False}
+
+    model_cache = {}
+    bench_cache = {}
+    results_by_run = {}
+
+    for run in runs:
+        if run.model_id not in model_cache:
+            m = session.get(LLMModel, run.model_id)
+            model_cache[run.model_id] = m.name if m else f"Model {run.model_id}"
+        if run.benchmark_id not in bench_cache:
+            b = session.get(Benchmark, run.benchmark_id)
+            bench_cache[run.benchmark_id] = (b.name if b else f"Bench {run.benchmark_id}", str(b.type) if b else "custom")
+
+        items = session.exec(
+            select(EvalResult).where(EvalResult.run_id == run.id).limit(100)
+        ).all()
+
+        bench_name, bench_type = bench_cache[run.benchmark_id]
+        model_name = model_cache[run.model_id]
+
+        item_dicts = [
+            {"prompt": r.prompt, "response": r.response, "expected": r.expected, "score": r.score}
+            for r in items
+        ]
+
+        analysis = analyze_contamination(item_dicts, benchmark_name=bench_name, benchmark_type=bench_type)
+        key = f"{model_name} × {bench_name}"
+        results_by_run[key] = {
+            **analysis,
+            "model_name": model_name,
+            "benchmark_name": bench_name,
+            "run_id": run.id,
+        }
+
+    # Overall risk
+    all_scores = [r["contamination_score"] for r in results_by_run.values()]
+    overall = sum(all_scores) / max(len(all_scores), 1)
+    high_risk = [k for k, v in results_by_run.items() if v["risk"] in ("high", "medium")]
+
+    return {
+        "campaign_id": campaign_id,
+        "results": results_by_run,
+        "overall_contamination_score": round(overall, 3),
+        "overall_risk": "high" if overall > 0.4 else "medium" if overall > 0.15 else "low",
+        "high_risk_runs": high_risk,
+        "computed": True,
+    }

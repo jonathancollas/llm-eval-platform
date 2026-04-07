@@ -28,6 +28,11 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────────────────────────
     database_url: str = "sqlite:///./data/llm_eval.db"
+    db_pool_size: int = 5               # PostgreSQL connection pool
+    db_max_overflow: int = 10           # PostgreSQL max overflow connections
+
+    # ── Redis (optional — for job queue + caching) ────────────────────────────
+    redis_url: str = ""                 # e.g. redis://localhost:6379/0
 
     # ── Benchmark library ────────────────────────────────────────────────────────
     bench_library_path: str = "/app/bench_library"
