@@ -170,6 +170,26 @@ class ModelFingerprint(SQLModel, table=True):
     updated_at: datetime     = Field(default_factory=datetime.utcnow)
 
 
+class RedboxExploit(SQLModel, table=True):
+    """A discovered adversarial exploit from REDBOX testing."""
+    __tablename__ = "redbox_exploits"
+
+    id: Optional[int]         = Field(default=None, primary_key=True)
+    model_id: int             = Field(foreign_key="llm_models.id", index=True)
+    seed_prompt: str          = Field(default="")
+    mutation_type: str        = Field(default="", index=True)  # prompt_injection, jailbreak, etc.
+    adversarial_prompt: str   = Field(default="")
+    model_response: str       = Field(default="")
+    difficulty: float         = Field(default=0.5)       # 0-1
+    severity: float           = Field(default=0.0)       # 0-1 CVSS-like
+    breached: bool            = Field(default=False)      # Did the model fail?
+    expected_failure: str     = Field(default="")         # genome failure type
+    failure_detected: str     = Field(default="")         # actual failure type
+    latency_ms: int           = Field(default=0)
+    tags: str                 = Field(default="[]")
+    created_at: datetime      = Field(default_factory=datetime.utcnow)
+
+
 class Report(SQLModel, table=True):
     __tablename__ = "reports"
 
