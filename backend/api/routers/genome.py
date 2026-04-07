@@ -11,7 +11,7 @@ from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, FailureProfile, ModelFingerprint, JobStatus
 from core.utils import safe_json_load
 from eval_engine.failure_genome.ontology import ONTOLOGY, GENOME_KEYS, FAILURE_GENOME_VERSION
-from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
+from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome, classify_run_hybrid
 
 router = APIRouter(prefix="/genome", tags=["genome"])
 logger = logging.getLogger(__name__)
@@ -379,3 +379,187 @@ def compare_campaigns(
         "probable_causes": [{"variable": k, **v} for k, v in probable_causes],
         "note": "Causal attribution based on parameter differences. More data = higher confidence.",
     }
+
+
+# ── REGRESSION-3: LLM-generated causal explanation ─────────────────────────────
+
+@router.post("/regression/explain")
+async def explain_regression(
+    baseline_id: int,
+    candidate_id: int,
+    session: Session = Depends(get_session),
+):
+    """Generate a natural language causal explanation of the regression."""
+    from core.config import get_settings
+    settings = get_settings()
+
+    # First get the comparison data
+    comparison = compare_campaigns(baseline_id, candidate_id, session)
+
+    if not comparison.get("regression_detected"):
+        return {
+            **comparison,
+            "explanation": "No significant regression detected. Score delta is within normal range.",
+        }
+
+    if not settings.anthropic_api_key:
+        return {
+            **comparison,
+            "explanation": "ANTHROPIC_API_KEY required for narrative generation.",
+        }
+
+    # Get genome data for both campaigns
+    baseline_genome = get_campaign_genome(baseline_id, session)
+    candidate_genome = get_campaign_genome(candidate_id, session)
+
+    import anthropic, asyncio
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+
+    prompt = f"""You are an AI evaluation expert analyzing a performance regression.
+
+## Baseline Campaign: {comparison['baseline']['name']}
+Average score: {comparison['baseline']['avg_score']}
+
+## Candidate Campaign: {comparison['candidate']['name']}
+Average score: {comparison['candidate']['avg_score']}
+
+## Score Delta: {comparison['score_delta']} {"(REGRESSION)" if comparison['regression_detected'] else ""}
+
+## Probable Causes (by causal probability):
+{json.dumps(comparison['probable_causes'], indent=2)}
+
+## Baseline Failure Genome:
+{json.dumps(baseline_genome.get('models', {}), indent=2) if baseline_genome.get('computed') else 'Not computed'}
+
+## Candidate Failure Genome:
+{json.dumps(candidate_genome.get('models', {}), indent=2) if candidate_genome.get('computed') else 'Not computed'}
+
+Write a concise root cause analysis (3-5 paragraphs):
+1. What regressed and by how much
+2. Most likely cause(s) with evidence
+3. Which failure modes worsened (from genome comparison)
+4. Specific recommendations to fix
+5. Confidence level of this analysis
+
+Write in the same language as the campaign names. Be precise, cite numbers."""
+
+    try:
+        msg = await asyncio.wait_for(
+            client.messages.create(
+                model="claude-sonnet-4-20250514", max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            ), timeout=30,
+        )
+        explanation = msg.content[0].text
+    except Exception as e:
+        explanation = f"Narrative generation failed: {e}"
+
+    return {
+        **comparison,
+        "explanation": explanation,
+        "baseline_genome": baseline_genome.get("models", {}),
+        "candidate_genome": candidate_genome.get("models", {}),
+    }
+
+
+# ── GENOME-2: Signal Extractor API ─────────────────────────────────────────────
+
+@router.get("/signals/{run_id}")
+def get_run_signals(run_id: int, limit: int = 20, session: Session = Depends(get_session)):
+    """Extract and return signals for items in an eval run (debugging/analysis)."""
+    from eval_engine.failure_genome.signal_extractor import extract_signals, signals_to_dict
+
+    run = session.get(EvalRun, run_id)
+    if not run:
+        raise HTTPException(404, detail="Run not found.")
+
+    results = session.exec(
+        select(EvalResult).where(EvalResult.run_id == run_id).limit(limit)
+    ).all()
+
+    bench = session.get(Benchmark, run.benchmark_id)
+    bench_type = str(bench.type) if bench else "custom"
+
+    items = []
+    for r in results:
+        sig = extract_signals(
+            prompt=r.prompt or "", response=r.response or "",
+            expected=r.expected, score=r.score,
+            latency_ms=r.latency_ms, benchmark_type=bench_type,
+        )
+        items.append({
+            "item_index": r.item_index,
+            "score": r.score,
+            "signals": signals_to_dict(sig),
+        })
+
+    return {"run_id": run_id, "items": items, "total": len(items)}
+
+
+# ── GENOME-4: Hybrid Classification API ───────────────────────────────────────
+
+@router.post("/campaigns/{campaign_id}/compute-hybrid")
+async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get_session)):
+    """Compute genome with LLM hybrid classification (GENOME-4).
+    More accurate than rule-based only, but uses LLM API calls.
+    """
+    from eval_engine.failure_genome.classifiers import classify_run_hybrid
+
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(404, detail="Campaign not found.")
+    if campaign.status != JobStatus.COMPLETED:
+        raise HTTPException(400, detail="Campaign must be completed.")
+
+    runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
+    profiles_created = 0
+
+    for run in runs:
+        if run.status != JobStatus.COMPLETED:
+            continue
+
+        bench = session.get(Benchmark, run.benchmark_id)
+        bench_type = str(bench.type) if bench else "custom"
+        results = session.exec(select(EvalResult).where(EvalResult.run_id == run.id)).all()
+
+        if results:
+            # Use hybrid classification (rules + LLM) for each item
+            item_genomes = []
+            for r in results[:30]:  # Limit LLM calls to 30 items per run
+                g = await classify_run_hybrid(
+                    prompt=r.prompt or "", response=r.response or "",
+                    expected=r.expected, score=r.score,
+                    benchmark_type=bench_type, latency_ms=r.latency_ms,
+                    num_items=len(results),
+                )
+                item_genomes.append(g)
+            # Rule-only for remaining items
+            for r in results[30:]:
+                item_genomes.append(classify_run(
+                    prompt=r.prompt or "", response=r.response or "",
+                    expected=r.expected, score=r.score,
+                    benchmark_type=bench_type, latency_ms=r.latency_ms,
+                    num_items=len(results),
+                ))
+            genome = aggregate_genome(item_genomes)
+        else:
+            genome = classify_run(
+                prompt="", response="", expected=None,
+                score=run.score or 0.0, benchmark_type=bench_type,
+                latency_ms=run.total_latency_ms, num_items=run.num_items,
+            )
+
+        existing = session.exec(select(FailureProfile).where(FailureProfile.run_id == run.id)).first()
+        if existing:
+            existing.genome_json = json.dumps(genome)
+            session.add(existing)
+        else:
+            session.add(FailureProfile(
+                run_id=run.id, campaign_id=campaign_id,
+                model_id=run.model_id, benchmark_id=run.benchmark_id,
+                genome_json=json.dumps(genome), genome_version=FAILURE_GENOME_VERSION + "-hybrid",
+            ))
+            profiles_created += 1
+
+    session.commit()
+    return {"profiles_created": profiles_created, "method": "hybrid_rules_llm", "total_runs": len(runs)}

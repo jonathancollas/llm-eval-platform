@@ -160,6 +160,10 @@ export const reportsApi = {
 export const genomeApi = {
   campaign: (campaignId: number) => apiFetch<GenomeData>(`/genome/campaigns/${campaignId}`),
   compute: (campaignId: number) => apiFetch<{ profiles_created: number }>(`/genome/campaigns/${campaignId}/compute`, { method: "POST" }),
+  computeHybrid: (campaignId: number) => apiFetch<{ profiles_created: number; method: string }>(`/genome/campaigns/${campaignId}/compute-hybrid`, { method: "POST", timeoutMs: 120000 }),
+  signals: (runId: number) => apiFetch<{ items: any[] }>(`/genome/signals/${runId}`),
+  regressionCompare: (baselineId: number, candidateId: number) => apiFetch<any>(`/genome/regression/compare?baseline_id=${baselineId}&candidate_id=${candidateId}`),
+  regressionExplain: (baselineId: number, candidateId: number) => apiFetch<any>(`/genome/regression/explain?baseline_id=${baselineId}&candidate_id=${candidateId}`, { method: "POST", timeoutMs: 60000 }),
 };
 
 export const judgeApi = {

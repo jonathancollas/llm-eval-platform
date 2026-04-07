@@ -94,11 +94,14 @@ export default function GenomePage() {
       .then(r => r.json()).then(setGenome).finally(() => setLoading(false));
   }, [selectedId]);
 
-  const handleCompute = async () => {
+  const handleCompute = async (hybrid = false) => {
     if (!selectedId) return;
     setComputing(true);
     try {
-      await fetch(`${API_BASE}/genome/campaigns/${selectedId}/compute`, { method: "POST" });
+      const endpoint = hybrid
+        ? `${API_BASE}/genome/campaigns/${selectedId}/compute-hybrid`
+        : `${API_BASE}/genome/campaigns/${selectedId}/compute`;
+      await fetch(endpoint, { method: "POST" });
       const d = await fetch(`${API_BASE}/genome/campaigns/${selectedId}`).then(r => r.json());
       setGenome(d);
       reload();
@@ -135,10 +138,16 @@ export default function GenomePage() {
                 <option value="" disabled>Choisir une campagne terminée…</option>
                 {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <button onClick={handleCompute} disabled={!selectedId || computing}
+              <button onClick={() => handleCompute(false)} disabled={!selectedId || computing}
                 className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
                 {computing ? <Spinner size={13} /> : "⚡"}
                 {computing ? "Analyse en cours…" : "Analyser"}
+              </button>
+              <button onClick={() => handleCompute(true)} disabled={!selectedId || computing}
+                className="flex items-center gap-2 border border-purple-300 text-purple-700 px-4 py-2 rounded-lg text-sm hover:bg-purple-50 disabled:opacity-40"
+                title="Utilise Claude pour les classifications incertaines — plus précis mais plus lent">
+                {computing ? <Spinner size={13} /> : "🧠"}
+                Hybrid (LLM)
               </button>
             </div>
 
