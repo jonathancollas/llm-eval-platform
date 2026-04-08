@@ -115,7 +115,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
     if (f === "frontier") return catalog.filter(b => b.is_frontier).length;
     if (f === "inesia") return catalog.filter(b => b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("cyber") || b.domain?.includes("disinformation") || b.domain === "french").length;
     if (f === "safety") return catalog.filter(b => b.type === "safety").length;
-    if (f === "français") return catalog.filter(b => b.domain === "french" || b.domain === "multilingual").length;
+    if (f === "french") return catalog.filter(b => b.domain === "french" || b.domain === "multilingual").length;
     return catalog.filter(b => b.domain === f || b.type === f).length;
   };
 
