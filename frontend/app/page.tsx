@@ -15,8 +15,8 @@ interface Stats {
 const QUICK_LINKS = [
   { href: "/models",     icon: Cpu,      label: "Models",     desc: "Gérer les models" },
   { href: "/benchmarks", icon: Library,  label: "Benchmarks", desc: "Catalogue & datasets" },
-  { href: "/campaigns",  icon: Rocket,   label: "Campaigns",  desc: "Launch une évaluation" },
-  { href: "/dashboard",  icon: BarChart3,label: "Dashboard",  desc: "Visualiser les résultats" },
+  { href: "/campaigns",  icon: Rocket,   label: "Campaigns",  desc: "Launch an evaluation" },
+  { href: "/dashboard",  icon: BarChart3,label: "Dashboard",  desc: "Visualize results" },
   { href: "/leaderboard",icon: Trophy,   label: "Leaderboard",desc: "Classements par domaine" },
 ];
 

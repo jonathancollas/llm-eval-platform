@@ -207,7 +207,7 @@ export default function GenomePage() {
             {!heatmap?.computed || !heatmap?.heatmap?.length ? (
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
                 <div className="text-5xl mb-3">🔥</div>
-                <p className="text-sm text-slate-500">Analysez des campagnes pour générer la Safety Heatmap.</p>
+                <p className="text-sm text-slate-500">Analyze campaigns to generate the Safety Heatmap.</p>
               </div>
             ) : (
               <div>
@@ -258,7 +258,7 @@ export default function GenomePage() {
             {!fingerprints.length ? (
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
                 <div className="text-5xl mb-3">🔍</div>
-                <p className="text-sm text-slate-500">Les fingerprints sont calculés automatiquement après analyse de campagnes.</p>
+                <p className="text-sm text-slate-500">Fingerprints are computed automatically after campaign analysis.</p>
               </div>
             ) : fingerprints.map((fp: any) => (
               <div key={fp.model_id} className="bg-white border border-slate-200 rounded-xl p-5">

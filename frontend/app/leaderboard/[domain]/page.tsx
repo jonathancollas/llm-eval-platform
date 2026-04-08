@@ -171,20 +171,20 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
             <div className="flex items-center gap-2">
               <FileText size={16} className="text-slate-500" />
               <h2 className="font-medium text-slate-900 text-sm">Analyse narrative — Claude</h2>
-              {report && <span className="text-xs text-slate-400">Généré le {new Date(report.generated_at).toLocaleDateString("en-US")}</span>}
+              {report && <span className="text-xs text-slate-400">Generated on {new Date(report.generated_at).toLocaleDateString("en-US")}</span>}
             </div>
             <div className="flex gap-2">
               {report && (
                 <button onClick={() => setShowReport(!showReport)}
                   className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
-                  {showReport ? "Masquer" : "Afficher"}
+                  {showReport ? "Hide" : "Afficher"}
                 </button>
               )}
               <button onClick={() => generateReport(!!report)}
                 disabled={generatingReport || data.rows.length === 0}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors">
                 {generatingReport ? <Spinner size={12} /> : <RefreshCw size={12} />}
-                {generatingReport ? "Génération…" : report ? "Regénérer" : "Générer le rapport"}
+                {generatingReport ? "Generating…" : report ? "Regenerate" : "Generate report"}
               </button>
             </div>
           </div>
@@ -204,8 +204,8 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
 
           {!report && !generatingReport && data.rows.length > 0 && (
             <div className="px-6 py-8 text-center text-slate-400 text-sm">
-              <p className="mb-2">Cliquez sur "Générer le rapport" pour obtenir une analyse narrative par Claude.</p>
-              <p className="text-xs text-slate-300">L'analyse est mise en cache jusqu'à la prochaine regénération.</p>
+              <p className="mb-2">Click "Generate report" to get a narrative analysis.</p>
+              <p className="text-xs text-slate-300">The analysis is cached until the next regeneration.</p>
             </div>
           )}
 

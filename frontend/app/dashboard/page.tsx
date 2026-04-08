@@ -152,7 +152,7 @@ function GenomeSection({ genome }: { genome: GenomeData }) {
     return (
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
         <div className="text-3xl mb-2">🧬</div>
-        <p className="text-sm text-slate-500">Failure Genome non calculé pour cette campagne.</p>
+        <p className="text-sm text-slate-500">Failure Genome not computed for this campaign.</p>
         <p className="text-xs text-slate-400 mt-1">Il est calculé automatiquement à la fin du bench.</p>
       </div>
     );
@@ -327,7 +327,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
           <FileText size={14} /> AI Report (Claude)
         </h3>
         <button onClick={() => setOpen(!open)} className="text-xs text-slate-500 hover:text-slate-700">
-          {open ? "Masquer" : "Générer"}
+          {open ? "Hide" : "Generate"}
         </button>
       </div>
 
@@ -339,7 +339,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
           <div className="flex items-center gap-3">
             <button onClick={generate} disabled={generating}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-50">
-              {generating ? <><Spinner size={12} /> Génération en cours… (peut prendre 1-2 min)</> : "Générer le rapport"}
+              {generating ? <><Spinner size={12} /> Generating… (may take 1-2 min)</> : "Generate report"}
             </button>
           </div>
           {error && (
@@ -423,7 +423,7 @@ function DashboardContent() {
     <div>
       <PageHeader
         title="Dashboard"
-        description="Analyse visuelle des résultats d'évaluation."
+        description="Visual analysis of evaluation results."
         action={
           selectedId && data?.status === "completed" ? (
             <a href={resultsApi.exportUrl(selectedId)} download
@@ -441,7 +441,7 @@ function DashboardContent() {
           <select value={selectedId ?? ""}
             onChange={e => setSelectedId(e.target.value ? +e.target.value : null)}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white">
-            <option value="">— Sélectionner une campagne terminée —</option>
+            <option value="">— Select a completed campaign —</option>
             {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -601,7 +601,7 @@ function DashboardContent() {
 
         {!selectedId && !loading && (
           <div className="text-center py-20 text-slate-400 text-sm">
-            Sélectionnez une campagne terminée pour afficher le dashboard.
+            Select a completed campaign to display the dashboard.
           </div>
         )}
       </div>
