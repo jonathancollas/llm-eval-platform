@@ -317,7 +317,7 @@ export default function ModelsPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
         ) : filtered.length === 0 ? (
-          <EmptyState icon="🤖" title={models.length === 0 ? "Aucun model" : "No results"}
+          <EmptyState icon="🤖" title={models.length === 0 ? "No models" : "No results"}
             description={models.length === 0 ? "Ajoutez des models depuis le catalogue OpenRouter." : "Modifiez vos filtres."} />
         ) : (
           filtered.map(m => {

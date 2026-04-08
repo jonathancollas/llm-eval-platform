@@ -18,7 +18,7 @@ function RadarViz({ genome, ontology }: {
   ontology: Record<string, { label: string; color: string; description: string; severity: number }>;
 }) {
   const entries = Object.entries(genome).filter(([k]) => ontology[k] && genome[k] > 0);
-  if (!entries.length) return <div className="text-xs text-slate-400 py-2 text-center">Aucun signal</div>;
+  if (!entries.length) return <div className="text-xs text-slate-400 py-2 text-center">No signals</div>;
 
   const SIZE = 140;
   const CENTER = SIZE / 2;
@@ -135,7 +135,7 @@ export default function GenomePage() {
             <div className="flex items-center gap-3">
               <select value={selectedId ?? ""} onChange={e => setSelectedId(Number(e.target.value))}
                 className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="" disabled>Choisir une campagne terminée…</option>
+                <option value="" disabled>Select a completed campaign…</option>
                 {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <button onClick={() => handleCompute(false)} disabled={!selectedId || computing}

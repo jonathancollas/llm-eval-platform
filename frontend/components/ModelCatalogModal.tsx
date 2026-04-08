@@ -124,7 +124,7 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
           {addingAll && addAllProgress && (
             <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
               <Spinner size={12} />
-              {addAllProgress.done}/{addAllProgress.total} ajoutés…
+              {addAllProgress.done}/{addAllProgress.total} added…
             </div>
           )}
         </div>
@@ -136,10 +136,10 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
           ) : error ? (
             <div className="text-center py-16 text-red-500 text-sm">
               Impossible de charger le catalogue.
-              <br /><span className="text-xs text-slate-400">Vérifiez que OPENROUTER_API_KEY est configurée dans Render.</span>
+              <br /><span className="text-xs text-slate-400">Check that OPENROUTER_API_KEY is configured in Render.</span>
             </div>
           ) : models.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">Aucun model trouvé.</div>
+            <div className="text-center py-16 text-slate-400 text-sm">No models found.</div>
           ) : (
             models.map(m => {
               const isAdded = added.has(m.id);
@@ -170,7 +170,7 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
                       isAdded ? "bg-green-50 text-green-600 border border-green-200"
                       : "bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40"}`}>
                     {isAdding ? <Spinner size={12} /> : isAdded ? <CheckCircle size={12} /> : <Plus size={12} />}
-                    {isAdded ? "Ajouté" : "Ajouter"}
+                    {isAdded ? "Added" : "Add"}
                   </button>
                 </div>
               );
@@ -179,8 +179,8 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400 flex items-center justify-between">
-          <span>{added.size} model{added.size !== 1 ? "s" : ""} ajouté{added.size !== 1 ? "s" : ""} cette session</span>
-          <span>Données via <a href="https://openrouter.ai" target="_blank" className="text-blue-500 hover:underline">OpenRouter</a></span>
+          <span>{added.size} model{added.size !== 1 ? "s" : ""} added this session</span>
+          <span>Data via <a href="https://openrouter.ai" target="_blank" className="text-blue-500 hover:underline">OpenRouter</a></span>
         </div>
       </div>
     </div>

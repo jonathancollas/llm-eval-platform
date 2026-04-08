@@ -390,7 +390,7 @@ export default function BenchmarksPage() {
             <div className="col-span-2 flex gap-3 pt-1">
               <button type="submit" disabled={creating}
                 className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
-                {creating ? "Creating…" : "Créer"}
+                {creating ? "Creating…" : "Create"}
               </button>
               <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
             </div>

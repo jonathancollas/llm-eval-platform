@@ -21,7 +21,7 @@ async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: numb
     return res.json() as Promise<T>;
   } catch (e: any) {
     if (e.name === "AbortError") {
-      throw new Error("Request timeout — le backend met trop de temps à répondre. Réessayez.");
+      throw new Error("Request timeout — backend is taking too long. Please retry.");
     }
     throw e;
   } finally {

@@ -181,7 +181,7 @@ export default function AgentsPage() {
             <div className="w-96 shrink-0 space-y-2 max-h-[600px] overflow-y-auto">
               {!trajectories.length ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
-                  <p className="text-sm text-slate-500">Aucune trajectoire. Uploadez-en une.</p>
+                  <p className="text-sm text-slate-500">No trajectories. Upload one.</p>
                 </div>
               ) : trajectories.map(t => (
                 <button key={t.id} onClick={() => viewTrajectory(t.id)}
@@ -210,7 +210,7 @@ export default function AgentsPage() {
             <div className="flex-1 min-w-0">
               {loading && <div className="flex justify-center py-20"><Spinner size={24} /></div>}
               {!selectedTraj && !loading && (
-                <div className="text-center py-20 text-slate-400 text-sm">Sélectionnez une trajectoire.</div>
+                <div className="text-center py-20 text-slate-400 text-sm">Select a trajectory.</div>
               )}
               {selectedTraj && !loading && (
                 <div className="space-y-4">

@@ -429,6 +429,22 @@ export default function CampaignsPage() {
             </div>
           )}
 
+          {/* Ollama suggestion banner — between step 1 and 2 */}
+          {step === 1 && form.model_ids.length > 0 && localCount === 0 && (
+            <div className="mt-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-xs">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🦙</span>
+                <span className="font-semibold text-purple-700">Run locally for free?</span>
+              </div>
+              <p className="text-purple-600">
+                Some selected models have local Ollama equivalents. Install Ollama and pull models to run evaluations locally — zero cost, zero latency, full privacy.
+              </p>
+              <code className="block mt-2 bg-purple-100 text-purple-800 px-3 py-1.5 rounded font-mono text-[11px]">
+                curl -fsSL https://ollama.com/install.sh | sh && ollama pull llama3.2
+              </code>
+            </div>
+          )}
+
           {/* Step 2 — Benchmarks */}
           {step === 2 && (
             <div>

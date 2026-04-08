@@ -166,7 +166,7 @@ export default function PolicyPage() {
             <Shield size={40} className="text-slate-300 mx-auto mb-3" />
             <h3 className="font-semibold text-slate-700 mb-1">Compliance simulation</h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              Sélectionnez une campagne et un cadre réglementaire pour évaluer la conformité de vos models.
+              Select a campaign and regulatory framework to evaluate compliance.
               Results integrate Genomia and REDBOX data.
             </p>
           </div>

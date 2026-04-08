@@ -367,3 +367,79 @@ async def import_ollama_models(session: Session = Depends(get_session)):
     if not available:
         return {"added": 0, "available": False, "message": f"Ollama not reachable at {settings.ollama_base_url}"}
     return {"added": added, "available": True}
+
+
+# ── Ollama Model Mapping (OpenRouter → local equivalent) ──────────────────────
+
+OPENROUTER_TO_OLLAMA = {
+    "meta-llama/llama-3.3-70b-instruct": "llama3.3:70b",
+    "meta-llama/llama-3.2-3b-instruct": "llama3.2:3b",
+    "meta-llama/llama-3.2-1b-instruct": "llama3.2:1b",
+    "meta-llama/llama-3.1-8b-instruct": "llama3.1:8b",
+    "meta-llama/llama-3.1-70b-instruct": "llama3.1:70b",
+    "google/gemma-3-27b-it": "gemma3:27b",
+    "google/gemma-3-12b-it": "gemma3:12b",
+    "google/gemma-2-9b-it": "gemma2:9b",
+    "google/gemma-2-27b-it": "gemma2:27b",
+    "mistralai/mistral-7b-instruct": "mistral:7b",
+    "mistralai/mixtral-8x7b-instruct": "mixtral:8x7b",
+    "mistralai/mistral-small-24b-instruct-2501": "mistral-small:24b",
+    "qwen/qwen-2.5-7b-instruct": "qwen2.5:7b",
+    "qwen/qwen-2.5-14b-instruct": "qwen2.5:14b",
+    "qwen/qwen-2.5-32b-instruct": "qwen2.5:32b",
+    "qwen/qwen-2.5-72b-instruct": "qwen2.5:72b",
+    "deepseek/deepseek-r1-distill-qwen-7b": "deepseek-r1:7b",
+    "deepseek/deepseek-r1-distill-qwen-14b": "deepseek-r1:14b",
+    "microsoft/phi-3-mini-128k-instruct": "phi3:mini",
+    "microsoft/phi-3-medium-128k-instruct": "phi3:medium",
+}
+
+# Also match :free variants
+for k in list(OPENROUTER_TO_OLLAMA.keys()):
+    OPENROUTER_TO_OLLAMA[k + ":free"] = OPENROUTER_TO_OLLAMA[k]
+
+
+@router.get("/ollama/suggestions")
+async def get_ollama_suggestions(session: Session = Depends(get_session)):
+    """For each registered OpenRouter model, check if a local Ollama equivalent exists.
+    Returns suggestions for models that could be run locally."""
+
+    # Get all registered models
+    models = session.exec(select(LLMModel)).all()
+
+    # Get available Ollama models
+    local_models = set()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
+            if resp.status_code == 200:
+                for m in resp.json().get("models", []):
+                    local_models.add(m.get("name", ""))
+    except Exception:
+        return {"suggestions": [], "ollama_available": False}
+
+    suggestions = []
+    for model in models:
+        if model.provider == ModelProvider.OLLAMA:
+            continue  # Already local
+        model_id = model.model_id.removeprefix("openrouter/")
+        ollama_name = OPENROUTER_TO_OLLAMA.get(model_id)
+        if not ollama_name:
+            continue
+
+        already_installed = any(ollama_name.split(":")[0] in lm for lm in local_models)
+
+        suggestions.append({
+            "model_id": model.id,
+            "model_name": model.name,
+            "openrouter_id": model_id,
+            "ollama_name": ollama_name,
+            "already_installed": already_installed,
+            "install_command": f"ollama pull {ollama_name}",
+        })
+
+    return {
+        "suggestions": suggestions,
+        "ollama_available": True,
+        "local_models_count": len(local_models),
+    }

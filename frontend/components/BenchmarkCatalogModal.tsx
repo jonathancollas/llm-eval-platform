@@ -32,7 +32,7 @@ const FILTER_TABS = [
   { key: "connaissances", label: "Connaissances" },
   { key: "maths", label: "Maths" },
   { key: "code", label: "Code" },
-  { key: "français", label: "Français" },
+  { key: "french", label: "French" },
   { key: "safety", label: "Safety" },
   { key: "frontier", label: "🛡️ Frontier" },
 ] as const;
@@ -58,9 +58,9 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const filtered = catalog.filter(b => {
     if (filter === "all") return true;
     if (filter === "frontier") return b.is_frontier;
-    if (filter === "inesia") return b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("agentique") || b.domain?.includes("méta-évaluation") || b.domain?.includes("cybersécurité") || b.domain?.includes("désinformation") || b.domain === "français";
+    if (filter === "inesia") return b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("cyber") || b.domain?.includes("disinformation") || b.domain === "french";
     if (filter === "safety") return b.type === "safety";
-    if (filter === "français") return b.domain === "français" || b.domain === "multilingue";
+    if (filter === "french") return b.domain === "french" || b.domain === "multilingual";
     return b.domain === filter || b.type === filter;
   });
 
@@ -91,7 +91,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
     // Safety gate for frontier
     if (filter !== "frontier" && toAdd.some(b => b.is_frontier)) {
       const confirmed = window.confirm(
-        `${toAdd.filter(b => b.is_frontier).length} benchmark(s) frontier sont inclus dans la sélection. Confirmer l'ajout ?`
+        `${toAdd.filter(b => b.is_frontier).length} frontier benchmark(s) are included. Confirm?`
       );
       if (!confirmed) return;
     }
@@ -113,9 +113,9 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const countFor = (f: FilterKey) => {
     if (f === "all") return catalog.length;
     if (f === "frontier") return catalog.filter(b => b.is_frontier).length;
-    if (f === "inesia") return catalog.filter(b => b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("agentique") || b.domain?.includes("méta-évaluation") || b.domain?.includes("cybersécurité") || b.domain?.includes("désinformation") || b.domain === "français").length;
+    if (f === "inesia") return catalog.filter(b => b.tags?.includes("INESIA") || b.is_frontier || b.domain?.includes("CBRN") || b.domain?.includes("cyber") || b.domain?.includes("disinformation") || b.domain === "french").length;
     if (f === "safety") return catalog.filter(b => b.type === "safety").length;
-    if (f === "français") return catalog.filter(b => b.domain === "français" || b.domain === "multilingue").length;
+    if (f === "français") return catalog.filter(b => b.domain === "french" || b.domain === "multilingual").length;
     return catalog.filter(b => b.domain === f || b.type === f).length;
   };
 
@@ -156,7 +156,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
           {addingAll && addAllProgress && (
             <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 shrink-0">
               <Spinner size={12} />
-              {addAllProgress.done}/{addAllProgress.total} ajoutés…
+              {addAllProgress.done}/{addAllProgress.total} added…
             </div>
           )}
         </div>
@@ -166,7 +166,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
           <div className="mx-6 mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5">
             <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700">
-              Benchmarks frontier — seuils de risque stricts. Certains datasets (CBRN-E complet) sont restreints.
+              Frontier benchmarks — strict risk thresholds. Some datasets may be restricted.
             </p>
           </div>
         )}
@@ -176,7 +176,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
           {loading ? (
             <div className="flex justify-center py-16"><Spinner size={24} /></div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">No benchmarks dans cette catégorie.</div>
+            <div className="text-center py-16 text-slate-400 text-sm">No benchmarks in this category.</div>
           ) : (
             filtered.map(b => {
               const isAdded = added.has(b.key);
@@ -200,7 +200,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
                       <p className="text-xs text-slate-500 mb-1">{b.description}</p>
                       {b.methodology_note && <p className="text-xs text-slate-400 italic">{b.methodology_note}</p>}
                       <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
-                        <span>métrique : <span className="font-mono">{b.metric}</span></span>
+                        <span>metric: <span className="font-mono">{b.metric}</span></span>
                         <span>{b.num_samples} items</span>
                         <span>{b.domain}</span>
                         {b.paper_url && (
@@ -215,7 +215,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
                         isAdded ? "bg-green-50 text-green-600 border border-green-200"
                         : "bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40"}`}>
                       {isAdding ? <Spinner size={12} /> : isAdded ? <CheckCircle size={12} /> : <Plus size={12} />}
-                      {isAdded ? "Ajouté" : "Ajouter"}
+                      {isAdded ? "Added" : "Add"}
                     </button>
                   </div>
                 </div>
@@ -225,7 +225,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400 flex items-center justify-between">
-          <span>{added.size} benchmark{added.size !== 1 ? "s" : ""} ajouté{added.size !== 1 ? "s" : ""} cette session</span>
+          <span>{added.size} benchmark{added.size !== 1 ? "s" : ""} added this session</span>
           <span>INESIA — ANSSI · Inria · LNE · PEReN</span>
         </div>
       </div>

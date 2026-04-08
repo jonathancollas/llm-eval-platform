@@ -224,7 +224,7 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
     return (
       <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
         <div className="text-2xl mb-1">✅</div>
-        <p className="text-sm text-green-700 font-medium">Aucune erreur détectée</p>
+        <p className="text-sm text-green-700 font-medium">No errors detected</p>
         <p className="text-xs text-green-500">Tous les items ont été traités correctement.</p>
       </div>
     );
@@ -538,7 +538,7 @@ function DashboardContent() {
                 ) : (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
                     <div className="text-2xl mb-1">✅</div>
-                    <p className="text-sm text-green-700">Aucun signal d'alerte inter-modules</p>
+                    <p className="text-sm text-green-700">No signals d'alerte inter-modules</p>
                   </div>
                 )}
 

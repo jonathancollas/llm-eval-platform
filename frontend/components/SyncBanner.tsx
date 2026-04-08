@@ -20,8 +20,8 @@ export function SyncBanner() {
       ) : (
         <span className="text-xs text-slate-500">
           ✓ Catalogue synchronisé
-          {benchmarksAdded > 0 && ` · ${benchmarksAdded} benchmark${benchmarksAdded > 1 ? "s" : ""} ajouté${benchmarksAdded > 1 ? "s" : ""}`}
-          {modelsAdded > 0 && ` · ${modelsAdded} model${modelsAdded > 1 ? "s" : ""} ajouté${modelsAdded > 1 ? "s" : ""}`}
+          {benchmarksAdded > 0 && ` · ${benchmarksAdded} benchmark${benchmarksAdded > 1 ? "s" : ""} added`}
+          {modelsAdded > 0 && ` · ${modelsAdded} model${modelsAdded > 1 ? "s" : ""} added`}
         </span>
       )}
     </div>
