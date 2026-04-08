@@ -91,8 +91,8 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
-            <h2 className="font-semibold text-slate-900">Catalogue de modèles</h2>
-            <p className="text-xs text-slate-400 mt-0.5">via OpenRouter · {models.length} modèles</p>
+            <h2 className="font-semibold text-slate-900">Catalogue de models</h2>
+            <p className="text-xs text-slate-400 mt-0.5">via OpenRouter · {models.length} models</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X size={16} /></button>
         </div>
@@ -103,12 +103,12 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               onKeyDown={e => e.key === "Enter" && load()}
-              placeholder="Rechercher… (Entrée)"
+              placeholder="Search… (Entrée)"
               className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
           </div>
           <button onClick={() => setFreeOnly(!freeOnly)}
             className={`text-xs px-3 py-2 rounded-lg border transition-colors ${freeOnly ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            Gratuits
+            Free
           </button>
           <button onClick={() => setOssOnly(!ossOnly)}
             className={`text-xs px-3 py-2 rounded-lg border transition-colors ${ossOnly ? "bg-violet-50 border-violet-200 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
@@ -139,7 +139,7 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
               <br /><span className="text-xs text-slate-400">Vérifiez que OPENROUTER_API_KEY est configurée dans Render.</span>
             </div>
           ) : models.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">Aucun modèle trouvé.</div>
+            <div className="text-center py-16 text-slate-400 text-sm">Aucun model trouvé.</div>
           ) : (
             models.map(m => {
               const isAdded = added.has(m.id);
@@ -179,7 +179,7 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400 flex items-center justify-between">
-          <span>{added.size} modèle{added.size !== 1 ? "s" : ""} ajouté{added.size !== 1 ? "s" : ""} cette session</span>
+          <span>{added.size} model{added.size !== 1 ? "s" : ""} ajouté{added.size !== 1 ? "s" : ""} cette session</span>
           <span>Données via <a href="https://openrouter.ai" target="_blank" className="text-blue-500 hover:underline">OpenRouter</a></span>
         </div>
       </div>

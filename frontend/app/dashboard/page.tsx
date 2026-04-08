@@ -284,7 +284,7 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
                   )}
                   {item.expected && (
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-400">Attendu:</span>
+                      <span className="text-slate-400">Expected:</span>
                       <span className="font-mono text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{item.expected}</span>
                     </div>
                   )}
@@ -344,8 +344,8 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
           </div>
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-              <span className="font-medium">Erreur : </span>{error}
-              <p className="text-red-400 mt-1">Vérifiez que le backend est actif et que la clé Anthropic est configurée.</p>
+              <span className="font-medium">Error : </span>{error}
+              <p className="text-red-400 mt-1">Check that the backend is active and the Anthropic key is configured.</p>
             </div>
           )}
         </div>
@@ -414,7 +414,7 @@ function DashboardContent() {
   const TABS: { key: Tab; label: string; badge?: number }[] = [
     { key: "overview", label: "📊 Vue d'ensemble" },
     { key: "genome", label: "🧬 Génome" },
-    { key: "errors", label: "⚠️ Erreurs", badge: failedData ? failedData.total_failed + failedData.failed_runs.length : 0 },
+    { key: "errors", label: "⚠️ Errors", badge: failedData ? failedData.total_failed + failedData.failed_runs.length : 0 },
     { key: "signals" as Tab, label: "🔗 Signaux", badge: signalCount },
     { key: "report", label: "📝 Rapport" },
   ];
@@ -455,8 +455,8 @@ function DashboardContent() {
               {[
                 { label: "Coût total", value: formatCost(data.total_cost_usd) },
                 { label: "Latence moyenne / run", value: formatLatency(data.avg_latency_ms) },
-                { label: "Modèles comparés", value: Object.keys(data.radar).length },
-                { label: "Erreurs", value: failedData ? failedData.total_failed + failedData.failed_runs.length : "—",
+                { label: "Models comparés", value: Object.keys(data.radar).length },
+                { label: "Errors", value: failedData ? failedData.total_failed + failedData.failed_runs.length : "—",
                   alert: failedData && (failedData.total_failed + failedData.failed_runs.length) > 0 },
               ].map(({ label, value, alert }) => (
                 <div key={label} className={`bg-white border rounded-xl p-4 ${alert ? "border-red-200" : "border-slate-200"}`}>

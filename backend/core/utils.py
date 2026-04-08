@@ -31,3 +31,76 @@ def safe_extract_text(message) -> str:
     block = content[0]
     text = getattr(block, "text", None)
     return text.strip() if text else ""
+
+
+async def generate_text(
+    prompt: str,
+    system_prompt: str = "",
+    max_tokens: int = 2048,
+    timeout: float = 120,
+    model_override: str | None = None,
+) -> str:
+    """Generate text using the best available model.
+    Priority: model_override → Ollama local → Anthropic API.
+    Returns generated text or raises.
+    """
+    import asyncio
+    from core.config import get_settings
+    settings = get_settings()
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    # Option 1: explicit model override (litellm format)
+    if model_override:
+        from litellm import acompletion
+        resp = await asyncio.wait_for(
+            acompletion(model=model_override, messages=messages, max_tokens=max_tokens, temperature=0.3),
+            timeout=timeout,
+        )
+        return (resp.choices[0].message.content or "").strip()
+
+    # Option 2: try Ollama local first (free, fast, no dependency)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            tags = await client.get(f"{settings.ollama_base_url}/api/tags")
+            if tags.status_code == 200:
+                models = tags.json().get("models", [])
+                if models:
+                    # Pick the largest available model
+                    best = sorted(models, key=lambda m: m.get("size", 0), reverse=True)[0]
+                    model_name = best["name"]
+                    from litellm import acompletion
+                    resp = await asyncio.wait_for(
+                        acompletion(
+                            model=f"ollama/{model_name}",
+                            messages=messages,
+                            max_tokens=max_tokens,
+                            temperature=0.3,
+                            api_base=settings.ollama_base_url,
+                        ),
+                        timeout=timeout,
+                    )
+                    return (resp.choices[0].message.content or "").strip()
+    except Exception:
+        pass  # Ollama not available, fall through
+
+    # Option 3: Anthropic API
+    if settings.anthropic_api_key:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        msg = await asyncio.wait_for(
+            client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                system=system_prompt if system_prompt else "You are a helpful AI evaluation expert.",
+                messages=[{"role": "user", "content": prompt}],
+            ),
+            timeout=timeout,
+        )
+        return safe_extract_text(msg)
+
+    raise RuntimeError("No model available for text generation. Configure Ollama or ANTHROPIC_API_KEY.")

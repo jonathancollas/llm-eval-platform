@@ -42,7 +42,7 @@ export default function LeaderboardPage() {
     <div>
       <PageHeader
         title="Leaderboard INESIA"
-        description="Classement des modèles d'IA par domaine d'évaluation — données issues de campagnes réelles."
+        description="Classement des models d'IA par domaine d'évaluation — données issues de campagnes réelles."
       />
       <div className="p-8 space-y-8">
 
@@ -73,7 +73,7 @@ export default function LeaderboardPage() {
           ) : !global || global.rows.length === 0 ? (
             <div className="py-16 text-center text-slate-400 text-sm">
               <div className="text-3xl mb-3">📊</div>
-              <p className="font-medium text-slate-600 mb-1">Aucun résultat disponible</p>
+              <p className="font-medium text-slate-600 mb-1">No results disponible</p>
               <p className="text-xs">Lancez des campagnes d'évaluation pour alimenter le leaderboard.</p>
               <Link href="/campaigns" className="mt-4 inline-block text-xs text-blue-600 hover:underline">Créer une campagne →</Link>
             </div>

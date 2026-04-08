@@ -91,7 +91,7 @@ export default function JudgePage() {
         <div className="mb-6">
           <select value={selectedId ?? ""} onChange={e => setSelectedId(+e.target.value || null)}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
-            <option value="">— Campagne terminée —</option>
+            <option value="">— Completed campaign —</option>
             {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -142,7 +142,7 @@ export default function JudgePage() {
 
             <button onClick={runEval} disabled={evaluating || !selectedId || !selectedJudges.length}
               className="flex items-center gap-2 bg-slate-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-40">
-              {evaluating ? <><Spinner size={13} /> Évaluation en cours ({selectedJudges.length} juges × {maxItems} items)…</> : "Lancer l'évaluation"}
+              {evaluating ? <><Spinner size={13} /> Évaluation en cours ({selectedJudges.length} juges × {maxItems} items)…</> : "Launch l'évaluation"}
             </button>
 
             {error && (
@@ -281,7 +281,7 @@ export default function JudgePage() {
                 const labels = JSON.parse(el.value);
                 const result = await judgeApi.calibrate(selectedId, labels);
                 alert(JSON.stringify(result.calibration, null, 2));
-              } catch (e: any) { alert("Erreur: " + e.message); }
+              } catch (e: any) { alert("Error: " + e.message); }
             }} disabled={!selectedId}
               className="bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
               Calibrer les juges

@@ -95,7 +95,7 @@ function ModelDetail({ m }: { m: LLMModel }) {
         {m.tokenizer      && <div><span className="text-slate-400">Tokenizer:</span> <span className="font-mono">{m.tokenizer}</span></div>}
         {m.instruct_type  && <div><span className="text-slate-400">Format:</span> <span className="font-mono">{m.instruct_type}</span></div>}
         {createdDate      && <div><span className="text-slate-400">Sortie:</span> {createdDate}</div>}
-        {m.endpoint       && <div className="col-span-2"><span className="text-slate-400">Endpoint:</span> <span className="font-mono text-xs">{m.endpoint}</span></div>}
+        {m.endpoint && !m.endpoint.includes("openrouter.ai") && <div className="col-span-2"><span className="text-slate-400">Endpoint:</span> <span className="font-mono text-xs">{m.endpoint}</span></div>}
       </div>
 
       {/* Tags */}
@@ -166,7 +166,7 @@ export default function ModelsPage() {
       const { ollamaApi } = await import("@/lib/api");
       const result = await ollamaApi.import();
       if (result.added > 0) load();
-      alert(result.available ? `${result.added} modèle(s) Ollama importé(s)` : "Ollama non disponible");
+      alert(result.available ? `${result.added} model(s) Ollama importé(s)` : "Ollama non disponible");
     } catch (e: any) { alert(String(e)); }
     finally { setImportingOllama(false); };
   };
@@ -207,7 +207,7 @@ export default function ModelsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Supprimer ce modèle ?")) return;
+    if (!confirm("Supprimer ce model ?")) return;
     await modelsApi.delete(id).catch(e => alert(String(e)));
     load();
   };
@@ -219,7 +219,7 @@ export default function ModelsPage() {
     <div>
       <PageHeader
         title="Model Registry"
-        description={`${models.length} modèles · ${freeCount} gratuits`}
+        description={`${models.length} models · ${freeCount} gratuits`}
         action={
           <div className="flex gap-2">
             {ollamaStatus?.available && (
@@ -247,7 +247,7 @@ export default function ModelsPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={filters.search}
             onChange={e => setFilter("search", e.target.value)}
-            placeholder="Rechercher par nom ou model ID…"
+            placeholder="Search par nom ou model ID…"
             className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
         </div>
 
@@ -264,14 +264,14 @@ export default function ModelsPage() {
             </button>
           )}
           <span className="text-xs text-slate-400 self-center ml-auto">
-            {filtered.length} / {models.length} modèles
+            {filtered.length} / {models.length} models
           </span>
         </div>
       </div>
 
       {showForm && (
         <div className="mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4">Nouveau modèle</h3>
+          <h3 className="font-medium text-slate-900 mb-4">Nouveau model</h3>
           <form onSubmit={handleCreate} className="grid grid-cols-2 gap-4">
             {[
               { label: "Nom *", key: "name", type: "text", placeholder: "ex. GPT-4o Mini" },
@@ -302,9 +302,9 @@ export default function ModelsPage() {
             <div className="col-span-2 flex gap-3 pt-1">
               <button type="submit" disabled={creating}
                 className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
-                {creating ? "Création…" : "Ajouter"}
+                {creating ? "Creating…" : "Ajouter"}
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600">Annuler</button>
+              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
             </div>
           </form>
         </div>
@@ -315,8 +315,8 @@ export default function ModelsPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
         ) : filtered.length === 0 ? (
-          <EmptyState icon="🤖" title={models.length === 0 ? "Aucun modèle" : "Aucun résultat"}
-            description={models.length === 0 ? "Ajoutez des modèles depuis le catalogue OpenRouter." : "Modifiez vos filtres."} />
+          <EmptyState icon="🤖" title={models.length === 0 ? "Aucun model" : "No results"}
+            description={models.length === 0 ? "Ajoutez des models depuis le catalogue OpenRouter." : "Modifiez vos filtres."} />
         ) : (
           filtered.map(m => {
             const test = testResults[m.id];

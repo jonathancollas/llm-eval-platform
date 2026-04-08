@@ -13,9 +13,9 @@ interface Stats {
 }
 
 const QUICK_LINKS = [
-  { href: "/models",     icon: Cpu,      label: "Models",     desc: "Gérer les modèles" },
+  { href: "/models",     icon: Cpu,      label: "Models",     desc: "Gérer les models" },
   { href: "/benchmarks", icon: Library,  label: "Benchmarks", desc: "Catalogue & datasets" },
-  { href: "/campaigns",  icon: Rocket,   label: "Campaigns",  desc: "Lancer une évaluation" },
+  { href: "/campaigns",  icon: Rocket,   label: "Campaigns",  desc: "Launch une évaluation" },
   { href: "/dashboard",  icon: BarChart3,label: "Dashboard",  desc: "Visualiser les résultats" },
   { href: "/leaderboard",icon: Trophy,   label: "Leaderboard",desc: "Classements par domaine" },
 ];
@@ -65,7 +65,7 @@ export default function OverviewPage() {
   }, [fetchStats]);
 
   const statCards = [
-    { label: "Modèles enregistrés", value: stats.models,        color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-100" },
+    { label: "Models enregistrés", value: stats.models,        color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-100" },
     { label: "Benchmarks actifs",   value: stats.benchmarks,    color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
     { label: "Campagnes créées",    value: stats.campaigns,     color: "text-slate-700",  bg: "bg-slate-50",  border: "border-slate-100" },
     { label: "Évaluations complètes", value: stats.completed_runs, color: "text-green-600", bg: "bg-green-50", border: "border-green-100" },
@@ -114,7 +114,7 @@ export default function OverviewPage() {
           <div className="font-medium text-slate-700 mb-2">Moteur d'évaluation</div>
           <div>↺ Benchmarks standards → <span className="font-mono text-slate-600">lm-evaluation-harness</span> (EleutherAI)</div>
           <div>🛡️ Benchmarks frontier INESIA → runners custom (safety scoring)</div>
-          <div>☿ Modèles → LiteLLM + OpenRouter ({stats.models} configurés)</div>
+          <div>☿ Models → LiteLLM + OpenRouter ({stats.models} configurés)</div>
         </div>
 
       </div>

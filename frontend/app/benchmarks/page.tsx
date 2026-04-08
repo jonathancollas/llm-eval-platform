@@ -100,7 +100,7 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
                 <div className="relative flex-1">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
-                    placeholder="Rechercher dans les items…"
+                    placeholder="Search dans les items…"
                     className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
                 </div>
                 <button type="submit" className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700">
@@ -266,7 +266,7 @@ export default function BenchmarksPage() {
       setShowHfImport(false);
       setHfForm({ repo_id: "", split: "test", subset: "", max_items: 500 });
       load();
-    } catch (e: any) { alert(`Erreur: ${e.message}`); }
+    } catch (e: any) { alert(`Error: ${e.message}`); }
     finally { setHfLoading(false); }
   };
 
@@ -274,7 +274,7 @@ export default function BenchmarksPage() {
     <div>
       <PageHeader
         title="Benchmark Library"
-        description="Benchmarks built-in, catalogue INESIA et imports custom."
+        description="Built-in benchmarks, INESIA catalog, and custom imports."
         action={
           <div className="flex gap-2">
             {newBenchmarks > 0 && (
@@ -309,7 +309,7 @@ export default function BenchmarksPage() {
       {/* HuggingFace import form */}
       {showHfImport && (
         <div className="mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 Importer depuis HuggingFace</h3>
+          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 Import depuis HuggingFace</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Repository ID *</label>
@@ -343,16 +343,16 @@ export default function BenchmarksPage() {
             <button onClick={handleHfImport} disabled={hfLoading || !hfForm.repo_id.trim()}
               className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-40">
               {hfLoading ? <Spinner size={13} /> : null}
-              {hfLoading ? "Import en cours…" : "Importer"}
+              {hfLoading ? "Importing…" : "Import"}
             </button>
-            <button onClick={() => setShowHfImport(false)} className="text-sm text-slate-500 hover:text-slate-700">Annuler</button>
+            <button onClick={() => setShowHfImport(false)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
           </div>
         </div>
       )}
 
       {showCustomForm && (
         <div className="mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4">Nouveau benchmark custom</h3>
+          <h3 className="font-medium text-slate-900 mb-4">New custom benchmark</h3>
           <form onSubmit={handleCreateCustom} className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Nom</label>
@@ -388,9 +388,9 @@ export default function BenchmarksPage() {
             <div className="col-span-2 flex gap-3 pt-1">
               <button type="submit" disabled={creating}
                 className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
-                {creating ? "Création…" : "Créer"}
+                {creating ? "Creating…" : "Créer"}
               </button>
-              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Annuler</button>
+              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
             </div>
           </form>
         </div>

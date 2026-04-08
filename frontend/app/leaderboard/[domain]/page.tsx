@@ -57,7 +57,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
       const res = await fetch(`${API_BASE}/leaderboard/${domain}/report?force_refresh=${forceRefresh}`, { method: "POST" });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail ?? "Erreur lors de la génération");
+        throw new Error(err.detail ?? "Error lors de la génération");
       }
       const r = await res.json();
       setReport(r);
@@ -79,7 +79,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
         description={data.description}
         action={
           <Link href="/leaderboard" className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
-            <ArrowLeft size={14} /> Retour
+            <ArrowLeft size={14} /> Back
           </Link>
         }
       />
@@ -89,7 +89,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
         {/* Stats bar */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: "Modèles évalués", value: data.rows.length },
+            { label: "Models évalués", value: data.rows.length },
             { label: "Benchmarks couverts", value: data.benchmarks.length },
             { label: "Runs complétés", value: data.total_runs },
           ].map(({ label, value }) => (

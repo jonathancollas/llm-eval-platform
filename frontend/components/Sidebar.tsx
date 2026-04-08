@@ -81,6 +81,7 @@ export function Sidebar() {
           <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
             <Microscope size={12} className="text-cyan-400" />
             <span className="text-[10px] font-semibold text-cyan-500 tracking-wider uppercase">Analyzers</span>
+            <span className="text-[8px] bg-cyan-50 text-cyan-400 border border-cyan-200 px-1.5 py-0.5 rounded-full tracking-wide">BETA</span>
           </div>
           {NAV_ANALYZERS.map(({ href, label, icon: Icon }) => (
             <Link key={href} href={href}

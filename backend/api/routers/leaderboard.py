@@ -247,8 +247,8 @@ async def generate_domain_report(
     if not force_refresh and domain in _report_cache:
         return _report_cache[domain]
 
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured.")
+    if not settings.anthropic_api_key and not settings.ollama_base_url:
+        raise HTTPException(status_code=500, detail="No model available. Configure ANTHROPIC_API_KEY or Ollama.")
 
     runs, models_list, benchmarks_list = _get_domain_runs(domain, session)
 
@@ -258,7 +258,7 @@ async def generate_domain_report(
     rows, bench_names = _build_leaderboard(runs, models_list, benchmarks_list)
     cfg = DOMAINS[domain]
 
-    # Build context for Claude
+    # Build context
     results_summary = []
     for row in rows:
         results_summary.append({
@@ -273,46 +273,45 @@ async def generate_domain_report(
 
     today = datetime.utcnow().strftime("%B %Y")
 
-    system_prompt = """Tu es un expert en évaluation de modèles d'IA, spécialiste de la sécurité et des risques systémiques.
-Tu rédiges des analyses narratives rigoureuses pour l'INESIA (Institut national pour l'évaluation et la sécurité de l'IA).
-Tes rapports sont destinés aux régulateurs, aux équipes de sécurité et aux décideurs.
-Ton style : précis, factuel, actionnable. Tu cites les chiffres concrets. Tu identifies les patterns.
-Tu écris en français. Tu utilises le Markdown avec des titres clairs."""
+    system_prompt = """You are an AI evaluation expert specializing in safety and systemic risks.
+You write rigorous narrative analyses for INESIA (National Institute for AI Evaluation and Security).
+Your reports target regulators, security teams, and decision-makers.
+Style: precise, factual, actionable. Cite concrete numbers. Identify patterns.
+Write in English. Use Markdown with clear headings."""
 
     user_prompt = f"""# Leaderboard {cfg['label']} — {today}
 
-## Domaine évalué
+## Domain
 {cfg['description']}
 
-## Benchmarks couverts
-{', '.join(bench_names) if bench_names else 'Aucun benchmark spécifique au domaine'}
+## Benchmarks covered
+{', '.join(bench_names) if bench_names else 'No domain-specific benchmarks'}
 
-## Résultats
+## Results
 ```json
 {json.dumps(results_summary, indent=2, ensure_ascii=False)}
 ```
 
-## Ta mission
-Rédige une analyse narrative de l'état de l'art pour ce domaine en {today}.
+## Your mission
+Write a narrative state-of-the-art analysis for this domain as of {today}.
 
-Structure imposée :
-1. **Synthèse exécutive** (3-5 phrases max — ce que doit retenir un décideur en 30 secondes)
-2. **Classement commenté** (analyse les scores, identifie les leaders et les écarts)
-3. **Patterns et corrélations** (taille du modèle vs score ? open-source vs propriétaire ? coût vs performance ?)
-4. **Points de vigilance** (modèles qui sur-refusent les requêtes légitimes ? qui sous-performent sur certains benchmarks ?)
-5. **Recommandations INESIA** (quels modèles privilégier pour quels usages ?)
-6. **Limites méthodologiques** (ce que ces chiffres ne disent pas)
+Required structure:
+1. **Executive summary** (3-5 sentences — what a decision-maker needs in 30 seconds)
+2. **Commented ranking** (analyze scores, identify leaders and gaps)
+3. **Patterns and correlations** (model size vs score? open-source vs proprietary? cost vs performance?)
+4. **Warnings** (models that over-refuse legitimate requests? that underperform on specific benchmarks?)
+5. **INESIA recommendations** (which models for which use cases?)
+6. **Methodological limits** (what these numbers don't tell us)
 
-Sois concret, cite les modèles par nom, donne les scores précis."""
+Be concrete, name models, cite precise scores."""
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    message = client.messages.create(
-        model=settings.report_model,
+    from core.utils import generate_text
+    content = await generate_text(
+        prompt=user_prompt,
+        system_prompt=system_prompt,
         max_tokens=2048,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
+        timeout=120,
     )
-    content = safe_extract_text(message)
 
     report = DomainReport(
         domain=domain,

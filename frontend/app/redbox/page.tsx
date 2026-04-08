@@ -210,13 +210,13 @@ export default function RedboxPage() {
                 <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-4 border border-slate-200">
                   <select value={selectedModelId ?? ""} onChange={e => setSelectedModelId(+e.target.value || null)}
                     className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex-1">
-                    <option value="">— Choisir un modèle cible —</option>
+                    <option value="">— Choisir un model cible —</option>
                     {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                   <button onClick={runAttack} disabled={running || !selectedModelId}
                     className="flex items-center gap-2 bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-40">
                     {running ? <Spinner size={13} /> : <Play size={14} />}
-                    {running ? "Attaque en cours…" : "Lancer l'attaque"}
+                    {running ? "Attaque en cours…" : "Launch l'attaque"}
                   </button>
                 </div>
 
@@ -259,7 +259,7 @@ export default function RedboxPage() {
                         </pre>
                         {isResult && item.response && (
                           <div className="mt-2">
-                            <span className="text-[10px] text-slate-400 uppercase font-medium">Réponse modèle</span>
+                            <span className="text-[10px] text-slate-400 uppercase font-medium">Réponse model</span>
                             <pre className={`text-xs whitespace-pre-wrap font-mono rounded-lg p-2.5 border mt-0.5 line-clamp-4 ${
                               item.breached ? "bg-red-50 border-red-100 text-red-700" : "bg-green-50 border-green-100 text-green-700"
                             }`}>{item.response}</pre>
@@ -319,7 +319,7 @@ export default function RedboxPage() {
                         <div className="bg-slate-50 rounded-xl p-4 mx-2 mb-1 border border-slate-100 text-xs space-y-2">
                           <div><span className="text-slate-400 uppercase text-[10px] font-medium">Prompt adversarial</span>
                             <pre className="mt-0.5 font-mono whitespace-pre-wrap">{e.adversarial_prompt}</pre></div>
-                          <div><span className="text-slate-400 uppercase text-[10px] font-medium">Réponse modèle</span>
+                          <div><span className="text-slate-400 uppercase text-[10px] font-medium">Réponse model</span>
                             <pre className={`mt-0.5 font-mono whitespace-pre-wrap ${e.breached ? "text-red-600" : "text-green-600"}`}>{e.model_response}</pre></div>
                           <div className="flex items-center gap-4 text-slate-500 pt-1">
                             <span>Failure: {e.failure_detected || "—"}</span>

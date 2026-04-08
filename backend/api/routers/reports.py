@@ -184,53 +184,23 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
         payload.custom_instructions, genome_data, failed_summary,
     )
 
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured on backend.")
+    if not settings.anthropic_api_key and not settings.ollama_base_url:
+        raise HTTPException(status_code=500, detail="No model available for reports. Configure ANTHROPIC_API_KEY or Ollama.")
 
-    # Async call with timeout and retry
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    max_retries = 2
-    last_error = None
-
-    for attempt in range(max_retries):
-        try:
-            message = await asyncio.wait_for(
-                client.messages.create(
-                    model=settings.report_model,
-                    max_tokens=settings.report_max_tokens,
-                    system=_build_system_prompt(),
-                    messages=[{"role": "user", "content": user_prompt}],
-                ),
-                timeout=settings.report_timeout_seconds,
-            )
-            content = safe_extract_text(message)
-            break
-        except asyncio.TimeoutError:
-            last_error = f"Claude API timeout after {settings.report_timeout_seconds}s (attempt {attempt+1}/{max_retries})"
-            logger.warning(last_error)
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2)
-                continue
-            raise HTTPException(status_code=504, detail=last_error)
-        except anthropic.RateLimitError as e:
-            last_error = f"Claude rate limited: {e}"
-            logger.warning(last_error)
-            if attempt < max_retries - 1:
-                await asyncio.sleep(10)
-                continue
-            raise HTTPException(status_code=429, detail="Claude API rate limited. Réessayez dans quelques secondes.")
-        except anthropic.AuthenticationError:
-            raise HTTPException(status_code=401, detail="Clé ANTHROPIC_API_KEY invalide ou expirée. Vérifiez votre configuration.")
-        except anthropic.APIError as e:
-            last_error = f"Claude API error: {e}"
-            logger.error(last_error)
-            if e.status_code and e.status_code >= 500 and attempt < max_retries - 1:
-                await asyncio.sleep(3)
-                continue
-            raise HTTPException(status_code=502, detail=f"Claude API error: {str(e)[:200]}")
-        except Exception as e:
-            logger.exception(f"Unexpected error generating report: {e}")
-            raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)[:200]}")
+    # Generate report using best available model (Ollama local → Anthropic)
+    from core.utils import generate_text
+    try:
+        content = await generate_text(
+            prompt=user_prompt,
+            system_prompt=_build_system_prompt(),
+            max_tokens=settings.report_max_tokens,
+            timeout=settings.report_timeout_seconds,
+        )
+    except anthropic.AuthenticationError:
+        raise HTTPException(status_code=401, detail="Invalid ANTHROPIC_API_KEY. Check your configuration.")
+    except Exception as e:
+        logger.exception(f"Report generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)[:200]}")
 
     report = Report(
         campaign_id=payload.campaign_id,

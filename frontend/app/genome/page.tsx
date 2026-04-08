@@ -116,7 +116,7 @@ export default function GenomePage() {
 
   return (
     <div>
-      <PageHeader title="Genomia" description="Diagnostic comportemental structurel des modèles — au-delà du score." />
+      <PageHeader title="Genomia" description="Diagnostic comportemental structurel des models — au-delà du score." />
 
       <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
         {TABS.map(({ key, label }) => (
@@ -141,7 +141,7 @@ export default function GenomePage() {
               <button onClick={() => handleCompute(false)} disabled={!selectedId || computing}
                 className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
                 {computing ? <Spinner size={13} /> : "⚡"}
-                {computing ? "Analyse en cours…" : "Analyser"}
+                {computing ? "Analysis in progress…" : "Analyze"}
               </button>
               <button onClick={() => handleCompute(true)} disabled={!selectedId || computing}
                 className="flex items-center gap-2 border border-purple-300 text-purple-700 px-4 py-2 rounded-lg text-sm hover:bg-purple-50 disabled:opacity-40"
@@ -155,8 +155,8 @@ export default function GenomePage() {
               : !genome?.computed ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
                   <div className="text-5xl mb-3">🧬</div>
-                  <h3 className="font-semibold text-slate-800 mb-1">Genomia non calculé</h3>
-                  <p className="text-sm text-slate-500">Sélectionnez une campagne terminée et cliquez "Analyser".</p>
+                  <h3 className="font-semibold text-slate-800 mb-1">Genomia not computed</h3>
+                  <p className="text-sm text-slate-500">Select a completed campaign and click "Analyze".</p>
                 </div>
               ) : (
                 <div className="space-y-4">

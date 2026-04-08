@@ -64,7 +64,7 @@ export default function PolicyPage() {
 
   return (
     <div>
-      <PageHeader title="Compliance & Policy" description="Simulez la conformité réglementaire de vos modèles." />
+      <PageHeader title="Compliance & Policy" description="Simulez la conformité réglementaire de vos models." />
 
       <div className="p-8 space-y-6">
         {/* Selector bar */}
@@ -73,12 +73,12 @@ export default function PolicyPage() {
             <label className="text-xs font-medium text-slate-600 mb-1 block">Campagne</label>
             <select value={selectedCampaign ?? ""} onChange={e => setSelectedCampaign(+e.target.value || null)}
               className="border border-slate-200 rounded-lg px-3 py-2 text-sm min-w-64">
-              <option value="">— Campagne terminée —</option>
+              <option value="">— Completed campaign —</option>
               {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">Cadre réglementaire</label>
+            <label className="text-xs font-medium text-slate-600 mb-1 block">Regulatory framework</label>
             <div className="flex gap-2">
               {frameworks.map(f => (
                 <button key={f.id} onClick={() => setSelectedPolicy(f.id)}
@@ -93,7 +93,7 @@ export default function PolicyPage() {
           <button onClick={runEvaluation} disabled={loading || !selectedCampaign}
             className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
             {loading ? <Spinner size={13} /> : <Shield size={14} />}
-            {loading ? "Évaluation…" : "Évaluer la conformité"}
+            {loading ? "Evaluating…" : "Evaluate compliance"}
           </button>
         </div>
 
@@ -164,10 +164,10 @@ export default function PolicyPage() {
         {!evaluations && !loading && (
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
             <Shield size={40} className="text-slate-300 mx-auto mb-3" />
-            <h3 className="font-semibold text-slate-700 mb-1">Simulation de conformité</h3>
+            <h3 className="font-semibold text-slate-700 mb-1">Compliance simulation</h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              Sélectionnez une campagne et un cadre réglementaire pour évaluer la conformité de vos modèles.
-              Les résultats intègrent le Failure Genome et les données REDBOX.
+              Sélectionnez une campagne et un cadre réglementaire pour évaluer la conformité de vos models.
+              Results integrate Genomia and REDBOX data.
             </p>
           </div>
         )}
