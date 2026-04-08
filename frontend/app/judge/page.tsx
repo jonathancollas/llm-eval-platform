@@ -1,17 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { campaignsApi, judgeApi } from "@/lib/api";
-import type { Campaign } from "@/lib/api";
+import { campaignsApi, judgeApi, modelsApi } from "@/lib/api";
+import type { Campaign, LLMModel } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { AlertTriangle } from "lucide-react";
-
-const JUDGE_MODELS = [
-  { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "Anthropic" },
-  { id: "openai/gpt-4o", label: "GPT-4o", provider: "OpenAI" },
-  { id: "google/gemini-2.0-flash-001", label: "Gemini 2.0 Flash", provider: "Google" },
-  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", provider: "Meta" },
-];
 
 const CRITERIA = [
   { key: "correctness", label: "Correctness", desc: "Is the answer factually correct?" },
@@ -25,8 +18,9 @@ type Tab = "evaluate" | "agreement" | "bias" | "calibrate";
 
 export default function JudgePage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [models, setModels] = useState<LLMModel[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [selectedJudges, setSelectedJudges] = useState<string[]>(["claude-sonnet-4-20250514"]);
+  const [selectedJudges, setSelectedJudges] = useState<string[]>([]);
   const [criteria, setCriteria] = useState("correctness");
   const [maxItems, setMaxItems] = useState(30);
   const [evaluating, setEvaluating] = useState(false);
@@ -39,6 +33,13 @@ export default function JudgePage() {
 
   useEffect(() => {
     campaignsApi.list().then(cs => setCampaigns(cs.filter(c => c.status === "completed")));
+    modelsApi.list().then(ms => {
+      setModels(ms);
+      // Auto-select first local model if available, else first model
+      const local = ms.find(m => (m as any).provider === "ollama");
+      if (local) setSelectedJudges([(local as any).model_id || local.name]);
+      else if (ms.length > 0) setSelectedJudges([(ms[0] as any).model_id || ms[0].name]);
+    });
   }, []);
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function JudgePage() {
   };
 
   const TABS: { key: Tab; label: string }[] = [
-    { key: "evaluate", label: "⚖️ Évaluer" },
+    { key: "evaluate", label: "⚖️ Evaluate" },
     { key: "agreement", label: "🤝 Agreement" },
     { key: "bias", label: "🎯 Bias Detection" },
     { key: "calibrate", label: "🔬 Calibration" },
@@ -75,7 +76,7 @@ export default function JudgePage() {
 
   return (
     <div>
-      <PageHeader title="LLM-as-Judge" description="Évaluation multi-juges avec calibration et détection de biais." />
+      <PageHeader title="LLM-as-Judge" description="Évaluation multi-judges avec calibration et détection de biais." />
 
       <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
         {TABS.map(({ key, label }) => (
@@ -100,29 +101,33 @@ export default function JudgePage() {
         {tab === "evaluate" && (
           <div className="space-y-6 max-w-3xl">
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-2 block">Juges LLM (multi-select)</label>
-              <div className="grid grid-cols-2 gap-2">
-                {JUDGE_MODELS.map(j => (
-                  <button key={j.id} onClick={() => toggleJudge(j.id)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
-                      selectedJudges.includes(j.id) ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
-                    }`}>
-                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                      selectedJudges.includes(j.id) ? "border-slate-900 bg-slate-900" : "border-slate-300"
-                    }`}>
-                      {selectedJudges.includes(j.id) && <span className="text-white text-[10px]">✓</span>}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-slate-900">{j.label}</div>
-                      <div className="text-xs text-slate-400">{j.provider}</div>
-                    </div>
-                  </button>
-                ))}
+              <label className="text-xs font-medium text-slate-600 mb-2 block">Judge models (multi-select)</label>
+              <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+                {models.map(m => {
+                  const modelId = (m as any).model_id || m.name;
+                  const isLocal = (m as any).provider === "ollama";
+                  return (
+                    <button key={m.id} onClick={() => toggleJudge(modelId)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
+                        selectedJudges.includes(modelId) ? "border-slate-900 bg-slate-50" : isLocal ? "border-purple-200 hover:border-purple-300" : "border-slate-200 hover:border-slate-300"
+                      }`}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+                        selectedJudges.includes(modelId) ? "border-slate-900 bg-slate-900" : "border-slate-300"
+                      }`}>
+                        {selectedJudges.includes(modelId) && <span className="text-white text-[10px]">✓</span>}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 truncate">{m.name}</div>
+                        <div className="text-xs text-slate-400">{isLocal ? "🦙 Local" : (m as any).provider}</div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-2 block">Critère d'évaluation</label>
+              <label className="text-xs font-medium text-slate-600 mb-2 block">Evaluation criteria</label>
               <div className="flex flex-wrap gap-2">
                 {CRITERIA.map(c => (
                   <button key={c.key} onClick={() => setCriteria(c.key)}
@@ -142,7 +147,7 @@ export default function JudgePage() {
 
             <button onClick={runEval} disabled={evaluating || !selectedId || !selectedJudges.length}
               className="flex items-center gap-2 bg-slate-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-40">
-              {evaluating ? <><Spinner size={13} /> Évaluation en cours ({selectedJudges.length} juges × {maxItems} items)…</> : "Launch l'évaluation"}
+              {evaluating ? <><Spinner size={13} /> Evaluating ({selectedJudges.length} judges × {maxItems} items)…</> : "Launch evaluation"}
             </button>
 
             {error && (
@@ -152,7 +157,7 @@ export default function JudgePage() {
             {evalResult && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-5 space-y-2">
                 <div className="text-sm font-medium text-green-800">✅ Évaluation terminée</div>
-                <div className="text-xs text-green-600">{evalResult.evaluations_created} évaluations créées sur {evalResult.items_judged} items</div>
+                <div className="text-xs text-green-600">{evalResult.evaluations_created} evaluations created on {evalResult.items_judged} items</div>
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   {Object.entries(evalResult.avg_scores ?? {}).map(([judge, score]: any) => (
                     <div key={judge} className="bg-white rounded-lg p-3 border border-green-100">
@@ -167,7 +172,7 @@ export default function JudgePage() {
             {/* Summary */}
             {summary?.computed && (
               <div className="bg-white border border-slate-200 rounded-xl p-5">
-                <h3 className="text-sm font-medium text-slate-900 mb-3">Résumé des évaluations</h3>
+                <h3 className="text-sm font-medium text-slate-900 mb-3">Evaluation summary</h3>
                 <div className="space-y-2">
                   {Object.entries(summary.judges ?? {}).map(([judge, stats]: any) => (
                     <div key={judge} className="flex items-center gap-3 text-xs">
@@ -188,12 +193,12 @@ export default function JudgePage() {
           <div className="space-y-4 max-w-2xl">
             {!agreement?.computed ? (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
-                <p className="text-sm text-slate-500">Lancez une évaluation multi-juges pour voir l'agreement.</p>
+                <p className="text-sm text-slate-500">Lancez une évaluation multi-judges pour voir l'agreement.</p>
               </div>
             ) : Object.keys(agreement.agreement).length === 0 ? (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-sm text-yellow-700">
                 <AlertTriangle size={14} className="inline mr-2" />
-                {agreement.note ?? "Il faut au moins 2 juges pour calculer l'agreement."}
+                {agreement.note ?? "Il faut au moins 2 judges pour calculer l'agreement."}
               </div>
             ) : (
               <div className="space-y-3">
@@ -223,7 +228,7 @@ export default function JudgePage() {
                   <div><span className="font-medium">κ &gt; 0.8 :</span> Agreement quasi-parfait</div>
                   <div><span className="font-medium">0.6 &lt; κ &lt; 0.8 :</span> Substantiel</div>
                   <div><span className="font-medium">0.4 &lt; κ &lt; 0.6 :</span> Modéré</div>
-                  <div><span className="font-medium">κ &lt; 0.4 :</span> Les juges sont en désaccord significatif</div>
+                  <div><span className="font-medium">κ &lt; 0.4 :</span> Les judges sont en désaccord significatif</div>
                 </div>
               </div>
             )}
@@ -235,12 +240,12 @@ export default function JudgePage() {
           <div className="space-y-4 max-w-2xl">
             {!bias?.computed ? (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
-                <p className="text-sm text-slate-500">Lancez une évaluation pour détecter les biais.</p>
+                <p className="text-sm text-slate-500">Run an evaluation to detect biases.</p>
               </div>
             ) : bias.biases.length === 0 ? (
               <div className="bg-green-50 border border-green-200 rounded-xl p-5">
                 <div className="text-sm font-medium text-green-700">✅ Aucun biais significatif détecté</div>
-                <div className="text-xs text-green-500 mt-1">{bias.total_evaluations} évaluations analysées</div>
+                <div className="text-xs text-green-500 mt-1">{bias.total_evaluations} evaluations analyzed</div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -267,7 +272,7 @@ export default function JudgePage() {
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-700">
               <div className="font-medium mb-1">🔬 Calibration Oracle</div>
               <p className="text-xs text-blue-500">
-                Uploadez des labels humains (oracle) pour calibrer les juges LLM.
+                Uploadez des labels humains (oracle) pour calibrer les judges LLM.
                 Format : JSON array de {`{result_id, score}`} où score est le jugement humain (0-1).
               </p>
             </div>
@@ -284,7 +289,7 @@ export default function JudgePage() {
               } catch (e: any) { alert("Error: " + e.message); }
             }} disabled={!selectedId}
               className="bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
-              Calibrer les juges
+              Calibrer les judges
             </button>
           </div>
         )}
