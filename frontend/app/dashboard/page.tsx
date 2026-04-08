@@ -333,7 +333,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
 
       {open && (
         <div className="space-y-3 mb-4">
-          <textarea rows={2} placeholder="Instructions personnalisées pour l'analyste…"
+          <textarea rows={2} placeholder="Custom instructions for the analyst…"
             value={customInstructions} onChange={e => setCustomInstructions(e.target.value)}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none" />
           <div className="flex items-center gap-3">

@@ -161,7 +161,7 @@ export default function AgentsPage() {
 
   return (
     <div>
-      <PageHeader title="Agent Evaluation" description="Évaluation multi-step d'agents LLM sur 6 axes." />
+      <PageHeader title="Agent Evaluation" description="Multi-step LLM agent evaluation on 6 axes." />
 
       <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
         {TABS.map(({ key, label }) => (
@@ -256,14 +256,14 @@ export default function AgentsPage() {
                   {/* Final answer */}
                   {selectedTraj.final_answer && (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs">
-                      <span className="text-green-700 font-medium">Réponse finale : </span>
+                      <span className="text-green-700 font-medium">Final response: </span>
                       <span className="text-green-600">{selectedTraj.final_answer}</span>
                     </div>
                   )}
 
                   {/* Step timeline */}
                   <div>
-                    <h4 className="text-sm font-medium text-slate-700 mb-2">Trajectoire ({selectedTraj.steps?.length} étapes)</h4>
+                    <h4 className="text-sm font-medium text-slate-700 mb-2">Trajectoire ({selectedTraj.steps?.length} steps)</h4>
                     <StepTimeline steps={selectedTraj.steps ?? []} />
                   </div>
                 </div>
@@ -296,7 +296,7 @@ export default function AgentsPage() {
             <button onClick={uploadTrajectory} disabled={uploading || !uploadJson.trim()}
               className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
               {uploading ? <Spinner size={13} /> : <Play size={14} />}
-              Upload & créer
+              Upload & create
             </button>
           </div>
         )}
@@ -306,7 +306,7 @@ export default function AgentsPage() {
           <div>
             {!dashboard?.computed ? (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-12 text-center">
-                <p className="text-sm text-slate-500">Évaluez des trajectoires pour générer le dashboard.</p>
+                <p className="text-sm text-slate-500">Evaluate trajectories to generate the dashboard.</p>
               </div>
             ) : (
               <div className="space-y-4">

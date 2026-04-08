@@ -198,7 +198,7 @@ export default function JudgePage() {
             ) : Object.keys(agreement.agreement).length === 0 ? (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-sm text-yellow-700">
                 <AlertTriangle size={14} className="inline mr-2" />
-                {agreement.note ?? "Il faut au moins 2 judges pour calculer l'agreement."}
+                {agreement.note ?? "At least 2 judges are needed to compute agreement."}
               </div>
             ) : (
               <div className="space-y-3">

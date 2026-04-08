@@ -17,7 +17,7 @@ const cards = [
   {
     icon: FileText,
     title: "MANIFESTE",
-    description: "Mission de l'INESIA, méthodologie frontier, gouvernance des benchmarks, feuille de route 2026-2027.",
+    description: "INESIA mission, frontier methodology, benchmark governance, 2026-2027 roadmap.",
     href: `${GITHUB_BASE}/MANIFESTO.md`,
     label: "Lire le Manifeste",
     color: "border-purple-200 bg-purple-50 hover:border-purple-300",
@@ -26,9 +26,9 @@ const cards = [
   {
     icon: Github,
     title: "Code source",
-    description: "Plateforme open source sous double licence Etalab 2.0 / Apache 2.0. Contributions bienvenues.",
+    description: "Open source platform under dual Etalab 2.0 / Apache 2.0 license. Contributions welcome.",
     href: "https://github.com/jonathancollas/llm-eval-platform",
-    label: "Voir sur GitHub",
+    label: "View on GitHub",
     color: "border-slate-200 bg-slate-50 hover:border-slate-300",
     iconColor: "text-slate-700",
   },
@@ -63,11 +63,11 @@ export default function AboutPage() {
           </svg>
           <div>
             <h1 className="text-2xl font-bold tracking-widest text-slate-900">MERCURY RETROGRADE</h1>
-            <p className="text-sm text-slate-500 mt-1 tracking-wide">↺ MR · v0.2.0 · INESIA 2026</p>
+            <p className="text-sm text-slate-500 mt-1 tracking-wide">↺ MR · v0.5.0 · INESIA 2026</p>
           </div>
           <p className="text-sm text-slate-600 max-w-lg leading-relaxed">
             Open technical infrastructure for evaluating advanced AI models and systems,
-            développée dans le cadre de la feuille de route INESIA 2026-2027.
+            developed as part of the INESIA 2026-2027 roadmap.
           </p>
           <div className="flex items-center gap-4 text-xs text-slate-400">
             <span>SGDSN · DGE</span>

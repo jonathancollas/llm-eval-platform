@@ -116,7 +116,7 @@ export default function GenomePage() {
 
   return (
     <div>
-      <PageHeader title="Genomia" description="Diagnostic comportemental structurel des models — au-delà du score." />
+      <PageHeader title="Genomia" description="Structural behavioral diagnostic of models — beyond the score." />
 
       <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
         {TABS.map(({ key, label }) => (
@@ -145,7 +145,7 @@ export default function GenomePage() {
               </button>
               <button onClick={() => handleCompute(true)} disabled={!selectedId || computing}
                 className="flex items-center gap-2 border border-purple-300 text-purple-700 px-4 py-2 rounded-lg text-sm hover:bg-purple-50 disabled:opacity-40"
-                title="Utilise Claude pour les classifications incertaines — plus précis mais plus lent">
+                title="Uses Claude for uncertain classifications — more accurate but slower">
                 {computing ? <Spinner size={13} /> : "🧠"}
                 Hybrid (LLM)
               </button>

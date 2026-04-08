@@ -13,11 +13,11 @@ interface Stats {
 }
 
 const QUICK_LINKS = [
-  { href: "/models",     icon: Cpu,      label: "Models",     desc: "Gérer les models" },
+  { href: "/models",     icon: Cpu,      label: "Models",     desc: "Manage models" },
   { href: "/benchmarks", icon: Library,  label: "Benchmarks", desc: "Catalogue & datasets" },
   { href: "/campaigns",  icon: Rocket,   label: "Campaigns",  desc: "Launch an evaluation" },
   { href: "/dashboard",  icon: BarChart3,label: "Dashboard",  desc: "Visualize results" },
-  { href: "/leaderboard",icon: Trophy,   label: "Leaderboard",desc: "Classements par domaine" },
+  { href: "/leaderboard",icon: Trophy,   label: "Leaderboard",desc: "Rankings by domain" },
 ];
 
 function AnimatedCount({ value, suffix = "" }: { value: number; suffix?: string }) {

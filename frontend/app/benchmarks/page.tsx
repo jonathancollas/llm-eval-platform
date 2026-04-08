@@ -101,7 +101,7 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
                 <div className="relative flex-1">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
-                    placeholder="Search dans les items…"
+                    placeholder="Search items…"
                     className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
                 </div>
                 <button type="submit" className="px-4 py-2 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-700">

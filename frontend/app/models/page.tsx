@@ -249,7 +249,7 @@ export default function ModelsPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={filters.search}
             onChange={e => setFilter("search", e.target.value)}
-            placeholder="Search par nom ou model ID…"
+            placeholder="Search by name or model ID…"
             className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
         </div>
 
@@ -318,7 +318,7 @@ export default function ModelsPage() {
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
         ) : filtered.length === 0 ? (
           <EmptyState icon="🤖" title={models.length === 0 ? "No models" : "No results"}
-            description={models.length === 0 ? "Ajoutez des models depuis le catalogue OpenRouter." : "Modifiez vos filtres."} />
+            description={models.length === 0 ? "Add models from the OpenRouter catalog." : "Adjust your filters."} />
         ) : (
           filtered.map(m => {
             const test = testResults[m.id];

@@ -19,7 +19,7 @@ export function SyncBanner() {
         </>
       ) : (
         <span className="text-xs text-slate-500">
-          ✓ Catalogue synchronisé
+          ✓ Catalog synchronized
           {benchmarksAdded > 0 && ` · ${benchmarksAdded} benchmark${benchmarksAdded > 1 ? "s" : ""} added`}
           {modelsAdded > 0 && ` · ${modelsAdded} model${modelsAdded > 1 ? "s" : ""} added`}
         </span>
