@@ -44,6 +44,63 @@ function SeverityBadge({ severity }: { severity: number }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${cls}`}>{pct}%</span>;
 }
 
+function RedboxLiveFeed({ modelId }: { modelId: number }) {
+  const [data, setData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchLive = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/redbox/live/${modelId}?limit=5`);
+        if (res.ok) setData(await res.json());
+      } catch {}
+    };
+    fetchLive();
+    const poll = setInterval(fetchLive, 1500);
+    return () => clearInterval(poll);
+  }, [modelId]);
+
+  return (
+    <div className="border border-red-200 rounded-xl overflow-hidden bg-red-50">
+      <div className="px-4 py-2 flex items-center gap-3 text-xs">
+        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+        <span className="font-semibold text-red-700">Live — Attack Feed</span>
+        {data && (
+          <>
+            <span className="text-red-500 font-mono">{data.total_exploits} tested</span>
+            <span className="text-red-500 font-mono">{data.total_breached} breached</span>
+            {data.total_exploits > 0 && (
+              <span className="ml-auto font-bold text-red-700">{Math.round(data.breach_rate * 100)}%</span>
+            )}
+          </>
+        )}
+      </div>
+      {data?.items?.length > 0 && (
+        <div className="border-t border-red-200 px-4 py-2 space-y-1">
+          {data.items.slice(0, 5).map((item: any) => {
+            const mt = MUTATION_TYPES.find(m => m.key === item.mutation_type);
+            return (
+              <div key={item.id} className="flex items-center gap-2 text-xs">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold ${item.breached ? "bg-red-500" : "bg-green-500"}`}>
+                  {item.breached ? "✗" : "✓"}
+                </span>
+                <span className="text-slate-500 w-20 shrink-0 truncate">{mt?.label || item.mutation_type}</span>
+                <span className="text-slate-400 flex-1 truncate">{item.prompt}</span>
+                <span className="text-slate-400">{item.latency_ms}ms</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {(!data || data.items.length === 0) && (
+        <div className="border-t border-red-200 px-4 py-3 text-xs text-red-400 flex items-center gap-2">
+          <div className="w-3 h-3 border-2 border-red-300 border-t-transparent rounded-full animate-spin" />
+          Waiting for first results…
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RedboxPage() {
   const [seed, setSeed] = useState("");
   const [selectedMutations, setSelectedMutations] = useState<string[]>(["prompt_injection", "jailbreak"]);
@@ -220,16 +277,19 @@ export default function RedboxPage() {
                   <button onClick={runAttack} disabled={running || !selectedModelId}
                     className="flex items-center gap-2 bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-40">
                     {running ? <Spinner size={13} /> : <Play size={14} />}
-                    {running ? "Attaque en cours…" : "Launch l'attaque"}
+                    {running ? "Attack in progress…" : "Launch attack"}
                   </button>
                 </div>
+
+                {/* Live feed during attack */}
+                {running && selectedModelId && <RedboxLiveFeed modelId={selectedModelId} />}
 
                 {/* Run summary */}
                 {runSummary && (
                   <div className={`rounded-xl p-4 border ${runSummary.breached > 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
                     <div className="flex items-center gap-4 text-sm">
-                      <span className="font-medium">{runSummary.breached > 0 ? "🔴" : "🟢"} {runSummary.breached}/{runSummary.total_tested} brèches</span>
-                      <span className="text-slate-500">Taux de brèche: {Math.round(runSummary.breach_rate * 100)}%</span>
+                      <span className="font-medium">{runSummary.breached > 0 ? "🔴" : "🟢"} {runSummary.breached}/{runSummary.total_tested} breaches</span>
+                      <span className="text-slate-500">Breach rate: {Math.round(runSummary.breach_rate * 100)}%</span>
                     </div>
                   </div>
                 )}
@@ -298,8 +358,8 @@ export default function RedboxPage() {
             {!filteredExploits.length ? (
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
                 <Target size={40} className="text-slate-300 mx-auto mb-3" />
-                <h3 className="font-semibold text-slate-700 mb-1">Aucun exploit enregistré</h3>
-                <p className="text-sm text-slate-500">Lancez une attaque depuis l'onglet Forge.</p>
+                <h3 className="font-semibold text-slate-700 mb-1">No exploits recorded</h3>
+                <p className="text-sm text-slate-500">Launch an attack from the Forge tab.</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
@@ -347,7 +407,7 @@ export default function RedboxPage() {
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-12 text-center">
                 <ShieldAlert size={40} className="text-slate-300 mx-auto mb-3" />
                 <h3 className="font-semibold text-slate-700 mb-1">Attack Surface Map</h3>
-                <p className="text-sm text-slate-500">Lancez des attaques pour générer la carte.</p>
+                <p className="text-sm text-slate-500">Run attacks to generate the heatmap.</p>
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-200">

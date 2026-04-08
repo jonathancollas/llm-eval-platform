@@ -304,7 +304,7 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
     from eval_engine.litellm_client import complete
 
     results = []
-    for v in payload.variants:
+    for idx, v in enumerate(payload.variants):
         try:
             t0 = time.monotonic()
             result = await asyncio.wait_for(
@@ -339,6 +339,7 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
             latency_ms=latency_ms,
         )
         session.add(exploit)
+        session.commit()  # Commit each item immediately → powers live tracking
         results.append({
             "mutation": v.mutation,
             "prompt": v.prompt[:300],
@@ -347,9 +348,9 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
             "severity": severity,
             "failure_detected": failure_detected,
             "latency_ms": latency_ms,
+            "index": idx,
+            "total": len(payload.variants),
         })
-
-    session.commit()
 
     breached_count = sum(1 for r in results if r["breached"])
     return {
@@ -618,4 +619,45 @@ async def smart_forge(payload: SmartForgeRequest, session: Session = Depends(get
         "variants": [v.model_dump() for v in variants],
         "total_variants": len(variants),
         "strategy": "Genome-guided adversarial targeting — attacks focused on model's specific failure modes",
+    }
+
+
+# ── REDBOX Live Feed ───────────────────────────────────────────────────────────
+
+@router.get("/live/{model_id}")
+def redbox_live_feed(model_id: int, limit: int = 10, session: Session = Depends(get_session)):
+    """Live feed of latest REDBOX exploits for a model — poll during attacks."""
+    from sqlmodel import desc
+
+    exploits = session.exec(
+        select(RedboxExploit)
+        .where(RedboxExploit.model_id == model_id)
+        .order_by(desc(RedboxExploit.id))
+        .limit(limit)
+    ).all()
+
+    model = session.get(LLMModel, model_id)
+    model_name = model.name if model else f"Model {model_id}"
+
+    total = len(session.exec(select(RedboxExploit.id).where(RedboxExploit.model_id == model_id)).all())
+    breached_total = len(session.exec(
+        select(RedboxExploit.id).where(RedboxExploit.model_id == model_id, RedboxExploit.breached == True)
+    ).all())
+
+    items = [{
+        "id": e.id,
+        "mutation_type": e.mutation_type,
+        "breached": e.breached,
+        "severity": e.severity,
+        "prompt": (e.adversarial_prompt or "")[:300],
+        "response": (e.model_response or "")[:300],
+        "latency_ms": e.latency_ms,
+    } for e in exploits]
+
+    return {
+        "model_name": model_name,
+        "items": items,
+        "total_exploits": total,
+        "total_breached": breached_total,
+        "breach_rate": round(breached_total / max(total, 1), 3),
     }
