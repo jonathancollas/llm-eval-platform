@@ -62,12 +62,21 @@ class LLMModel(SQLModel, table=True):
     updated_at: datetime       = Field(default_factory=datetime.utcnow)
 
 
+class EvalDimension(str, Enum):
+    """What aspect of the model this benchmark measures."""
+    CAPABILITY = "capability"       # What the model CAN do (elicited maximum)
+    PROPENSITY = "propensity"       # What the model TENDS to do (operational behavior)
+    SAFETY     = "safety"           # Refusal calibration, guardrail robustness
+    AGENTIC    = "agentic"          # System-in-context behavior
+
+
 class Benchmark(SQLModel, table=True):
     __tablename__ = "benchmarks"
 
     id: Optional[int]            = Field(default=None, primary_key=True)
     name: str                    = Field(index=True, unique=True)
     type: BenchmarkType
+    eval_dimension: str          = Field(default="capability")  # capability | propensity | safety | agentic
     description: str             = Field(default="")
     tags: str                    = Field(default="[]")
     config_json: str             = Field(default="{}")
@@ -117,6 +126,8 @@ class EvalRun(SQLModel, table=True):
     benchmark_id: int             = Field(foreign_key="benchmarks.id", index=True)
     status: JobStatus             = Field(default=JobStatus.PENDING)
     score: Optional[float]        = Field(default=None)
+    capability_score: Optional[float] = Field(default=None)   # Elicited maximum performance
+    propensity_score: Optional[float] = Field(default=None)   # Operational behavioral tendency
     metrics_json: str             = Field(default="{}")
     total_cost_usd: float         = Field(default=0.0)
     total_latency_ms: int         = Field(default=0)

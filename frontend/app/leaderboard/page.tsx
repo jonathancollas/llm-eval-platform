@@ -19,6 +19,7 @@ const DOMAIN_COLORS: Record<string, string> = {
   frontier: "border-red-200 bg-red-50 hover:border-red-300",
   cyber: "border-orange-200 bg-orange-50 hover:border-orange-300",
   disinfo: "border-red-200 bg-red-50 hover:border-red-300",
+  propensity: "border-purple-200 bg-purple-50 hover:border-purple-300",
   academic: "border-blue-200 bg-blue-50 hover:border-blue-300",
   french: "border-blue-200 bg-blue-50 hover:border-blue-300",
   code: "border-violet-200 bg-violet-50 hover:border-violet-300",

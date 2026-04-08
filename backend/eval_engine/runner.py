@@ -137,6 +137,15 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     summary, item_results = result
                     eval_run.status = JobStatus.COMPLETED
                     eval_run.score = summary.score
+
+                    # Set capability OR propensity score based on benchmark dimension
+                    bench = session.get(Benchmark, eval_run.benchmark_id)
+                    dim = getattr(bench, "eval_dimension", "capability") if bench else "capability"
+                    if dim == "propensity":
+                        eval_run.propensity_score = summary.score
+                    else:
+                        eval_run.capability_score = summary.score
+
                     eval_run.metrics_json = json.dumps(summary.metrics)
                     eval_run.total_cost_usd = summary.total_cost_usd
                     eval_run.total_latency_ms = summary.total_latency_ms

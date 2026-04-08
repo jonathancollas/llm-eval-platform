@@ -93,6 +93,10 @@ def _migrate_add_columns() -> None:
         ("campaigns", "current_item_index", "INTEGER", "NULL"),
         ("campaigns", "current_item_total", "INTEGER", "NULL"),
         ("campaigns", "current_item_label", "TEXT", "NULL"),
+        # Capability/Propensity dual scores (v0.5+)
+        ("eval_runs", "capability_score", "REAL", "NULL"),
+        ("eval_runs", "propensity_score", "REAL", "NULL"),
+        ("benchmarks", "eval_dimension", "TEXT", "'capability'"),
     ]
     import sqlite3
     db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")

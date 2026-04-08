@@ -53,6 +53,13 @@ DOMAINS = {
         "icon": "📡",
         "color": "red",
     },
+    "propensity": {
+        "label": "Propensity",
+        "description": "Behavioral tendencies — scheming, sycophancy, shutdown resistance, persuasion risk. What models TEND to do, not what they CAN do.",
+        "benchmark_keys": ["scheming_eval", "sycophancy_eval", "shutdown_resistance", "persuasion_risk"],
+        "icon": "🧠",
+        "color": "purple",
+    },
     "academic": {
         "label": "Academic",
         "description": "Standard performance benchmarks — knowledge, reasoning, math.",
