@@ -39,7 +39,7 @@ export default function AboutPage() {
     <div>
       <PageHeader
         title="À propos"
-        description="Mercury Retrograde — plateforme d'évaluation ouverte de l'INESIA."
+        description="Mercury Retrograde — INESIA open evaluation platform."
       />
       <div className="p-8 max-w-3xl space-y-8">
 
@@ -66,7 +66,7 @@ export default function AboutPage() {
             <p className="text-sm text-slate-500 mt-1 tracking-wide">↺ MR · v0.2.0 · INESIA 2026</p>
           </div>
           <p className="text-sm text-slate-600 max-w-lg leading-relaxed">
-            Infrastructure technique ouverte d'évaluation des models et systèmes d'IA avancés,
+            Open technical infrastructure for evaluating advanced AI models and systems,
             développée dans le cadre de la feuille de route INESIA 2026-2027.
           </p>
           <div className="flex items-center gap-4 text-xs text-slate-400">

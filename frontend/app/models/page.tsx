@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModel, ModelProvider } from "@/lib/api";
+import { useModels } from "@/lib/useApi";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
@@ -56,7 +57,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 // ── Model detail panel ─────────────────────────────────────────────────────────
 function ModelDetail({ m }: { m: LLMModel }) {
   const createdDate = m.model_created_at
-    ? new Date(m.model_created_at * 1000).toLocaleDateString("fr-FR", { year: "numeric", month: "short" })
+    ? new Date(m.model_created_at * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short" })
     : null;
 
   return (
@@ -149,9 +150,10 @@ export default function ModelsPage() {
   const [ollamaStatus, setOllamaStatus] = useState<{ available: boolean; total: number } | null>(null);
   const [importingOllama, setImportingOllama] = useState(false);
 
-  const load = useCallback(() =>
-    modelsApi.list().then(setModels).finally(() => setLoading(false)), []);
-  useEffect(() => { load(); }, [load]);
+  // SWR — cached, deduped, auto-refresh
+  const { models: swrModels, isLoading: swrLoading, refresh: refreshModels } = useModels();
+  useEffect(() => { setModels(swrModels); if (!swrLoading) setLoading(false); }, [swrModels, swrLoading]);
+  const load = useCallback(() => { refreshModels(); }, [refreshModels]);
 
   // Check Ollama on mount
   useEffect(() => {
@@ -207,7 +209,7 @@ export default function ModelsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Supprimer ce model ?")) return;
+    if (!confirm("Delete ce model ?")) return;
     await modelsApi.delete(id).catch(e => alert(String(e)));
     load();
   };

@@ -41,7 +41,7 @@ export default function LeaderboardPage() {
     <div>
       <PageHeader
         title="Leaderboard INESIA"
-        description="Classement des models d'IA par domaine d'évaluation — données issues de campagnes réelles."
+        description="AI model rankings by evaluation domain — data from real campaigns."
       />
       <div className="p-8 space-y-8">
 
@@ -64,7 +64,7 @@ export default function LeaderboardPage() {
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="font-medium text-slate-900 text-sm">Classement global</h2>
-            {global && <span className="text-xs text-slate-400">{global.total_runs} runs · mis à jour {new Date(global.last_updated).toLocaleDateString("fr-FR")}</span>}
+            {global && <span className="text-xs text-slate-400">{global.total_runs} runs · mis à jour {new Date(global.last_updated).toLocaleDateString("en-US")}</span>}
           </div>
 
           {loading ? (
@@ -73,8 +73,8 @@ export default function LeaderboardPage() {
             <div className="py-16 text-center text-slate-400 text-sm">
               <div className="text-3xl mb-3">📊</div>
               <p className="font-medium text-slate-600 mb-1">No results disponible</p>
-              <p className="text-xs">Lancez des campagnes d'évaluation pour alimenter le leaderboard.</p>
-              <Link href="/campaigns" className="mt-4 inline-block text-xs text-blue-600 hover:underline">Créer une campagne →</Link>
+              <p className="text-xs">Run evaluation campaigns to populate the leaderboard.</p>
+              <Link href="/campaigns" className="mt-4 inline-block text-xs text-blue-600 hover:underline">Create a campaign →</Link>
             </div>
           ) : (
             <div className="overflow-x-auto">

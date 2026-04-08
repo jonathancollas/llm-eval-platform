@@ -105,7 +105,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 className="font-medium text-slate-900 text-sm">Classement</h2>
             <span className="text-xs text-slate-400">
-              {data.total_runs > 0 ? `Mis à jour ${new Date(data.last_updated).toLocaleDateString("fr-FR")}` : "Aucune donnée"}
+              {data.total_runs > 0 ? `Updated ${new Date(data.last_updated).toLocaleDateString("en-US")}` : "No data"}
             </span>
           </div>
 
@@ -113,8 +113,8 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
             <div className="py-16 text-center text-slate-400 text-sm">
               <div className="text-3xl mb-3">📊</div>
               <p className="font-medium text-slate-600 mb-1">Pas encore de données pour ce domaine</p>
-              <p className="text-xs mb-4">Créez une campagne avec des benchmarks de ce domaine.</p>
-              <Link href="/campaigns" className="text-xs text-blue-600 hover:underline">Créer une campagne →</Link>
+              <p className="text-xs mb-4">Create a campaign with benchmarks from this domain.</p>
+              <Link href="/campaigns" className="text-xs text-blue-600 hover:underline">Create a campaign →</Link>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -171,7 +171,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
             <div className="flex items-center gap-2">
               <FileText size={16} className="text-slate-500" />
               <h2 className="font-medium text-slate-900 text-sm">Analyse narrative — Claude</h2>
-              {report && <span className="text-xs text-slate-400">Généré le {new Date(report.generated_at).toLocaleDateString("fr-FR")}</span>}
+              {report && <span className="text-xs text-slate-400">Généré le {new Date(report.generated_at).toLocaleDateString("en-US")}</span>}
             </div>
             <div className="flex gap-2">
               {report && (
@@ -198,7 +198,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
 
           {!report && !generatingReport && data.rows.length === 0 && (
             <div className="px-6 py-8 text-center text-slate-400 text-sm">
-              Des données d'évaluation sont nécessaires pour générer un rapport.
+              Evaluation data is needed to generate a report.
             </div>
           )}
 
@@ -212,7 +212,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
           {generatingReport && (
             <div className="px-6 py-12 flex flex-col items-center gap-3 text-slate-500">
               <Spinner size={24} />
-              <p className="text-sm">Claude analyse les résultats…</p>
+              <p className="text-sm">Generating analysis…</p>
             </div>
           )}
 

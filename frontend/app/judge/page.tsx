@@ -193,7 +193,7 @@ export default function JudgePage() {
           <div className="space-y-4 max-w-2xl">
             {!agreement?.computed ? (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
-                <p className="text-sm text-slate-500">Lancez une évaluation multi-judges pour voir l'agreement.</p>
+                <p className="text-sm text-slate-500">Run a multi-judge evaluation to see agreement.</p>
               </div>
             ) : Object.keys(agreement.agreement).length === 0 ? (
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-sm text-yellow-700">
@@ -244,7 +244,7 @@ export default function JudgePage() {
               </div>
             ) : bias.biases.length === 0 ? (
               <div className="bg-green-50 border border-green-200 rounded-xl p-5">
-                <div className="text-sm font-medium text-green-700">✅ Aucun biais significatif détecté</div>
+                <div className="text-sm font-medium text-green-700">✅ No significant bias detected</div>
                 <div className="text-xs text-green-500 mt-1">{bias.total_evaluations} evaluations analyzed</div>
               </div>
             ) : (

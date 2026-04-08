@@ -17,12 +17,12 @@ interface CatalogBenchmark {
 }
 
 const DOMAIN_ICONS: Record<string, string> = {
-  "raisonnement": "🧠", "maths": "🔢", "factualité": "📚", "connaissances": "🎓",
-  "code": "💻", "français": "🇫🇷", "multilingue": "🌍",
-  "cybersécurité offensive": "🛡️", "CBRN-E": "☢️", "risques agentiques": "🤖",
-  "méta-évaluation": "🔬", "alignment": "⚖️", "désinformation": "📡",
-  "agentique": "🤖", "NLI": "🔗", "médecine": "🏥", "droit": "⚖️",
-  "finance": "💹", "sciences": "🔭", "instruction following": "📋",
+  "reasoning": "🧠", "raisonnement": "🧠", "maths": "🔢", "math": "🔢",
+  "factuality": "📚", "factualité": "📚", "knowledge": "🎓", "connaissances": "🎓",
+  "code": "💻", "french": "🇫🇷", "français": "🇫🇷", "multilingual": "🌍",
+  "cyber": "🔒", "disinformation": "📡", "alignment": "⚖️",
+  "NLI": "🔗", "medicine": "🏥", "law": "⚖️",
+  "finance": "💹", "science": "🔭", "instruction following": "📋",
 };
 
 const FILTER_TABS = [
@@ -176,7 +176,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
           {loading ? (
             <div className="flex justify-center py-16"><Spinner size={24} /></div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">Aucun benchmark dans cette catégorie.</div>
+            <div className="text-center py-16 text-slate-400 text-sm">No benchmarks dans cette catégorie.</div>
           ) : (
             filtered.map(b => {
               const isAdded = added.has(b.key);

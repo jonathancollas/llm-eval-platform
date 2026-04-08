@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { campaignsApi, modelsApi, benchmarksApi } from "@/lib/api";
 import type { Campaign, LLMModel, Benchmark } from "@/lib/api";
+import { useCampaigns, useModels, useBenchmarks } from "@/lib/useApi";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
@@ -26,7 +27,7 @@ const BENCH_FILTERS: { key: BenchmarkFilterKey; label: string }[] = [
 function isBenchInFilter(b: Benchmark, f: BenchmarkFilterKey): boolean {
   if (f === "all") return true;
   if (f === "inesia") return (b.tags ?? []).some(t =>
-    ["INESIA","frontier","cyber","CBRN-E","agentique","méta-éval"].includes(t)) || b.type === "safety";
+    ["INESIA","frontier","cyber","disinformation","MITRE","DISARM","ATLAS"].includes(t)) || b.type === "safety";
   return b.type === f;
 }
 
@@ -232,22 +233,17 @@ export default function CampaignsPage() {
     benchmark_ids: [] as number[], max_samples: 50, temperature: 0.0,
   });
 
-  const load = useCallback(() => {
-    Promise.all([campaignsApi.list(), modelsApi.list(), benchmarksApi.list()])
-      .then(([c, m, b]) => { setCampaigns(c); setModels(m); setBenches(b); })
-      .finally(() => setLoading(false));
-  }, []);
+  // SWR hooks — auto-refresh, dedup, cache
+  const { campaigns: swrCampaigns, isLoading: campaignsLoading, refresh: refreshCampaigns, hasRunning } = useCampaigns();
+  const { models: swrModels, isLoading: modelsLoading, refresh: refreshModels } = useModels();
+  const { benchmarks: swrBenches, isLoading: benchesLoading } = useBenchmarks();
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(() => {
-      setCampaigns(prev => {
-        if (prev.some(c => c.status === "running" || c.status === "pending")) load();
-        return prev;
-      });
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [load]);
+  // Sync SWR data to local state (preserves existing refs)
+  useEffect(() => { if (swrCampaigns.length || !campaignsLoading) setCampaigns(swrCampaigns); }, [swrCampaigns, campaignsLoading]);
+  useEffect(() => { if (swrModels.length || !modelsLoading) { setModels(swrModels); setLoading(false); } }, [swrModels, modelsLoading]);
+  useEffect(() => { if (swrBenches.length || !benchesLoading) setBenches(swrBenches); }, [swrBenches, benchesLoading]);
+
+  const load = useCallback(() => { refreshCampaigns(); refreshModels(); }, [refreshCampaigns, refreshModels]);
 
   const toggleId = (arr: number[], id: number) =>
     arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];

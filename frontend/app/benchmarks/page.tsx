@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { benchmarksApi } from "@/lib/api";
 import type { Benchmark, BenchmarkType } from "@/lib/api";
+import { useBenchmarks } from "@/lib/useApi";
 import { useSync } from "@/lib/useSync";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
@@ -34,7 +35,7 @@ function matchFilter(b: Benchmark, f: FilterKey): boolean {
   if (f === "all") return true;
   if (f === "inesia") {
     const tags = b.tags ?? [];
-    return tags.some(t => ["INESIA","frontier","cyber","CBRN-E","agentique","méta-éval"].includes(t))
+    return tags.some(t => ["INESIA","frontier","cyber","disinformation","MITRE","DISARM","ATLAS"].includes(t))
       || b.type === "safety"
       || (b.name ?? "").toLowerCase().includes("inesia");
   }
@@ -115,7 +116,7 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
               {loading ? (
                 <div className="flex justify-center py-12"><Spinner size={24} /></div>
               ) : data?.items?.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">Aucun item trouvé.</div>
+                <div className="text-center py-12 text-slate-400">No items found.</div>
               ) : data?.items?.map((item: any, i: number) => (
                 <div key={i} className="bg-slate-50 rounded-xl p-4 text-sm border border-slate-100">
                   {/* Try to render common fields nicely */}
@@ -208,8 +209,9 @@ export default function BenchmarksPage() {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
-  const load = useCallback(() => benchmarksApi.list().then(setBenches).finally(() => setLoading(false)), []);
-  useEffect(() => { load(); }, [load]);
+  const { benchmarks: swrBenches, isLoading: swrBenchLoading, refresh: refreshBenches } = useBenchmarks();
+  useEffect(() => { setBenches(swrBenches); if (!swrBenchLoading) setLoading(false); }, [swrBenches, swrBenchLoading]);
+  const load = useCallback(() => { refreshBenches(); }, [refreshBenches]);
 
   const filtered = benches.filter(b => matchFilter(b, filter));
   const countFor = (f: FilterKey) => benches.filter(b => matchFilter(b, f)).length;
@@ -427,7 +429,7 @@ export default function BenchmarksPage() {
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
         ) : filtered.length === 0 ? (
-          <EmptyState icon="📚" title="Aucun benchmark" description="Importez depuis le catalogue ou ajoutez un benchmark custom." />
+          <EmptyState icon="📚" title="No benchmarks" description="Import from the catalog or add a custom benchmark." />
         ) : (
           <div className="grid grid-cols-1 gap-3">
             {filtered.map(b => (
@@ -478,7 +480,7 @@ export default function BenchmarksPage() {
                           </label>
                           <button onClick={() => benchmarksApi.delete(b.id).then(load)}
                             className="text-xs px-3 py-1.5 text-red-500 hover:bg-red-50 border border-red-100 rounded-lg">
-                            Supprimer
+                            Delete
                           </button>
                         </>
                       )}
