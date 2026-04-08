@@ -415,3 +415,101 @@ async def import_huggingface_dataset(
         "sample_item": {k: str(v)[:200] for k, v in sample.items()} if sample else {},
         "source": f"huggingface:{payload.repo_id}/{payload.split}",
     }
+
+
+# ── External Benchmark Sources (routing + discovery) ───────────────────────────
+
+EXTERNAL_SOURCES = [
+    {
+        "id": "huggingface_datasets",
+        "name": "HuggingFace Datasets",
+        "url": "https://huggingface.co/datasets",
+        "description": "150,000+ datasets. Import directly via POST /benchmarks/import-huggingface.",
+        "import_supported": True,
+        "import_endpoint": "/benchmarks/import-huggingface",
+        "icon": "🤗",
+    },
+    {
+        "id": "every_eval_ever",
+        "name": "Every Eval Ever",
+        "url": "https://github.com/evaleval/every_eval_ever",
+        "description": "Comprehensive catalog of 600+ LLM evaluation benchmarks, papers, and leaderboards.",
+        "import_supported": False,
+        "icon": "📋",
+    },
+    {
+        "id": "lm_eval_harness",
+        "name": "lm-evaluation-harness",
+        "url": "https://github.com/EleutherAI/lm-evaluation-harness",
+        "description": "60+ built-in tasks. Run natively via campaign engine.",
+        "import_supported": True,
+        "import_endpoint": "/sync/benchmarks/import-all",
+        "icon": "⚙️",
+    },
+    {
+        "id": "helm",
+        "name": "HELM (Stanford CRFM)",
+        "url": "https://crfm.stanford.edu/helm/",
+        "description": "Holistic Evaluation of Language Models — 42 scenarios, 59 metrics.",
+        "import_supported": False,
+        "icon": "🎓",
+    },
+    {
+        "id": "bigbench",
+        "name": "BIG-Bench",
+        "url": "https://github.com/google/BIG-bench",
+        "description": "200+ tasks covering diverse capabilities. Available via lm-eval.",
+        "import_supported": True,
+        "icon": "🔬",
+    },
+    {
+        "id": "openllm_leaderboard",
+        "name": "Open LLM Leaderboard",
+        "url": "https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard",
+        "description": "HuggingFace community leaderboard. Reference scores for comparison.",
+        "import_supported": False,
+        "icon": "🏆",
+    },
+    {
+        "id": "livebench",
+        "name": "LiveBench",
+        "url": "https://livebench.ai/",
+        "description": "Continuously updated benchmark to avoid contamination. Monthly refreshed.",
+        "import_supported": False,
+        "icon": "📡",
+    },
+    {
+        "id": "chatbot_arena",
+        "name": "Chatbot Arena (LMSYS)",
+        "url": "https://chat.lmsys.org/",
+        "description": "Human preference-based ranking via blind pairwise comparisons.",
+        "import_supported": False,
+        "icon": "⚔️",
+    },
+    {
+        "id": "mitre_atlas",
+        "name": "MITRE ATLAS",
+        "url": "https://atlas.mitre.org/",
+        "description": "Adversarial threat landscape for AI systems. Powers REDBOX taxonomy.",
+        "import_supported": False,
+        "icon": "🛡️",
+    },
+    {
+        "id": "securitybreak_iopc",
+        "name": "SecurityBreak IoPC",
+        "url": "https://jupyter.securitybreak.io/IoPC/AdversarialPrompts.html",
+        "description": "Adversarial prompt patterns and injection techniques catalog.",
+        "import_supported": False,
+        "icon": "🔴",
+    },
+]
+
+
+@router.get("/sources")
+def list_benchmark_sources():
+    """External benchmark sources — discovery and routing."""
+    return {
+        "sources": EXTERNAL_SOURCES,
+        "total": len(EXTERNAL_SOURCES),
+        "importable": len([s for s in EXTERNAL_SOURCES if s["import_supported"]]),
+    }

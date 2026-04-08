@@ -245,6 +245,35 @@ export default function CampaignsPage() {
 
   const load = useCallback(() => { refreshCampaigns(); refreshModels(); }, [refreshCampaigns, refreshModels]);
 
+  // Ollama local model pull
+  const [ollamaSuggestions, setOllamaSuggestions] = useState<Record<string, string>>({});
+  const [pulling, setPulling] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/sync/ollama/suggestions`).then(r => r.json()).then(data => {
+      if (data.suggestions) {
+        const map: Record<string, string> = {};
+        for (const s of data.suggestions) {
+          if (!s.already_installed) map[s.openrouter_id] = s.ollama_name;
+        }
+        setOllamaSuggestions(map);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handlePullLocal = async (openrouterId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPulling(openrouterId);
+    try {
+      const res = await fetch(`${API_BASE}/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(openrouterId)}`, { method: "POST" });
+      const data = await res.json();
+      if (data.status === "ok") {
+        refreshModels();
+        setOllamaSuggestions(prev => { const n = {...prev}; delete n[openrouterId]; return n; });
+      }
+    } catch {} finally { setPulling(null); }
+  };
+
   const toggleId = (arr: number[], id: number) =>
     arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id];
 
@@ -413,7 +442,7 @@ export default function CampaignsPage() {
                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
                           {selected && <Check size={11} className="text-slate-900" />}
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
                           <div className={`text-xs ${selected ? "text-slate-300" : "text-slate-400"}`}>
                             {isLocal && <span className={`font-bold mr-1 ${selected ? "text-purple-300" : "text-purple-600"}`}>🦙 LOCAL</span>}
@@ -421,6 +450,19 @@ export default function CampaignsPage() {
                             {m.provider}
                           </div>
                         </div>
+                        {/* Run locally button for open-weight models */}
+                        {!isLocal && ollamaSuggestions[(m as any).model_id?.replace("openrouter/", "")] && (
+                          <button
+                            onClick={(e) => handlePullLocal((m as any).model_id?.replace("openrouter/", ""), e)}
+                            disabled={pulling === (m as any).model_id?.replace("openrouter/", "")}
+                            className={`shrink-0 text-[10px] px-2 py-1 rounded-md border transition-colors ${
+                              pulling === (m as any).model_id?.replace("openrouter/", "")
+                                ? "bg-purple-100 text-purple-400 border-purple-200"
+                                : "bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
+                            }`}>
+                            {pulling === (m as any).model_id?.replace("openrouter/", "") ? "⏳" : "🦙"} Local
+                          </button>
+                        )}
                       </button>
                     );
                   })}

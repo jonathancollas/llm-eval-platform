@@ -8,7 +8,7 @@ const cards = [
   {
     icon: BookOpen,
     title: "README",
-    description: "Guide de démarrage, stack technique, benchmarks disponibles, déploiement Docker.",
+    description: "Getting started guide, tech stack, available benchmarks, Docker deployment.",
     href: `${GITHUB_BASE}/README.md`,
     label: "Lire le README",
     color: "border-blue-200 bg-blue-50 hover:border-blue-300",
@@ -38,7 +38,7 @@ export default function AboutPage() {
   return (
     <div>
       <PageHeader
-        title="À propos"
+        title="About"
         description="Mercury Retrograde — INESIA open evaluation platform."
       />
       <div className="p-8 max-w-3xl space-y-8">
@@ -97,7 +97,7 @@ export default function AboutPage() {
 
         {/* Network */}
         <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h2 className="font-medium text-slate-900 mb-3 text-sm">Réseau international</h2>
+          <h2 className="font-medium text-slate-900 mb-3 text-sm">International network</h2>
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
             {[
               ["METR", "Model Evaluation & Threat Research", "https://metr.org"],

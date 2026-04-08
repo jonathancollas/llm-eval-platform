@@ -443,3 +443,73 @@ async def get_ollama_suggestions(session: Session = Depends(get_session)):
         "ollama_available": True,
         "local_models_count": len(local_models),
     }
+
+
+@router.post("/ollama/pull")
+async def pull_ollama_model(model_name: str):
+    """Trigger ollama pull for a model. Returns immediately — pull runs async."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Ollama pull API — streams progress but we just fire and check
+            resp = await client.post(
+                f"{settings.ollama_base_url}/api/pull",
+                json={"name": model_name, "stream": False},
+                timeout=600.0,  # Models can be large
+            )
+            if resp.status_code == 200:
+                return {"status": "pulled", "model": model_name}
+            else:
+                return {"status": "error", "model": model_name, "detail": resp.text[:200]}
+    except httpx.TimeoutException:
+        return {"status": "pulling", "model": model_name, "message": "Pull started but not yet complete. Large models take time."}
+    except Exception as e:
+        return {"status": "error", "model": model_name, "detail": str(e)[:200]}
+
+
+@router.post("/ollama/pull-and-register")
+async def pull_and_register_ollama_model(
+    openrouter_model_id: str,
+    session: Session = Depends(get_session),
+):
+    """Pull the Ollama equivalent of an OpenRouter model and register it."""
+    ollama_name = OPENROUTER_TO_OLLAMA.get(openrouter_model_id)
+    if not ollama_name:
+        ollama_name = OPENROUTER_TO_OLLAMA.get(openrouter_model_id + ":free")
+    if not ollama_name:
+        return {"status": "no_mapping", "detail": f"No Ollama equivalent for {openrouter_model_id}"}
+
+    # Pull
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            resp = await client.post(
+                f"{settings.ollama_base_url}/api/pull",
+                json={"name": ollama_name, "stream": False},
+                timeout=600.0,
+            )
+    except Exception as e:
+        return {"status": "pull_failed", "model": ollama_name, "detail": str(e)[:200]}
+
+    # Register in DB
+    existing = session.exec(
+        select(LLMModel).where(LLMModel.model_id == ollama_name, LLMModel.provider == ModelProvider.OLLAMA)
+    ).first()
+    if not existing:
+        session.add(LLMModel(
+            name=f"{ollama_name} (Ollama)",
+            provider=ModelProvider.OLLAMA,
+            model_id=ollama_name,
+            endpoint=settings.ollama_base_url,
+            context_length=4096,
+            cost_input_per_1k=0.0,
+            cost_output_per_1k=0.0,
+            is_free=True,
+            tags=json.dumps(["ollama", "local", "free"]),
+        ))
+        session.commit()
+
+    return {
+        "status": "ok",
+        "ollama_model": ollama_name,
+        "openrouter_model": openrouter_model_id,
+        "registered": True,
+    }

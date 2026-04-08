@@ -661,3 +661,55 @@ def redbox_live_feed(model_id: int, limit: int = 10, session: Session = Depends(
         "total_breached": breached_total,
         "breach_rate": round(breached_total / max(total, 1), 3),
     }
+
+
+# ── Adversarial Taxonomy & Killchain API ───────────────────────────────────────
+
+@router.get("/taxonomy")
+def get_adversarial_taxonomy():
+    """Full adversarial mutation taxonomy with MITRE/NIST/OWASP references."""
+    from eval_engine.adversarial_taxonomy import MUTATION_TAXONOMY
+    return {
+        "mutations": {k: {
+            "name": v["name"],
+            "icon": v["icon"],
+            "description": v["description"],
+            "killchain_phase": v["killchain_phase"],
+            "references": v["references"],
+            "severity_base": v["severity_base"],
+            "subtypes": v["subtypes"],
+        } for k, v in MUTATION_TAXONOMY.items()},
+        "total": len(MUTATION_TAXONOMY),
+    }
+
+
+@router.get("/killchain")
+def get_frontier_killchain():
+    """Frontier Model Killchain — structured attack phases for LLMs."""
+    from eval_engine.adversarial_taxonomy import FRONTIER_KILLCHAIN
+    return {
+        "killchain": FRONTIER_KILLCHAIN,
+        "phases": len(FRONTIER_KILLCHAIN),
+        "description": "Adapted from Lockheed Martin Cyber Kill Chain for LLM-specific attacks.",
+    }
+
+
+@router.get("/catalog")
+def get_adversarial_catalog(
+    category: Optional[str] = None,
+    killchain_phase: Optional[int] = None,
+):
+    """Adversarial prompt catalog — IoPC/ATLAS/NIST inspired templates."""
+    from eval_engine.adversarial_taxonomy import ADVERSARIAL_CATALOG
+
+    items = ADVERSARIAL_CATALOG
+    if category:
+        items = [i for i in items if i["category"] == category]
+    if killchain_phase:
+        items = [i for i in items if i["killchain_phase"] == killchain_phase]
+
+    return {
+        "items": items,
+        "total": len(items),
+        "categories": list(set(i["category"] for i in ADVERSARIAL_CATALOG)),
+    }

@@ -147,13 +147,13 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
                   )}
                   {item.answer != null && (
                     <div className="flex items-center gap-1.5 text-xs">
-                      <span className="text-slate-500">Réponse correcte :</span>
+                      <span className="text-slate-500">Correct answer:</span>
                       <span className="font-mono font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded">{String(item.answer)}</span>
                     </div>
                   )}
                   {item.expected_keywords && (
                     <div className="flex items-center gap-1.5 text-xs mt-1">
-                      <span className="text-slate-500">Mots-clés attendus :</span>
+                      <span className="text-slate-500">Expected keywords:</span>
                       {item.expected_keywords.map((k: string) => (
                         <span key={k} className="font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{k}</span>
                       ))}
@@ -242,7 +242,7 @@ export default function BenchmarksPage() {
       const res = await fetch(`${API_BASE}/sync/benchmarks/import-all`, { method: "POST" });
       const data = await res.json();
       const n = data.added ?? 0;
-      setImportMsg(`${n} nouveau${n > 1 ? "x" : ""} benchmark${n > 1 ? "s" : ""} importé${n > 1 ? "s" : ""} !`);
+      setImportMsg(`${n} new benchmark${n > 1 ? "s" : ""} imported!`);
       load();
       setTimeout(() => setImportMsg(null), 4000);
     } finally { setImporting(false); }
@@ -264,7 +264,7 @@ export default function BenchmarksPage() {
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
       const data = await res.json();
-      alert(`✅ ${data.items_imported} items importés depuis ${data.source}\nBenchmark: ${data.benchmark_name}`);
+      alert(`✅ ${data.items_imported} items imported from ${data.source}\nBenchmark: ${data.benchmark_name}`);
       setShowHfImport(false);
       setHfForm({ repo_id: "", split: "test", subset: "", max_items: 500 });
       load();
@@ -381,7 +381,7 @@ export default function BenchmarksPage() {
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Métrique</label>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Metric</label>
               <input value={customForm.metric}
                 onChange={e => setCustomForm(f => ({ ...f, metric: e.target.value }))}
                 placeholder="accuracy"
@@ -401,7 +401,7 @@ export default function BenchmarksPage() {
       {uploadId && (
         <div className="mx-8 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
           <Upload size={16} className="text-blue-600 shrink-0" />
-          <p className="text-sm text-blue-700">Benchmark créé ! Uploadez votre dataset JSON :</p>
+          <p className="text-sm text-blue-700">Benchmark created! Upload your JSON dataset:</p>
           <input type="file" accept=".json"
             onChange={e => e.target.files?.[0] && handleUpload(uploadId, e.target.files[0])}
             className="text-sm" />
@@ -457,7 +457,7 @@ export default function BenchmarksPage() {
                 {expanded === b.id && (
                   <div className="border-t border-slate-100 px-5 py-4 bg-slate-50">
                     <div className="grid grid-cols-2 gap-4 mb-3 text-xs text-slate-600">
-                      <div><span className="font-medium">Métrique :</span> {b.metric}</div>
+                      <div><span className="font-medium">Metric:</span> {b.metric}</div>
                       <div><span className="font-medium">Samples :</span> {b.num_samples ?? "no limit"}</div>
                       {b.risk_threshold && <div><span className="font-medium">Seuil risque :</span> {(b.risk_threshold * 100).toFixed(0)}%</div>}
                     </div>
