@@ -24,7 +24,7 @@ const TYPE_ICONS: Record<string, string> = {
 const FILTER_TABS = [
   { key: "all",      label: "Tous" },
   { key: "inesia",   label: "☿ INESIA" },
-  { key: "academic", label: "Académique" },
+  { key: "academic", label: "Academic" },
   { key: "safety",   label: "Safety" },
   { key: "coding",   label: "Code" },
   { key: "custom",   label: "Custom" },
@@ -80,7 +80,7 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
         {/* Info banners per source type */}
         {data?.source?.startsWith("huggingface:") && (
           <div className="mx-6 mt-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
-            📡 Items chargés depuis HuggingFace via lm-eval — tâche <span className="font-mono">{data.source.split(":")[1]}</span>
+            📡 Items loaded from HuggingFace via lm-eval — task <span className="font-mono">{data.source.split(":")[1]}</span>
           </div>
         )}
         {data?.source === "hf_error" && (

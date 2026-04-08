@@ -87,7 +87,7 @@ function ModelDetail({ m }: { m: LLMModel }) {
         {m.supports_vision    && <Badge className="bg-purple-50 text-purple-700 border border-purple-100"><Eye size={10} className="inline mr-1" />Vision</Badge>}
         {m.supports_tools     && <Badge className="bg-blue-50 text-blue-700 border border-blue-100"><Wrench size={10} className="inline mr-1" />Function Calling</Badge>}
         {m.supports_reasoning && <Badge className="bg-amber-50 text-amber-700 border border-amber-100"><Brain size={10} className="inline mr-1" />Reasoning</Badge>}
-        {m.is_moderated       && <Badge className="bg-red-50 text-red-600 border border-red-100"><Shield size={10} className="inline mr-1" />Modéré</Badge>}
+        {m.is_moderated       && <Badge className="bg-red-50 text-red-600 border border-red-100"><Shield size={10} className="inline mr-1" />Moderate</Badge>}
         {m.max_output_tokens > 0 && <Badge className="bg-slate-100 text-slate-600">Max output: {(m.max_output_tokens / 1000).toFixed(0)}k</Badge>}
       </div>
 

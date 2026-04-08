@@ -57,7 +57,7 @@ function RadarViz({ genome, ontology }: {
 function RiskBadge({ level }: { level: string }) {
   const cfg = {
     red:    { bg: "bg-red-100 text-red-700", label: "Haut risque" },
-    yellow: { bg: "bg-yellow-100 text-yellow-700", label: "Modéré" },
+    yellow: { bg: "bg-yellow-100 text-yellow-700", label: "Moderate" },
     green:  { bg: "bg-green-100 text-green-700", label: "Faible" },
   }[level] ?? { bg: "bg-slate-100 text-slate-600", label: level };
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.bg}`}>{cfg.label}</span>;

@@ -18,7 +18,7 @@ type BenchmarkFilterKey = "all" | "academic" | "safety" | "coding" | "custom" | 
 const BENCH_FILTERS: { key: BenchmarkFilterKey; label: string }[] = [
   { key: "all", label: "Tous" },
   { key: "inesia", label: "☿ INESIA" },
-  { key: "academic", label: "Académique" },
+  { key: "academic", label: "Academic" },
   { key: "safety", label: "Safety" },
   { key: "coding", label: "Code" },
   { key: "custom", label: "Custom" },

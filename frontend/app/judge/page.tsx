@@ -76,7 +76,7 @@ export default function JudgePage() {
 
   return (
     <div>
-      <PageHeader title="LLM-as-Judge" description="Évaluation multi-judges avec calibration et détection de biais." />
+      <PageHeader title="LLM-as-Judge" description="Multi-judge evaluation with calibration and bias detection." />
 
       <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
         {TABS.map(({ key, label }) => (
@@ -140,7 +140,7 @@ export default function JudgePage() {
             </div>
 
             <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Max items à juger</label>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Max items to judge</label>
               <input type="number" value={maxItems} onChange={e => setMaxItems(+e.target.value)}
                 min={5} max={200} className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-32" />
             </div>
@@ -156,7 +156,7 @@ export default function JudgePage() {
 
             {evalResult && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-5 space-y-2">
-                <div className="text-sm font-medium text-green-800">✅ Évaluation terminée</div>
+                <div className="text-sm font-medium text-green-800">✅ Evaluation complete</div>
                 <div className="text-xs text-green-600">{evalResult.evaluations_created} evaluations created on {evalResult.items_judged} items</div>
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   {Object.entries(evalResult.avg_scores ?? {}).map(([judge, score]: any) => (
@@ -221,14 +221,14 @@ export default function JudgePage() {
                         <div className="text-lg font-bold text-slate-900">{stats.avg_diff}</div>
                       </div>
                     </div>
-                    <div className="text-xs text-slate-400 mt-2">{stats.n_items} items comparés</div>
+                    <div className="text-xs text-slate-400 mt-2">{stats.n_items} items compared</div>
                   </div>
                 ))}
                 <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-500 space-y-1">
                   <div><span className="font-medium">κ &gt; 0.8 :</span> Agreement quasi-parfait</div>
                   <div><span className="font-medium">0.6 &lt; κ &lt; 0.8 :</span> Substantiel</div>
-                  <div><span className="font-medium">0.4 &lt; κ &lt; 0.6 :</span> Modéré</div>
-                  <div><span className="font-medium">κ &lt; 0.4 :</span> Les judges sont en désaccord significatif</div>
+                  <div><span className="font-medium">0.4 &lt; κ &lt; 0.6 :</span> Moderate</div>
+                  <div><span className="font-medium">κ &lt; 0.4 :</span> Judges significantly disagree</div>
                 </div>
               </div>
             )}
@@ -273,7 +273,7 @@ export default function JudgePage() {
               <div className="font-medium mb-1">🔬 Calibration Oracle</div>
               <p className="text-xs text-blue-500">
                 Uploadez des labels humains (oracle) pour calibrer les judges LLM.
-                Format : JSON array de {`{result_id, score}`} où score est le jugement humain (0-1).
+                Format: JSON array of {`{result_id, score}`} where score is the human judgment (0-1).
               </p>
             </div>
             <textarea rows={6} placeholder={'[\n  {"result_id": 1, "score": 0.8},\n  {"result_id": 2, "score": 0.2}\n]'}
