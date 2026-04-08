@@ -250,9 +250,7 @@ class AgentTrajectory(SQLModel, table=True):
 
 
 class TrajectoryStep(SQLModel, table=True):
-    """Individual step in an agent trajectory — trajectory-native storage.
-    Enables per-step querying, replay, diff, and failure analysis.
-    """
+    """Individual step in an agent trajectory — trajectory-native storage."""
     __tablename__ = "trajectory_steps"
 
     id: Optional[int]          = Field(default=None, primary_key=True)
@@ -327,3 +325,144 @@ class User(SQLModel, table=True):
     is_active: bool          = Field(default=True)
     last_login: Optional[datetime] = Field(default=None)
     created_at: datetime     = Field(default_factory=datetime.utcnow)
+
+
+# ══ RESEARCH OS ═══════════════════════════════════════════════════════════════
+
+class Workspace(SQLModel, table=True):
+    """Research workspace — the central scientific object.
+    Each workspace encapsulates a research project: hypothesis, protocol,
+    benchmarks, runs, traces, analysis, and publication artifacts.
+    """
+    __tablename__ = "workspaces"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    name: str                   = Field(index=True)
+    slug: str                   = Field(index=True, unique=True)
+    description: str            = Field(default="")
+    owner_id: Optional[int]     = Field(default=None, foreign_key="users.id")
+    tenant_id: Optional[int]    = Field(default=None, foreign_key="tenants.id")
+    visibility: str             = Field(default="private")  # private, org, public
+    status: str                 = Field(default="draft")    # draft, active, published, archived
+    # Research content
+    hypothesis: str             = Field(default="")         # Research question + hypothesis
+    protocol: str               = Field(default="")         # Evaluation protocol (markdown)
+    risk_domain: str            = Field(default="")         # capability, propensity, agentic, safety
+    # Linked entities (JSON arrays of IDs)
+    benchmark_ids: str          = Field(default="[]")
+    campaign_ids: str           = Field(default="[]")
+    model_ids: str              = Field(default="[]")
+    # Publication
+    doi: Optional[str]          = Field(default=None)       # Permanent citation link
+    paper_url: Optional[str]    = Field(default=None)
+    citation: Optional[str]     = Field(default=None)       # BibTeX format
+    # Forking
+    forked_from_id: Optional[int] = Field(default=None)     # Parent workspace
+    fork_count: int             = Field(default=0)
+    # Metadata
+    tags: str                   = Field(default="[]")
+    metadata_json: str          = Field(default="{}")
+    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    updated_at: datetime        = Field(default_factory=datetime.utcnow)
+
+
+class ExperimentManifest(SQLModel, table=True):
+    """Reproducibility manifest — everything needed to replicate an experiment.
+    Generated automatically after each campaign run.
+    """
+    __tablename__ = "experiment_manifests"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
+    campaign_id: int            = Field(foreign_key="campaigns.id", index=True)
+    # Experiment identity
+    experiment_hash: str        = Field(default="")         # SHA-256 of all config
+    # Configuration snapshot
+    model_configs_json: str     = Field(default="[]")       # [{model_id, model_name, provider, version}]
+    benchmark_configs_json: str = Field(default="[]")       # [{bench_id, name, dataset_hash, num_samples}]
+    prompt_versions_json: str   = Field(default="{}")       # {bench_key: prompt_template_hash}
+    judge_configs_json: str     = Field(default="[]")       # [{judge_model, criteria, version}]
+    # Execution parameters
+    seed: int                   = Field(default=42)
+    temperature: float          = Field(default=0.0)
+    max_tokens: int             = Field(default=256)
+    # Environment
+    platform_version: str       = Field(default="")         # Mercury version
+    litellm_version: str        = Field(default="")
+    python_version: str         = Field(default="")
+    # Results summary
+    total_runs: int             = Field(default=0)
+    total_items: int            = Field(default=0)
+    avg_score: Optional[float]  = Field(default=None)
+    avg_capability_score: Optional[float] = Field(default=None)
+    avg_propensity_score: Optional[float] = Field(default=None)
+    # Validation
+    contamination_score: Optional[float] = Field(default=None)
+    judge_agreement_kappa: Optional[float] = Field(default=None)
+    confidence_interval: Optional[str] = Field(default=None)  # JSON: {lower, upper, method}
+    # Timestamps
+    created_at: datetime        = Field(default_factory=datetime.utcnow)
+
+
+class SafetyIncident(SQLModel, table=True):
+    """Safety Incident Exchange (SIX) — the CVE of AI safety.
+    Each incident documents a discovered AI safety failure.
+    """
+    __tablename__ = "safety_incidents"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    incident_id: str            = Field(index=True, unique=True)  # MRX-2026-001
+    title: str                  = Field(default="")
+    category: str               = Field(default="", index=True)   # prompt_injection, scheming, shutdown_resistance...
+    severity: str               = Field(default="medium")         # low, medium, high, critical
+    description: str            = Field(default="")
+    # Evidence
+    model_id: Optional[int]     = Field(default=None, foreign_key="llm_models.id")
+    trajectory_id: Optional[int]= Field(default=None, foreign_key="agent_trajectories.id")
+    exploit_id: Optional[int]   = Field(default=None, foreign_key="redbox_exploits.id")
+    trace_json: str             = Field(default="{}")             # Reproduction trace
+    # Assessment
+    reproducibility: float      = Field(default=0.0)              # 0-1
+    affected_models: str        = Field(default="[]")             # JSON array of model names
+    mitigation: str             = Field(default="")               # Known mitigations
+    mitigation_status: str      = Field(default="none")           # none, partial, resolved
+    # References
+    paper_url: Optional[str]    = Field(default=None)
+    cve_id: Optional[str]       = Field(default=None)             # If linked to a CVE
+    atlas_technique: Optional[str] = Field(default=None)          # MITRE ATLAS technique ID
+    # Metadata
+    reporter: str               = Field(default="")
+    status: str                 = Field(default="open")           # open, confirmed, mitigated, closed
+    tags: str                   = Field(default="[]")
+    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    updated_at: datetime        = Field(default_factory=datetime.utcnow)
+
+
+class TelemetryEvent(SQLModel, table=True):
+    """Runtime telemetry event — for continuous post-deployment monitoring.
+    Ingests production system signals for drift detection.
+    """
+    __tablename__ = "telemetry_events"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    model_id: Optional[int]     = Field(default=None, foreign_key="llm_models.id", index=True)
+    tenant_id: Optional[int]    = Field(default=None, foreign_key="tenants.id", index=True)
+    event_type: str             = Field(default="inference", index=True)  # inference, error, safety_flag, drift_alert
+    # Request/Response
+    prompt_hash: str            = Field(default="")              # SHA-256 (no PII storage)
+    response_hash: str          = Field(default="")
+    score: Optional[float]      = Field(default=None)            # LLM-as-judge score if available
+    # Metrics
+    latency_ms: int             = Field(default=0)
+    input_tokens: int           = Field(default=0)
+    output_tokens: int          = Field(default=0)
+    cost_usd: float             = Field(default=0.0)
+    # Safety signals
+    safety_flag: Optional[str]  = Field(default=None)            # refusal, hallucination, injection_detected
+    confidence: Optional[float] = Field(default=None)
+    # Context
+    deployment_context: str     = Field(default="")              # production, staging, test
+    model_version: str          = Field(default="")
+    tool_names: str             = Field(default="[]")            # Tools the model used
+    # Timestamp
+    timestamp: datetime         = Field(default_factory=datetime.utcnow)

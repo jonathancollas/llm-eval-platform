@@ -231,6 +231,13 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         except Exception as e:
             logger.warning(f"Auto-judge failed (non-blocking): {e}")
 
+        # Auto-generate reproducibility manifest
+        try:
+            _generate_manifest(campaign_id, session)
+            logger.info(f"Campaign {campaign_id}: Experiment manifest generated.")
+        except Exception as e:
+            logger.warning(f"Manifest generation failed (non-blocking): {e}")
+
 
 async def _auto_judge_campaign(campaign_id: int, session: Session) -> None:
     """Auto-run a single judge on campaign results after completion."""
@@ -429,4 +436,59 @@ def _compute_genome_for_campaign(campaign_id: int, session: Session) -> None:
                 model_id=run.model_id, benchmark_id=run.benchmark_id,
                 genome_json=_json.dumps(genome), genome_version=FAILURE_GENOME_VERSION,
             ))
+    session.commit()
+
+
+def _generate_manifest(campaign_id: int, session: Session) -> None:
+    """Auto-generate reproducibility manifest after campaign completion."""
+    import hashlib
+    import platform as _platform
+    from core.models import ExperimentManifest, Benchmark
+
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        return
+
+    runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
+    completed = [r for r in runs if r.status == JobStatus.COMPLETED]
+
+    model_configs = []
+    for mid in set(r.model_id for r in runs):
+        m = session.get(LLMModel, mid)
+        if m:
+            model_configs.append({"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id})
+
+    bench_configs = []
+    for bid in set(r.benchmark_id for r in runs):
+        b = session.get(Benchmark, bid)
+        if b:
+            bench_configs.append({"bench_id": b.id, "name": b.name, "metric": b.metric,
+                                  "eval_dimension": getattr(b, "eval_dimension", "capability")})
+
+    scores = [r.score for r in completed if r.score is not None]
+    cap = [r.capability_score for r in completed if getattr(r, "capability_score", None) is not None]
+    prop = [r.propensity_score for r in completed if getattr(r, "propensity_score", None) is not None]
+
+    config_str = json.dumps({
+        "models": sorted([m["model_id_str"] for m in model_configs]),
+        "benchmarks": sorted([b["name"] for b in bench_configs]),
+        "seed": campaign.seed, "temperature": campaign.temperature,
+    }, sort_keys=True)
+
+    manifest = ExperimentManifest(
+        campaign_id=campaign_id,
+        experiment_hash=hashlib.sha256(config_str.encode()).hexdigest(),
+        model_configs_json=json.dumps(model_configs),
+        benchmark_configs_json=json.dumps(bench_configs),
+        seed=campaign.seed,
+        temperature=campaign.temperature,
+        platform_version=settings.app_version,
+        python_version=_platform.python_version(),
+        total_runs=len(runs),
+        total_items=sum(r.num_items for r in completed),
+        avg_score=round(sum(scores) / len(scores), 4) if scores else None,
+        avg_capability_score=round(sum(cap) / len(cap), 4) if cap else None,
+        avg_propensity_score=round(sum(prop) / len(prop), 4) if prop else None,
+    )
+    session.add(manifest)
     session.commit()
