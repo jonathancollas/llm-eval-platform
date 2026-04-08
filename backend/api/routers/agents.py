@@ -494,3 +494,153 @@ def agent_dashboard(
         "computed": True,
         "total_trajectories": len(trajs),
     }
+
+
+# ── Trajectory-Native Storage API ──────────────────────────────────────────────
+
+@router.get("/trajectories/{trajectory_id}/steps")
+def get_trajectory_steps(trajectory_id: int, session: Session = Depends(get_session)):
+    """Get all steps for a trajectory — trajectory-native query."""
+    from core.models import TrajectoryStep
+
+    traj = session.get(AgentTrajectory, trajectory_id)
+    if not traj:
+        raise HTTPException(404, detail="Trajectory not found.")
+
+    steps = session.exec(
+        select(TrajectoryStep)
+        .where(TrajectoryStep.trajectory_id == trajectory_id)
+        .order_by(TrajectoryStep.step_index)
+    ).all()
+
+    # If no native steps, fall back to steps_json
+    if not steps and traj.steps_json:
+        import json
+        legacy_steps = json.loads(traj.steps_json)
+        return {
+            "trajectory_id": trajectory_id,
+            "steps": legacy_steps,
+            "source": "legacy_json",
+            "total": len(legacy_steps),
+        }
+
+    return {
+        "trajectory_id": trajectory_id,
+        "steps": [{
+            "id": s.id,
+            "step_index": s.step_index,
+            "step_type": s.step_type,
+            "input": s.input_text[:500],
+            "output": s.output_text[:500],
+            "reasoning": s.reasoning[:500],
+            "tool_name": s.tool_name,
+            "tool_args": s.tool_args_json,
+            "tool_result": s.tool_result[:500],
+            "tool_success": s.tool_success,
+            "memory_snapshot": s.memory_snapshot[:200],
+            "context_tokens": s.context_window_tokens,
+            "plan_state": s.plan_state[:200],
+            "latency_ms": s.latency_ms,
+            "tokens": s.input_tokens + s.output_tokens,
+            "cost_usd": s.cost_usd,
+            "safety_flag": s.safety_flag,
+            "error_type": s.error_type,
+            "branch_id": s.branch_id,
+        } for s in steps],
+        "source": "native",
+        "total": len(steps),
+    }
+
+
+@router.get("/trajectories/{trajectory_id}/replay")
+def replay_trajectory(trajectory_id: int, session: Session = Depends(get_session)):
+    """Replay a trajectory step-by-step with diffs and safety signals."""
+    from core.models import TrajectoryStep
+
+    traj = session.get(AgentTrajectory, trajectory_id)
+    if not traj:
+        raise HTTPException(404, detail="Trajectory not found.")
+
+    steps = session.exec(
+        select(TrajectoryStep)
+        .where(TrajectoryStep.trajectory_id == trajectory_id)
+        .order_by(TrajectoryStep.step_index)
+    ).all()
+
+    replay = []
+    cumulative_tokens = 0
+    cumulative_cost = 0.0
+    safety_flags = []
+
+    for s in steps:
+        cumulative_tokens += s.input_tokens + s.output_tokens
+        cumulative_cost += s.cost_usd
+        if s.safety_flag:
+            safety_flags.append({"step": s.step_index, "flag": s.safety_flag})
+
+        replay.append({
+            "step_index": s.step_index,
+            "step_type": s.step_type,
+            "action": s.output_text[:300],
+            "reasoning": s.reasoning[:300],
+            "tool": s.tool_name,
+            "tool_success": s.tool_success,
+            "safety_flag": s.safety_flag,
+            "cumulative_tokens": cumulative_tokens,
+            "cumulative_cost": cumulative_cost,
+            "context_fill_pct": round(s.context_window_tokens / 4096 * 100, 1) if s.context_window_tokens else 0,
+        })
+
+    return {
+        "trajectory_id": trajectory_id,
+        "task": traj.task_description,
+        "model_id": traj.model_id,
+        "total_steps": len(replay),
+        "task_completed": traj.task_completed,
+        "replay": replay,
+        "safety_flags": safety_flags,
+        "total_tokens": cumulative_tokens,
+        "total_cost": cumulative_cost,
+    }
+
+
+@router.post("/trajectories/{trajectory_id}/ingest-steps")
+def ingest_trajectory_steps(trajectory_id: int, steps: list[dict], session: Session = Depends(get_session)):
+    """Ingest structured steps into trajectory-native storage.
+    Converts from JSON format to individual TrajectoryStep records.
+    """
+    from core.models import TrajectoryStep
+
+    traj = session.get(AgentTrajectory, trajectory_id)
+    if not traj:
+        raise HTTPException(404, detail="Trajectory not found.")
+
+    created = 0
+    for idx, step in enumerate(steps):
+        ts = TrajectoryStep(
+            trajectory_id=trajectory_id,
+            step_index=idx,
+            step_type=step.get("type", step.get("step_type", "action")),
+            input_text=str(step.get("input", step.get("prompt", "")))[:2000],
+            output_text=str(step.get("output", step.get("response", "")))[:2000],
+            reasoning=str(step.get("reasoning", step.get("thought", "")))[:2000],
+            tool_name=step.get("tool", step.get("tool_name")),
+            tool_args_json=json.dumps(step.get("tool_args", step.get("args", {}))),
+            tool_result=str(step.get("tool_result", step.get("observation", "")))[:2000],
+            tool_success=step.get("tool_success", True),
+            memory_snapshot=str(step.get("memory", ""))[:2000],
+            context_window_tokens=step.get("context_tokens", 0),
+            plan_state=str(step.get("plan", ""))[:2000],
+            latency_ms=step.get("latency_ms", 0),
+            input_tokens=step.get("input_tokens", 0),
+            output_tokens=step.get("output_tokens", 0),
+            cost_usd=step.get("cost_usd", 0.0),
+            safety_flag=step.get("safety_flag"),
+            error_type=step.get("error_type"),
+            branch_id=step.get("branch_id", "main"),
+        )
+        session.add(ts)
+        created += 1
+
+    session.commit()
+    return {"trajectory_id": trajectory_id, "steps_ingested": created}

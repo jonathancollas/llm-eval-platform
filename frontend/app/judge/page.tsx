@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { campaignsApi, judgeApi, modelsApi } from "@/lib/api";
-import type { Campaign, LLMModel } from "@/lib/api";
+import { campaignsApi, judgeApi } from "@/lib/api";
+import type { Campaign } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
+import { ModelSelector } from "@/components/ModelSelector";
 import { AlertTriangle } from "lucide-react";
 
 const CRITERIA = [
@@ -18,7 +19,6 @@ type Tab = "evaluate" | "agreement" | "bias" | "calibrate";
 
 export default function JudgePage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [models, setModels] = useState<LLMModel[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedJudges, setSelectedJudges] = useState<string[]>([]);
   const [criteria, setCriteria] = useState("correctness");
@@ -33,13 +33,6 @@ export default function JudgePage() {
 
   useEffect(() => {
     campaignsApi.list().then(cs => setCampaigns(cs.filter(c => c.status === "completed")));
-    modelsApi.list().then(ms => {
-      setModels(ms);
-      // Auto-select first local model if available, else first model
-      const local = ms.find(m => (m as any).provider === "ollama");
-      if (local) setSelectedJudges([(local as any).model_id || local.name]);
-      else if (ms.length > 0) setSelectedJudges([(ms[0] as any).model_id || ms[0].name]);
-    });
   }, []);
 
   useEffect(() => {
@@ -48,9 +41,6 @@ export default function JudgePage() {
     judgeApi.agreement(selectedId).then(setAgreement).catch(() => {});
     judgeApi.bias(selectedId).then(setBias).catch(() => {});
   }, [selectedId]);
-
-  const toggleJudge = (id: string) =>
-    setSelectedJudges(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const runEval = async () => {
     if (!selectedId || !selectedJudges.length) return;
@@ -100,31 +90,14 @@ export default function JudgePage() {
         {/* EVALUATE TAB */}
         {tab === "evaluate" && (
           <div className="space-y-6 max-w-3xl">
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-2 block">Judge models (multi-select)</label>
-              <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                {models.map(m => {
-                  const modelId = (m as any).model_id || m.name;
-                  const isLocal = (m as any).provider === "ollama";
-                  return (
-                    <button key={m.id} onClick={() => toggleJudge(modelId)}
-                      className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
-                        selectedJudges.includes(modelId) ? "border-slate-900 bg-slate-50" : isLocal ? "border-purple-200 hover:border-purple-300" : "border-slate-200 hover:border-slate-300"
-                      }`}>
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
-                        selectedJudges.includes(modelId) ? "border-slate-900 bg-slate-900" : "border-slate-300"
-                      }`}>
-                        {selectedJudges.includes(modelId) && <span className="text-white text-[10px]">✓</span>}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-slate-900 truncate">{m.name}</div>
-                        <div className="text-xs text-slate-400">{isLocal ? "🦙 Local" : (m as any).provider}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <ModelSelector
+              mode="multi"
+              selected={selectedJudges}
+              onChange={setSelectedJudges}
+              idType="model_id"
+              label="Judge models (multi-select)"
+              maxHeight="max-h-48"
+            />
 
             <div>
               <label className="text-xs font-medium text-slate-600 mb-2 block">Evaluation criteria</label>

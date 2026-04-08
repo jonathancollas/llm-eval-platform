@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModel } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
+import { ModelSelector } from "@/components/ModelSelector";
 import { ShieldAlert, Zap, Target, AlertTriangle, ChevronDown, ChevronUp, Play, RotateCcw } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
@@ -267,13 +268,18 @@ export default function RedboxPage() {
                   <h3 className="font-medium text-slate-900">{variants.length} variants forgés</h3>
                 </div>
 
-                {/* Model selector + Run button */}
-                <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-4 border border-slate-200">
-                  <select value={selectedModelId ?? ""} onChange={e => setSelectedModelId(+e.target.value || null)}
-                    className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex-1">
-                    <option value="">— Choisir un model cible —</option>
-                    {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
+                {/* Model selector */}
+                <ModelSelector
+                  mode="single"
+                  selected={selectedModelId ? [selectedModelId] : []}
+                  onChange={(ids) => setSelectedModelId(ids[0] ?? null)}
+                  idType="db_id"
+                  label="Target model"
+                  maxHeight="max-h-40"
+                />
+
+                {/* Run button */}
+                <div className="flex items-center gap-3">
                   <button onClick={runAttack} disabled={running || !selectedModelId}
                     className="flex items-center gap-2 bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-40">
                     {running ? <Spinner size={13} /> : <Play size={14} />}

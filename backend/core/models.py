@@ -249,6 +249,42 @@ class AgentTrajectory(SQLModel, table=True):
     created_at: datetime       = Field(default_factory=datetime.utcnow)
 
 
+class TrajectoryStep(SQLModel, table=True):
+    """Individual step in an agent trajectory — trajectory-native storage.
+    Enables per-step querying, replay, diff, and failure analysis.
+    """
+    __tablename__ = "trajectory_steps"
+
+    id: Optional[int]          = Field(default=None, primary_key=True)
+    trajectory_id: int         = Field(foreign_key="agent_trajectories.id", index=True)
+    step_index: int            = Field(default=0)
+    step_type: str             = Field(default="action")  # thought, action, observation, tool_call, error, decision
+    # Core trace data
+    input_text: str            = Field(default="")        # What the agent received
+    output_text: str           = Field(default="")        # What the agent produced
+    reasoning: str             = Field(default="")        # Chain of thought / plan
+    # Tool interaction
+    tool_name: Optional[str]   = Field(default=None)      # Which tool was called
+    tool_args_json: str        = Field(default="{}")      # Tool arguments
+    tool_result: str           = Field(default="")        # Tool response
+    tool_success: bool         = Field(default=True)      # Did the tool call succeed?
+    # State tracking
+    memory_snapshot: str       = Field(default="")        # Agent memory at this step (truncated)
+    context_window_tokens: int = Field(default=0)         # Context window usage
+    plan_state: str            = Field(default="")        # Current plan / goal stack
+    # Metrics
+    latency_ms: int            = Field(default=0)
+    input_tokens: int          = Field(default=0)
+    output_tokens: int         = Field(default=0)
+    cost_usd: float            = Field(default=0.0)
+    # Safety signals
+    safety_flag: Optional[str] = Field(default=None)      # goal_drift, injection, trust_failure, etc.
+    error_type: Optional[str]  = Field(default=None)      # timeout, tool_error, hallucination, etc.
+    # Branch tracking (for multi-path analysis)
+    branch_id: str             = Field(default="main")    # For branching/rollback analysis
+    parent_step_id: Optional[int] = Field(default=None)   # For tree-structured traces
+
+
 class Report(SQLModel, table=True):
     __tablename__ = "reports"
 
