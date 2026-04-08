@@ -8,12 +8,16 @@ import { ShieldAlert, Zap, Target, AlertTriangle, ChevronDown, ChevronUp, Play, 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 const MUTATION_TYPES = [
-  { key: "prompt_injection",  label: "Prompt Injection",  icon: "💉", desc: "Ignore previous instructions variants" },
-  { key: "ambiguity",         label: "Ambiguité",         icon: "🌫", desc: "Reformulation ambiguë du même objectif" },
-  { key: "multilingual",      label: "Multilingue",       icon: "🌍", desc: "Mix de langues, traductions" },
-  { key: "contradiction",     label: "Contradiction",     icon: "⚡", desc: "Instructions contradictoires" },
-  { key: "malformed_context", label: "Contexte bruité",   icon: "🔊", desc: "Données tronquées, corrompues" },
-  { key: "jailbreak",         label: "Jailbreak",         icon: "🔓", desc: "Contournement des politiques" },
+  { key: "prompt_injection",  label: "Prompt Injection",   icon: "💉", desc: "Direct injection — override instructions (ATLAS AML.T0051)" },
+  { key: "jailbreak",         label: "Jailbreak",          icon: "🔓", desc: "Persona manipulation, DAN, roleplay bypass (ATLAS AML.T0054)" },
+  { key: "encoding_evasion",  label: "Encoding Evasion",   icon: "🔤", desc: "Base64, ROT13, reversed text, homoglyphs (ATLAS AML.T0043)" },
+  { key: "token_smuggling",   label: "Token Smuggling",    icon: "👻", desc: "Zero-width chars, RTL override, hidden instructions (ATLAS AML.T0051.002)" },
+  { key: "multi_turn",        label: "Multi-Turn",         icon: "🔄", desc: "Context manipulation, false prior agreement (ATLAS AML.T0052)" },
+  { key: "crescendo",         label: "Crescendo",          icon: "📈", desc: "Gradual escalation from benign to harmful" },
+  { key: "ambiguity",         label: "Ambiguity",          icon: "🌫", desc: "Ambiguous reformulation of the same objective" },
+  { key: "multilingual",      label: "Multilingual",       icon: "🌍", desc: "Cross-lingual attacks, language switching (NIST AI 100-2)" },
+  { key: "contradiction",     label: "Contradiction",      icon: "⚡", desc: "Conflicting instructions, output override (OWASP LLM01)" },
+  { key: "malformed_context", label: "Malformed Context",  icon: "🔊", desc: "XSS payloads, template injection, format exploits" },
 ];
 
 interface Variant {
