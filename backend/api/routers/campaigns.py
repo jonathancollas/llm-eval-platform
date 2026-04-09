@@ -73,6 +73,8 @@ def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
                 "benchmark_id": r.benchmark_id,
                 "status": r.status,
                 "score": r.score,
+                "capability_score": r.capability_score,
+                "propensity_score": r.propensity_score,
                 "metrics": safe_json_load(r.metrics_json, {}),
                 "total_cost_usd": r.total_cost_usd,
                 "total_latency_ms": r.total_latency_ms,
@@ -206,3 +208,82 @@ def delete_campaign(campaign_id: int, session: Session = Depends(get_session)):
         session.delete(r)
     session.delete(campaign)
     session.commit()
+
+
+@router.get("/{campaign_id}/manifest")
+def get_reproducibility_manifest(campaign_id: int, session: Session = Depends(get_session)):
+    """
+    Reproducibility manifest — everything needed to replay this experiment exactly.
+    Returns a JSON object capturing the full configuration snapshot at run time.
+    Aligned with INESIA research doctrine: every evaluation must be reproducible.
+    """
+    import hashlib, platform, sys
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(404, detail="Campaign not found.")
+
+    runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
+
+    model_ids = safe_json_load(campaign.model_ids, [])
+    bench_ids  = safe_json_load(campaign.benchmark_ids, [])
+
+    models = [session.get(LLMModel, mid) for mid in model_ids]
+    benches = [session.get(Benchmark, bid) for bid in bench_ids]
+
+    model_configs = [
+        {"model_id": m.id, "model_name": m.name, "provider": m.provider,
+         "model_identifier": m.model_id, "endpoint": m.endpoint}
+        for m in models if m
+    ]
+    bench_configs = [
+        {"benchmark_id": b.id, "benchmark_name": b.name,
+         "metric": b.metric, "num_samples": b.num_samples,
+         "dataset_path": b.dataset_path, "source": getattr(b, "source", "public")}
+        for b in benches if b
+    ]
+
+    # Deterministic hash of the full configuration
+    config_str = json.dumps({
+        "campaign_id": campaign_id,
+        "seed": campaign.seed,
+        "temperature": campaign.temperature,
+        "model_configs": model_configs,
+        "bench_configs": bench_configs,
+    }, sort_keys=True)
+    experiment_hash = hashlib.sha256(config_str.encode()).hexdigest()[:16]
+
+    # Results summary
+    completed_runs = [r for r in runs if r.status == "completed"]
+    scores = [r.score for r in completed_runs if r.score is not None]
+    cap_scores = [r.capability_score for r in completed_runs if r.capability_score is not None]
+    prop_scores = [r.propensity_score for r in completed_runs if r.propensity_score is not None]
+
+    return {
+        "experiment_hash": experiment_hash,
+        "campaign_id": campaign_id,
+        "campaign_name": campaign.name,
+        "platform_version": "eval-research-os-v0.6.0",
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "execution": {
+            "seed": campaign.seed,
+            "temperature": campaign.temperature,
+            "max_samples": campaign.max_samples,
+            "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
+            "started_at": campaign.started_at.isoformat() if campaign.started_at else None,
+            "completed_at": campaign.completed_at.isoformat() if campaign.completed_at else None,
+        },
+        "model_configs": model_configs,
+        "benchmark_configs": bench_configs,
+        "results_summary": {
+            "total_runs": len(runs),
+            "completed_runs": len(completed_runs),
+            "avg_score": round(sum(scores) / len(scores), 4) if scores else None,
+            "avg_capability_score": round(sum(cap_scores) / len(cap_scores), 4) if cap_scores else None,
+            "avg_propensity_score": round(sum(prop_scores) / len(prop_scores), 4) if prop_scores else None,
+        },
+        "reproducibility_instructions": (
+            "To replay this experiment: use the same seed, temperature, model_configs, and benchmark_configs. "
+            "Run via POST /campaigns/ with these parameters, then POST /campaigns/{id}/run. "
+            "Results may vary if model providers update their models."
+        ),
+    }

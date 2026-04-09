@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { resultsApi, campaignsApi, reportsApi, genomeApi } from "@/lib/api";
 import type { DashboardData, Campaign, Report, GenomeData, FailedItemsData, FailedItem, FailedRun } from "@/lib/api";
+import { API_BASE } from "@/lib/config";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { formatScore, formatCost, formatLatency, scoreColor } from "@/lib/utils";
@@ -453,10 +454,16 @@ function DashboardContent() {
         description="Visual analysis of evaluation results."
         action={
           selectedId && data?.status === "completed" ? (
-            <a href={resultsApi.exportUrl(selectedId)} download
-              className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-600">
-              <Download size={14} /> Export CSV
-            </a>
+            <div className="flex gap-2">
+              <a href={resultsApi.exportUrl(selectedId)} download
+                className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-600">
+                <Download size={14} /> Export CSV
+              </a>
+              <a href={`${API_BASE}/campaigns/${selectedId}/manifest`} download={`manifest-campaign-${selectedId}.json`}
+                className="flex items-center gap-2 border border-purple-200 px-4 py-2 rounded-lg text-sm hover:bg-purple-50 text-purple-700">
+                📋 Manifest
+              </a>
+            </div>
           ) : undefined
         }
       />
