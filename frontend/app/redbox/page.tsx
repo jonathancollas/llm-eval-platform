@@ -6,7 +6,7 @@ import { Spinner } from "@/components/Spinner";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ShieldAlert, Zap, Target, AlertTriangle, ChevronDown, ChevronUp, Play, RotateCcw } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 const MUTATION_TYPES = [
   { key: "prompt_injection",  label: "Prompt Injection",   icon: "💉", desc: "Direct injection — override instructions (ATLAS AML.T0051)" },

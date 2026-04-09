@@ -3,10 +3,9 @@
  * No user action required.
  */
 import { useEffect, useState } from "react";
+import { API_BASE, SYNC_TTL_MS } from "./config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
-const SYNC_KEY = "mr_sync_ts";
-const SYNC_TTL = 15 * 60 * 1000; // re-sync every 15 min max
+const SYNC_KEY = "eval_os_sync_ts";
 
 export interface SyncState {
   synced: boolean;
@@ -24,7 +23,7 @@ export function useSync(): SyncState {
   useEffect(() => {
     // Skip if synced recently
     const last = localStorage.getItem(SYNC_KEY);
-    if (last && Date.now() - Number(last) < SYNC_TTL) {
+    if (last && Date.now() - Number(last) < SYNC_TTL_MS) {
       setSynced(true);
       return;
     }
