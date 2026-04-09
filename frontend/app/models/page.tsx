@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { modelsApi } from "@/lib/api";
+import { modelsApi, ollamaApi } from "@/lib/api";
+import { API_BASE, OLLAMA_BASE_URL } from "@/lib/config";
 import type { LLMModel, ModelProvider } from "@/lib/api";
 import { useModels } from "@/lib/useApi";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,9 +9,11 @@ import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { ModelCatalogModal } from "@/components/ModelCatalogModal";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { providerColor } from "@/lib/utils";
 import { Plus, Zap, Eye, Wrench, Brain, CheckCircle2, XCircle,
-         ChevronDown, ChevronUp, Trash2, Search, ExternalLink, Shield } from "lucide-react";
+         ChevronDown, ChevronUp, Trash2, Search, ExternalLink, Shield,
+         Download, HardDrive, Lock, Unlock } from "lucide-react";
 
 const PROVIDERS: ModelProvider[] = ["openai", "anthropic", "mistral", "groq", "ollama", "custom"];
 const PROVIDER_LABELS: Record<string, string> = {
@@ -18,14 +21,97 @@ const PROVIDER_LABELS: Record<string, string> = {
   groq: "Groq", ollama: "Ollama (local)", custom: "Custom / OpenRouter",
 };
 
-// ── Filter bar ─────────────────────────────────────────────────────────────────
+// ── Access type badge ──────────────────────────────────────────────────────────
+function AccessTypeBadge({ model }: { model: LLMModel }) {
+  if (model.provider === "ollama") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide bg-purple-100 text-purple-700 border border-purple-200">
+        <HardDrive size={8} />LOCAL
+      </span>
+    );
+  }
+  if ((model as any).is_open_weight) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200">
+        <Unlock size={8} />OPEN WEIGHT
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide bg-slate-100 text-slate-500 border border-slate-200">
+      <Lock size={8} />API ONLY
+    </span>
+  );
+}
+
+// ── Ollama pull button with progress ──────────────────────────────────────────
+function OllamaPullButton({ modelId }: { modelId: string }) {
+  const [status, setStatus] = useState<"idle" | "pulling" | "done" | "error">("idle");
+  const [progress, setProgress] = useState<string>("");
+
+  const pull = async () => {
+    setStatus("pulling");
+    setProgress("Connexion à Ollama…");
+    try {
+      const res = await fetch(`${OLLAMA_BASE_URL}/api/pull`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: modelId, stream: true }),
+      });
+      if (!res.ok) throw new Error(`Ollama error ${res.status}`);
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const lines = decoder.decode(value).split("\n").filter(Boolean);
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            if (obj.status) setProgress(obj.status);
+            if (obj.completed && obj.total) {
+              const pct = Math.round((obj.completed / obj.total) * 100);
+              setProgress(`${pct}% (${(obj.completed / 1e9).toFixed(1)} GB)`);
+            }
+          } catch {}
+        }
+      }
+      setStatus("done");
+      setProgress("Téléchargé ✓");
+    } catch (e: any) {
+      setStatus("error");
+      setProgress(String(e).slice(0, 60));
+    }
+  };
+
+  if (status === "done") return (
+    <span className="flex items-center gap-1 text-xs text-green-600">
+      <CheckCircle2 size={12} />Installé
+    </span>
+  );
+
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={pull} disabled={status === "pulling"}
+        className="flex items-center gap-1 text-xs px-2.5 py-1.5 border border-purple-200 rounded-lg hover:bg-purple-50 text-purple-700 transition-colors disabled:opacity-50">
+        {status === "pulling" ? <Spinner size={11} /> : <Download size={11} />}
+        {status === "pulling" ? "Pulling…" : "⬇ Local"}
+      </button>
+      {status === "pulling" && progress && (
+        <span className="text-[10px] text-slate-400 max-w-28 truncate">{progress}</span>
+      )}
+      {status === "error" && (
+        <span className="text-[10px] text-red-500 max-w-28 truncate" title={progress}>Ollama hors ligne</span>
+      )}
+    </div>
+  );
+}
+
+// ── Filters ────────────────────────────────────────────────────────────────────
 interface Filters {
-  search: string;
-  onlyFree: boolean;
-  onlyVision: boolean;
-  onlyTools: boolean;
-  onlyReasoning: boolean;
-  provider: string;
+  search: string; onlyFree: boolean; onlyVision: boolean;
+  onlyTools: boolean; onlyReasoning: boolean; provider: string;
 }
 
 function applyFilters(models: LLMModel[], f: Filters): LLMModel[] {
@@ -60,6 +146,9 @@ function ModelDetail({ m }: { m: LLMModel }) {
     ? new Date(m.model_created_at * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short" })
     : null;
 
+  // Is this model Ollama-pullable? (open-weight, non-ollama provider)
+  const canPullLocal = (m as any).is_open_weight && m.provider !== "ollama";
+
   return (
     <div className="border-t border-slate-100 px-5 py-4 bg-slate-50 text-xs text-slate-600 space-y-3">
       {/* Costs */}
@@ -90,6 +179,19 @@ function ModelDetail({ m }: { m: LLMModel }) {
         {m.is_moderated       && <Badge className="bg-red-50 text-red-600 border border-red-100"><Shield size={10} className="inline mr-1" />Moderate</Badge>}
         {m.max_output_tokens > 0 && <Badge className="bg-slate-100 text-slate-600">Max output: {(m.max_output_tokens / 1000).toFixed(0)}k</Badge>}
       </div>
+
+      {/* Local pull — for open-weight models */}
+      {canPullLocal && (
+        <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
+          <div className="text-slate-600 font-medium mb-2 flex items-center gap-1.5">
+            <HardDrive size={12} />Télécharger en local (Ollama)
+          </div>
+          <OllamaPullButton modelId={m.model_id} />
+          <p className="text-[10px] text-slate-400 mt-1.5">
+            Requiert <a href="https://ollama.com" target="_blank" className="text-blue-500 hover:underline">Ollama</a> en cours d'exécution sur localhost:11434
+          </p>
+        </div>
+      )}
 
       {/* Technical details */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
@@ -149,39 +251,40 @@ export default function ModelsPage() {
   });
   const [ollamaStatus, setOllamaStatus] = useState<{ available: boolean; total: number } | null>(null);
   const [importingOllama, setImportingOllama] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
-  // SWR — cached, deduped, auto-refresh
   const { models: swrModels, isLoading: swrLoading, refresh: refreshModels } = useModels();
   useEffect(() => { setModels(swrModels); if (!swrLoading) setLoading(false); }, [swrModels, swrLoading]);
   const load = useCallback(() => { refreshModels(); }, [refreshModels]);
 
-  // Check Ollama on mount
   useEffect(() => {
-    import("@/lib/api").then(({ ollamaApi }) => {
-      ollamaApi.check().then(setOllamaStatus).catch(() => {});
-    });
+    ollamaApi.check().then(setOllamaStatus).catch(() => {});
   }, []);
 
   const handleImportOllama = async () => {
     setImportingOllama(true);
     try {
-      const { ollamaApi } = await import("@/lib/api");
       const result = await ollamaApi.import();
       if (result.added > 0) load();
       alert(result.available ? `${result.added} model(s) Ollama importé(s)` : "Ollama non disponible");
     } catch (e: any) { alert(String(e)); }
-    finally { setImportingOllama(false); };
+    finally { setImportingOllama(false); }
   };
 
   const filtered = useMemo(() => applyFilters(models, filters), [models, filters]);
-
-  const freeCount       = useMemo(() => models.filter(m => m.is_free).length, [models]);
-  const visionCount     = useMemo(() => models.filter(m => m.supports_vision).length, [models]);
-  const toolsCount      = useMemo(() => models.filter(m => m.supports_tools).length, [models]);
-  const reasoningCount  = useMemo(() => models.filter(m => m.supports_reasoning).length, [models]);
+  const freeCount      = useMemo(() => models.filter(m => m.is_free).length, [models]);
+  const visionCount    = useMemo(() => models.filter(m => m.supports_vision).length, [models]);
+  const toolsCount     = useMemo(() => models.filter(m => m.supports_tools).length, [models]);
+  const reasoningCount = useMemo(() => models.filter(m => m.supports_reasoning).length, [models]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDuplicateWarning(null);
+    // Guard: check for duplicate model_id before submitting
+    if (models.some(m => m.model_id === form.model_id)) {
+      setDuplicateWarning(`Ce modèle est déjà présent dans le catalogue : ${form.model_id}`);
+      return;
+    }
     setCreating(true);
     try {
       await modelsApi.create({
@@ -195,7 +298,13 @@ export default function ModelsPage() {
       setForm({ name: "", provider: "custom" as ModelProvider, model_id: "", endpoint: "", api_key: "", context_length: 4096, cost_input_per_1k: 0, cost_output_per_1k: 0, notes: "" });
       setShowForm(false);
       load();
-    } catch (err) { alert(String(err)); } finally { setCreating(false); }
+    } catch (err: any) {
+      if (String(err).includes("409") || String(err).includes("already registered")) {
+        setDuplicateWarning(`Ce modèle est déjà présent dans le catalogue : ${form.model_id}`);
+      } else {
+        alert(String(err));
+      }
+    } finally { setCreating(false); }
   };
 
   const handleTest = async (id: number) => {
@@ -218,6 +327,7 @@ export default function ModelsPage() {
     setFilters(f => ({ ...f, [key]: value }));
 
   return (
+    <AppErrorBoundary>
     <div>
       <PageHeader
         title="Model Registry"
@@ -244,7 +354,6 @@ export default function ModelsPage() {
 
       {/* ── Filter bar ────────────────────────────────────────────────────── */}
       <div className="px-8 pt-4 pb-2 space-y-3">
-        {/* Search */}
         <div className="relative max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={filters.search}
@@ -252,12 +361,10 @@ export default function ModelsPage() {
             placeholder="Search by name or model ID…"
             className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
         </div>
-
-        {/* Filter chips */}
         <div className="flex gap-2 flex-wrap">
-          <FilterChip label={`🆓 Gratuit (${freeCount})`}      active={filters.onlyFree}      onClick={() => setFilter("onlyFree", !filters.onlyFree)} />
-          <FilterChip label={`👁 Vision (${visionCount})`}     active={filters.onlyVision}    onClick={() => setFilter("onlyVision", !filters.onlyVision)} />
-          <FilterChip label={`🔧 Tools (${toolsCount})`}       active={filters.onlyTools}     onClick={() => setFilter("onlyTools", !filters.onlyTools)} />
+          <FilterChip label={`🆓 Gratuit (${freeCount})`}        active={filters.onlyFree}      onClick={() => setFilter("onlyFree", !filters.onlyFree)} />
+          <FilterChip label={`👁 Vision (${visionCount})`}       active={filters.onlyVision}    onClick={() => setFilter("onlyVision", !filters.onlyVision)} />
+          <FilterChip label={`🔧 Tools (${toolsCount})`}         active={filters.onlyTools}     onClick={() => setFilter("onlyTools", !filters.onlyTools)} />
           <FilterChip label={`🧠 Reasoning (${reasoningCount})`} active={filters.onlyReasoning} onClick={() => setFilter("onlyReasoning", !filters.onlyReasoning)} />
           {(filters.onlyFree || filters.onlyVision || filters.onlyTools || filters.onlyReasoning || filters.search || filters.provider) && (
             <button onClick={() => setFilters({ search: "", onlyFree: false, onlyVision: false, onlyTools: false, onlyReasoning: false, provider: "" })}
@@ -274,6 +381,11 @@ export default function ModelsPage() {
       {showForm && (
         <div className="mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-6">
           <h3 className="font-medium text-slate-900 mb-4">Nouveau model</h3>
+          {duplicateWarning && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
+              ⚠️ {duplicateWarning}
+            </div>
+          )}
           <form onSubmit={handleCreate} className="grid grid-cols-2 gap-4">
             {[
               { label: "Nom *", key: "name", type: "text", placeholder: "ex. GPT-4o Mini" },
@@ -306,7 +418,7 @@ export default function ModelsPage() {
                 className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
                 {creating ? "Creating…" : "Ajouter"}
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
+              <button type="button" onClick={() => { setShowForm(false); setDuplicateWarning(null); }} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
             </div>
           </form>
         </div>
@@ -327,18 +439,17 @@ export default function ModelsPage() {
               <div key={m.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
                   onClick={() => setExpanded(isExpanded ? null : m.id)}>
-
-                  {/* Free badge */}
                   {m.is_free && (
                     <span className="text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
                       FREE
                     </span>
                   )}
-
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="font-medium text-slate-900">{m.name}</span>
                       <Badge className={providerColor(m.provider)}>{m.provider}</Badge>
+                      {/* Access type badge — NEW */}
+                      <AccessTypeBadge model={m} />
                       {m.supports_vision    && <Badge className="bg-purple-50 text-purple-600 border border-purple-100"><Eye size={9} className="inline mr-0.5" />Vision</Badge>}
                       {m.supports_tools     && <Badge className="bg-blue-50 text-blue-600 border border-blue-100"><Wrench size={9} className="inline mr-0.5" />Tools</Badge>}
                       {m.supports_reasoning && <Badge className="bg-amber-50 text-amber-600 border border-amber-100"><Brain size={9} className="inline mr-0.5" />Reasoning</Badge>}
@@ -350,7 +461,6 @@ export default function ModelsPage() {
                       {m.has_api_key && <span className="text-green-500">🔑</span>}
                     </div>
                   </div>
-
                   <div className="flex items-center gap-2 shrink-0">
                     {test && (
                       <div className="flex items-center gap-1.5 text-xs">
@@ -372,7 +482,6 @@ export default function ModelsPage() {
                     {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                   </div>
                 </div>
-
                 {isExpanded && <ModelDetail m={m} />}
               </div>
             );
@@ -380,7 +489,13 @@ export default function ModelsPage() {
         )}
       </div>
 
-      {showCatalog && <ModelCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
+      {showCatalog && (
+        <ModelCatalogModal
+          existingModelIds={models.map(m => m.model_id)}
+          onClose={() => { setShowCatalog(false); load(); }}
+        />
+      )}
     </div>
+    </AppErrorBoundary>
   );
 }

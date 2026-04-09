@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { API_BASE } from "@/lib/config";
 import { Activity, AlertTriangle, Shield, Clock, Zap } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 interface DriftSignal { type: string; severity: string; detail: string; }
 interface TelemetryDash {
@@ -13,15 +13,23 @@ interface TelemetryDash {
   drift_signals: DriftSignal[]; safety_flags_by_type: Record<string, number>;
 }
 
-export default function TelemetryPage() {
+function TelemetryContent() {
   const [data, setData] = useState<TelemetryDash | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [hours, setHours] = useState(24);
 
   const load = () => {
     setLoading(true);
-    fetch(`${API}/research/telemetry/dashboard?hours=${hours}`)
-      .then(r => r.json()).then(setData).finally(() => setLoading(false));
+    setError(null);
+    fetch(`${API_BASE}/research/telemetry/dashboard?hours=${hours}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(setData)
+      .catch(e => setError(String(e)))
+      .finally(() => setLoading(false));
   };
   useEffect(() => { load(); const p = setInterval(load, 30000); return () => clearInterval(p); }, [hours]);
 
@@ -41,6 +49,12 @@ export default function TelemetryPage() {
         </div>
 
         {loading && !data ? <div className="flex items-center gap-2 text-slate-400"><Spinner size={16} /> Loading telemetry…</div> : null}
+
+        {error && !loading && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">
+            ⚠️ Impossible de charger les données de télémétrie — {error}
+          </div>
+        )}
 
         {data && (
           <>
@@ -105,6 +119,14 @@ export default function TelemetryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function TelemetryPage() {
+  return (
+    <AppErrorBoundary>
+      <TelemetryContent />
+    </AppErrorBoundary>
   );
 }
 

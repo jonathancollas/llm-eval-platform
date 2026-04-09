@@ -43,14 +43,21 @@ export function useCampaigns() {
   };
 }
 
-/** All models — cached 30s */
+/** Dedup models by model_id — guards against double-fetch race conditions */
+function dedupModels(models: LLMModel[]): LLMModel[] {
+  const map = new Map<string, LLMModel>();
+  for (const m of models) map.set(m.model_id, m);
+  return [...map.values()];
+}
+
+/** All models — cached 30s, deduplicated */
 export function useModels() {
   const { data, error, isLoading, mutate } = useSWR<LLMModel[]>(
     "/models/",
     fetcher,
     { dedupingInterval: 30000 }
   );
-  return { models: data ?? [], isLoading, error, refresh: mutate };
+  return { models: data ? dedupModels(data) : [], isLoading, error, refresh: mutate };
 }
 
 /** All benchmarks — cached 30s */

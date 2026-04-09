@@ -37,7 +37,7 @@ class LLMModel(SQLModel, table=True):
     id: Optional[int]          = Field(default=None, primary_key=True)
     name: str                  = Field(index=True)
     provider: ModelProvider    = Field(default=ModelProvider.CUSTOM)
-    model_id: str              = Field(index=True)
+    model_id: str              = Field(index=True, unique=True)  # UNIQUE — prevents duplicate imports
     endpoint: Optional[str]    = Field(default=None)
     api_key_encrypted: Optional[str] = Field(default=None)
     context_length: int        = Field(default=4096)

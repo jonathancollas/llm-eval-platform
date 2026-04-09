@@ -1,12 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
+import { API_BASE } from "@/lib/config";
 import { formatCost } from "@/lib/utils";
 import { Badge } from "./Badge";
 import { Spinner } from "./Spinner";
-import { X, Plus, CheckCircle, Search } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { X, Plus, CheckCircle, Search, Lock, Unlock } from "lucide-react";
 
 interface CatalogModel {
   id: string; name: string; provider: string; context_length: number;
@@ -14,13 +13,25 @@ interface CatalogModel {
   is_free: boolean; is_open_source: boolean; description: string; tags: string[];
 }
 
-export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
+// Access-type badge helpers
+function getAccessType(m: CatalogModel): { label: string; cls: string } {
+  if (m.is_free && m.is_open_source)  return { label: "OPEN WEIGHT", cls: "bg-emerald-100 text-emerald-700 border border-emerald-200" };
+  if (m.is_open_source)               return { label: "OPEN WEIGHT", cls: "bg-emerald-100 text-emerald-700 border border-emerald-200" };
+  if (m.is_free)                      return { label: "API ONLY",    cls: "bg-blue-100 text-blue-700 border border-blue-200" };
+  return                                     { label: "API ONLY",    cls: "bg-slate-100 text-slate-600 border border-slate-200" };
+}
+
+export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
+  onClose: () => void;
+  existingModelIds?: string[];
+}) {
   const [models, setModels] = useState<CatalogModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [freeOnly, setFreeOnly] = useState(false);
   const [ossOnly, setOssOnly] = useState(false);
-  const [added, setAdded] = useState<Set<string>>(new Set());
+  // Pre-populate `added` with already-imported model IDs so button shows "Added"
+  const [added, setAdded] = useState<Set<string>>(new Set(existingModelIds));
   const [adding, setAdding] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
   const [addAllProgress, setAddAllProgress] = useState<{ done: number; total: number } | null>(null);
@@ -55,12 +66,15 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
         notes: `Via OpenRouter. ${m.description.slice(0, 100)}`,
       });
       return true;
-    } catch {
+    } catch (e: any) {
+      // 409 = already exists — silently mark as added
+      if (String(e).includes("409") || String(e).includes("already registered")) return true;
       return false;
     }
   };
 
   const handleAdd = async (m: CatalogModel) => {
+    if (added.has(m.id)) return; // Guard: do not import twice
     setAdding(m.id);
     const ok = await addOne(m);
     if (ok) setAdded(prev => new Set([...prev, m.id]));
@@ -112,9 +126,8 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
           </button>
           <button onClick={() => setOssOnly(!ossOnly)}
             className={`text-xs px-3 py-2 rounded-lg border transition-colors ${ossOnly ? "bg-violet-50 border-violet-200 text-violet-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-            Open source
+            Open Weight
           </button>
-          {/* Add All button */}
           {!addingAll && notAddedCount > 0 && (
             <button onClick={handleAddAll}
               className="flex items-center gap-2 text-xs px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-colors">
@@ -136,7 +149,7 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
           ) : error ? (
             <div className="text-center py-16 text-red-500 text-sm">
               Impossible de charger le catalogue.
-              <br /><span className="text-xs text-slate-400">Check that OPENROUTER_API_KEY is configured in Render.</span>
+              <br /><span className="text-xs text-slate-400">Check that OPENROUTER_API_KEY is configured.</span>
             </div>
           ) : models.length === 0 ? (
             <div className="text-center py-16 text-slate-400 text-sm">No models found.</div>
@@ -144,13 +157,18 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
             models.map(m => {
               const isAdded = added.has(m.id);
               const isAdding = adding === m.id;
+              const access = getAccessType(m);
               return (
                 <div key={m.id} className="flex items-center gap-4 p-4 border border-slate-100 rounded-xl hover:border-slate-200 hover:bg-slate-50 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="font-medium text-slate-900 text-sm">{m.name}</span>
+                      {/* Access type badge */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold tracking-wide ${access.cls}`}>
+                        {m.is_open_source ? <Unlock size={9} className="inline mr-0.5" /> : <Lock size={9} className="inline mr-0.5" />}
+                        {access.label}
+                      </span>
                       {m.is_free && <Badge className="bg-emerald-100 text-emerald-700">Gratuit</Badge>}
-                      {m.is_open_source && <Badge className="bg-violet-100 text-violet-700">Open source</Badge>}
                       {m.tags.filter(t => t !== "gratuit" && t !== "open-source").slice(0, 2).map(t => (
                         <Badge key={t} className="bg-slate-100 text-slate-600">{t}</Badge>
                       ))}
@@ -164,10 +182,11 @@ export function ModelCatalogModal({ onClose }: { onClose: () => void }) {
                       ? <div className="text-slate-400">{formatCost(m.cost_input_per_1k)}/1k in</div>
                       : <div className="text-emerald-600">$0.00</div>}
                   </div>
-                  <button onClick={() => !isAdded && !addingAll && handleAdd(m)}
+                  <button onClick={() => handleAdd(m)}
                     disabled={isAdding || isAdded || addingAll}
+                    title={isAdded ? "Déjà dans le catalogue" : "Ajouter au catalogue"}
                     className={`shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                      isAdded ? "bg-green-50 text-green-600 border border-green-200"
+                      isAdded ? "bg-green-50 text-green-600 border border-green-200 cursor-default"
                       : "bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40"}`}>
                     {isAdding ? <Spinner size={12} /> : isAdded ? <CheckCircle size={12} /> : <Plus size={12} />}
                     {isAdded ? "Added" : "Add"}

@@ -129,7 +129,14 @@ def create_model(payload: ModelCreate, session: Session = Depends(get_session)):
         notes=payload.notes,
     )
     session.add(model)
-    session.commit()
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        # DB-level UNIQUE constraint violation — safety net for race conditions
+        if "UNIQUE" in str(e).upper() or "unique" in str(e).lower():
+            raise HTTPException(status_code=409, detail=f"Model '{payload.model_id}' already registered (concurrent import).")
+        raise
     session.refresh(model)
     return _to_read(model)
 
