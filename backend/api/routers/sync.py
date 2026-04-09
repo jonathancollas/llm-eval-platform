@@ -53,37 +53,52 @@ class SyncResult(BaseModel):
 def sync_benchmarks_from_catalog(session: Session) -> int:
     """
     Import all catalog benchmarks missing from DB.
-    Synchronous — no network calls.
-    Returns number of benchmarks added.
+    Safe against duplicate inserts at startup.
     """
     from pathlib import Path
-    bench_path = Path(settings.bench_library_path)
-    local_names = {b.name for b in session.exec(select(Benchmark)).all()}
-    added = 0
-    for item in BENCHMARK_CATALOG:
-        if item["name"] not in local_names:
-            dataset_path = item.get("dataset_path", "")
-            has_dataset = bool(dataset_path and (bench_path / dataset_path).exists())
-            b = Benchmark(
-                name=item["name"],
-                type=BenchmarkType(item["type"]),
-                description=item.get("description", ""),
-                tags=json.dumps(item.get("tags", [])),
-                dataset_path=dataset_path,
-                metric=item.get("metric", "accuracy"),
-                num_samples=item.get("num_samples"),
-                config_json=json.dumps(item.get("config", {})),
-                risk_threshold=item.get("risk_threshold"),
-                is_builtin=True,
-                has_dataset=has_dataset,
-            )
-            session.add(b)
-            added += 1
-    if added:
-        session.commit()
-        logger.info(f"Synced {added} benchmarks from catalog.")
-    return added
+    from sqlalchemy.exc import IntegrityError
 
+    bench_path = Path(settings.bench_library_path)
+    added = 0
+
+    for item in BENCHMARK_CATALOG:
+        existing = session.exec(
+            select(Benchmark).where(Benchmark.name == item["name"])
+        ).first()
+
+        if existing:
+            continue
+
+        dataset_path = item.get("dataset_path", "")
+        has_dataset = bool(
+            dataset_path and (bench_path / dataset_path).exists()
+        )
+
+        benchmark = Benchmark(
+            name=item["name"],
+            type=BenchmarkType(item["type"]),
+            description=item.get("description", ""),
+            tags=json.dumps(item.get("tags", [])),
+            dataset_path=dataset_path,
+            metric=item.get("metric", "accuracy"),
+            num_samples=item.get("num_samples"),
+            config_json=json.dumps(item.get("config", {})),
+            risk_threshold=item.get("risk_threshold"),
+            is_builtin=True,
+            has_dataset=has_dataset,
+        )
+
+        session.add(benchmark)
+
+        try:
+            session.commit()
+            added += 1
+        except IntegrityError:
+            session.rollback()
+            logger.info(f"Benchmark already exists: {item['name']}")
+
+    logger.info(f"Synced {added} benchmarks from catalog.")
+    return added
 
 def sync_starter_models(session: Session) -> int:
     """Import the starter pack of free models. Synchronous — no network."""
