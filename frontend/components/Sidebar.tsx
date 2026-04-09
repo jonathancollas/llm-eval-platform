@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
-         Microscope, FlaskConical, ShieldAlert, Shield, Gavel, Bot } from "lucide-react";
+         Microscope, FlaskConical, ShieldAlert, Shield, Gavel, Bot,
+         Beaker, AlertCircle, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_CORE = [
@@ -19,6 +20,12 @@ const NAV_ANALYZERS = [
   { href: "/judge",      label: "LLM Judge",       icon: Gavel },
   { href: "/agents",     label: "Agents",           icon: Bot },
   { href: "/policy",     label: "Compliance",       icon: Shield },
+];
+
+const NAV_RESEARCH = [
+  { href: "/research",   label: "Workspaces",      icon: Beaker },
+  { href: "/incidents",  label: "Incidents (SIX)",  icon: AlertCircle },
+  { href: "/telemetry",  label: "Monitoring",       icon: Radio },
 ];
 
 const MercurySymbol = () => (
@@ -114,6 +121,25 @@ export function Sidebar() {
               BETA
             </span>
           </Link>
+        </div>
+
+        {/* Research OS */}
+        <div className="pt-2 mt-2 border-t border-slate-100">
+          <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
+            <Beaker size={12} className="text-violet-400" />
+            <span className="text-[10px] font-semibold text-violet-500 tracking-wider uppercase">Research OS</span>
+          </div>
+          {NAV_RESEARCH.map(({ href, label, icon: Icon }) => (
+            <Link key={href} href={href}
+              className={cn(
+                "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
+                pathname === href || pathname.startsWith(href + "/")
+                  ? "bg-violet-700 text-white font-medium"
+                  : "text-slate-600 hover:bg-violet-50 hover:text-violet-700"
+              )}>
+              <Icon size={15} />{label}
+            </Link>
+          ))}
         </div>
 
         {/* About */}

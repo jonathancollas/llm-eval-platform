@@ -513,3 +513,72 @@ def list_benchmark_sources():
         "total": len(EXTERNAL_SOURCES),
         "importable": len([s for s in EXTERNAL_SOURCES if s["import_supported"]]),
     }
+
+
+# ── Benchmark Forking ──────────────────────────────────────────────────────────
+
+@router.post("/{benchmark_id}/fork")
+def fork_benchmark(
+    benchmark_id: int,
+    new_name: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """Fork a benchmark — creates a derivative with lineage tracking."""
+    parent = session.get(Benchmark, benchmark_id)
+    if not parent:
+        raise HTTPException(404, detail="Benchmark not found.")
+
+    fork_name = new_name or f"{parent.name} (fork)"
+
+    # Check unique
+    existing = session.exec(select(Benchmark).where(Benchmark.name == fork_name)).first()
+    if existing:
+        fork_name = f"{fork_name} {int(datetime.utcnow().timestamp())}"
+
+    # Copy dataset if exists
+    fork_dataset_path = parent.dataset_path
+    if parent.dataset_path:
+        import shutil
+        src = Path(settings.bench_library_path) / parent.dataset_path
+        if src.exists():
+            dst_name = f"fork_{benchmark_id}_{src.name}"
+            dst = Path(settings.bench_library_path) / "custom" / dst_name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            fork_dataset_path = f"custom/{dst_name}"
+
+    # Parse parent config to add lineage
+    parent_config = json.loads(parent.config_json) if parent.config_json else {}
+    fork_config = {
+        **parent_config,
+        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
+    }
+
+    parent_tags = json.loads(parent.tags) if parent.tags else []
+
+    fork = Benchmark(
+        name=fork_name,
+        type=parent.type,
+        description=f"Fork of {parent.name}. {parent.description}",
+        tags=json.dumps([*parent_tags, "fork", f"fork-of-{parent.id}"]),
+        config_json=json.dumps(fork_config),
+        dataset_path=fork_dataset_path,
+        metric=parent.metric,
+        num_samples=parent.num_samples,
+        is_builtin=False,
+        has_dataset=parent.has_dataset,
+        risk_threshold=parent.risk_threshold,
+    )
+    if hasattr(parent, "eval_dimension"):
+        fork.eval_dimension = parent.eval_dimension
+
+    session.add(fork)
+    session.commit()
+    session.refresh(fork)
+
+    return {
+        "id": fork.id,
+        "name": fork.name,
+        "forked_from": {"id": parent.id, "name": parent.name},
+        "dataset_path": fork_dataset_path,
+    }
