@@ -24,6 +24,7 @@ const NAV_ANALYZERS = [
 
 const NAV_RESEARCH = [
   { href: "/research",   label: "Workspaces",      icon: Beaker },
+  { href: "/evidence",   label: "Evidence (RCT)",   icon: FlaskConical },
   { href: "/incidents",  label: "Incidents (SIX)",  icon: AlertCircle },
   { href: "/telemetry",  label: "Monitoring",       icon: Radio },
 ];

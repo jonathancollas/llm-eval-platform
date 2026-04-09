@@ -20,6 +20,7 @@ from api.routers import agents
 from api.routers import policy
 from api.routers import tenants
 from api.routers import research
+from api.routers import evidence
 
 logging.basicConfig(
     level=logging.INFO,
@@ -168,7 +169,7 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
 
 for router in [models.router, benchmarks.router, campaigns.router, results.router,
                reports.router, catalog.router, leaderboard.router, sync.router, genome.router,
-               redbox.router, judge.router, agents.router, policy.router, tenants.router, research.router]:
+               redbox.router, judge.router, agents.router, policy.router, tenants.router, research.router, evidence.router]:
     app.include_router(router, prefix="/api")
 
 

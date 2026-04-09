@@ -466,3 +466,109 @@ class TelemetryEvent(SQLModel, table=True):
     tool_names: str             = Field(default="[]")            # Tools the model used
     # Timestamp
     timestamp: datetime         = Field(default_factory=datetime.utcnow)
+
+
+# ══ RCT / RWD / RWE — Evidence-Based Evaluation ══════════════════════════════
+
+class EvalTrial(SQLModel, table=True):
+    """Randomized Control Trial for AI evaluation.
+    Structured experimental design with control groups, randomization, and blinding.
+    """
+    __tablename__ = "eval_trials"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
+    name: str                   = Field(index=True)
+    description: str            = Field(default="")
+    status: str                 = Field(default="draft")  # draft, recruiting, running, completed, published
+    # Trial design
+    trial_type: str             = Field(default="rct")    # rct, quasi_experimental, observational
+    hypothesis: str             = Field(default="")
+    primary_endpoint: str       = Field(default="")       # What we're measuring (e.g. "safety_score")
+    secondary_endpoints: str    = Field(default="[]")     # JSON array of metric names
+    # Arms
+    arms_json: str              = Field(default="[]")     # [{name, model_ids, benchmark_ids, conditions}]
+    # Randomization
+    randomization_method: str   = Field(default="stratified")  # simple, stratified, block
+    randomization_seed: int     = Field(default=42)
+    sample_size_per_arm: int    = Field(default=100)
+    # Blinding
+    blinding: str               = Field(default="single")  # none, single, double
+    # Statistical plan
+    power_analysis_json: str    = Field(default="{}")      # {alpha, beta, effect_size, computed_n}
+    statistical_test: str       = Field(default="mann_whitney")  # t_test, mann_whitney, chi_square, bootstrap
+    confidence_level: float     = Field(default=0.95)
+    # Results
+    results_json: str           = Field(default="{}")      # Computed after completion
+    p_value: Optional[float]    = Field(default=None)
+    effect_size: Optional[float]= Field(default=None)
+    ci_lower: Optional[float]   = Field(default=None)
+    ci_upper: Optional[float]   = Field(default=None)
+    conclusion: str             = Field(default="")        # significant / not_significant / inconclusive
+    # Linked campaigns (one per arm)
+    campaign_ids: str           = Field(default="[]")
+    # Timestamps
+    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = Field(default=None)
+
+
+class RealWorldDataset(SQLModel, table=True):
+    """Real World Data collection — production telemetry aggregated for analysis."""
+    __tablename__ = "rwd_datasets"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    name: str                   = Field(index=True)
+    description: str            = Field(default="")
+    model_id: Optional[int]     = Field(default=None, foreign_key="llm_models.id", index=True)
+    # Data source
+    source_type: str            = Field(default="telemetry")  # telemetry, logs, user_reports, external
+    collection_start: Optional[datetime] = Field(default=None)
+    collection_end: Optional[datetime]   = Field(default=None)
+    # Aggregated metrics
+    total_events: int           = Field(default=0)
+    total_safety_flags: int     = Field(default=0)
+    avg_latency_ms: float       = Field(default=0.0)
+    avg_score: Optional[float]  = Field(default=None)
+    safety_flag_rate: float     = Field(default=0.0)
+    error_rate: float           = Field(default=0.0)
+    # Distribution snapshots
+    score_distribution_json: str = Field(default="[]")    # Histogram bins
+    latency_distribution_json: str = Field(default="[]")
+    failure_type_distribution_json: str = Field(default="{}")
+    # Metadata
+    tags: str                   = Field(default="[]")
+    metadata_json: str          = Field(default="{}")
+    created_at: datetime        = Field(default_factory=datetime.utcnow)
+
+
+class RealWorldEvidence(SQLModel, table=True):
+    """Real World Evidence — synthesis of RCT results and RWD observations.
+    Answers: does the model behave in production as predicted by controlled evaluation?
+    """
+    __tablename__ = "rwe_evidence"
+
+    id: Optional[int]           = Field(default=None, primary_key=True)
+    name: str                   = Field(index=True)
+    description: str            = Field(default="")
+    # Linked data sources
+    trial_id: Optional[int]     = Field(default=None, foreign_key="eval_trials.id", index=True)
+    rwd_dataset_id: Optional[int] = Field(default=None, foreign_key="rwd_datasets.id", index=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
+    # Evidence synthesis
+    rct_score: Optional[float]  = Field(default=None)     # Score from controlled trial
+    rwd_score: Optional[float]  = Field(default=None)     # Score from production data
+    concordance: Optional[float]= Field(default=None)     # 0-1: how well RCT predicts RWD
+    generalizability: Optional[float] = Field(default=None)  # 0-1: does lab transfer to production?
+    # Drift analysis
+    behavior_drift: Optional[float] = Field(default=None) # Delta between RCT and RWD behavior
+    safety_drift: Optional[float]   = Field(default=None) # Safety-specific drift
+    propensity_drift: Optional[float] = Field(default=None)
+    # Statistical synthesis
+    meta_analysis_json: str     = Field(default="{}")      # Combined effect sizes, forest plots
+    heterogeneity_i2: Optional[float] = Field(default=None)  # I² statistic for evidence heterogeneity
+    evidence_grade: str         = Field(default="")        # A (strong), B (moderate), C (weak), D (insufficient)
+    # Conclusion
+    conclusion: str             = Field(default="")
+    recommendations: str        = Field(default="")
+    # Timestamps
+    created_at: datetime        = Field(default_factory=datetime.utcnow)
