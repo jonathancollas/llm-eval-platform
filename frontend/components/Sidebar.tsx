@@ -86,6 +86,8 @@ function PhaseHeader({ number, label, color, badge }: { number: number; label: s
   );
 }
 
+import { ThemeSwitcher } from "@/components/ThemeProvider";
+
 export function Sidebar() {
   const pathname = usePathname();
   const isRedbox = pathname.startsWith("/redbox");
@@ -149,9 +151,12 @@ export function Sidebar() {
         </div>
       </nav>
 
-      <div className="p-3 border-t border-slate-100 text-center">
-        <div className="text-slate-300" style={{ fontSize: "9px", letterSpacing: "1px" }}>
-          ☿ MR v0.5.0 · INESIA 2026
+      <div className="p-3 border-t border-slate-100">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-slate-300" style={{ fontSize: "9px", letterSpacing: "1px" }}>
+            ☿ MR v0.5.0
+          </div>
+          <ThemeSwitcher />
         </div>
       </div>
     </aside>

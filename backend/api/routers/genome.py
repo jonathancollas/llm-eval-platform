@@ -564,3 +564,17 @@ async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get
 
     session.commit()
     return {"profiles_created": profiles_created, "method": "hybrid_rules_llm", "total_runs": len(runs)}
+
+
+# ── Scientific References ──────────────────────────────────────────────────────
+
+@router.get("/references")
+def get_scientific_references():
+    """All scientific references backing the dynamic evaluation heuristics."""
+    from eval_engine.scientific_references import get_all_references, get_reference_count
+    refs = get_all_references()
+    return {
+        "references": refs,
+        "total_papers": get_reference_count(),
+        "categories": list(refs.keys()),
+    }
