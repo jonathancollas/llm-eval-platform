@@ -71,7 +71,8 @@ export default function GenomePage() {
   const [fingerprints, setFingerprints] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [computing, setComputing] = useState(false);
-  const [tab, setTab] = useState<"genome" | "heatmap" | "fingerprints">("genome");
+  const [references, setReferences] = useState<any | null>(null);
+  const [tab, setTab] = useState<"genome" | "heatmap" | "fingerprints" | "science">("genome");
 
   const reload = () => {
     fetch(`${API_BASE}/genome/models`)
@@ -81,6 +82,10 @@ export default function GenomePage() {
     fetch(`${API_BASE}/genome/safety-heatmap`)
       .then(r => r.ok ? r.json() : null)
       .then(d => d && setHeatmap(d))
+      .catch(() => {});
+    fetch(`${API_BASE}/genome/references`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setReferences(d))
       .catch(() => {});
   };
 
@@ -142,6 +147,7 @@ export default function GenomePage() {
     { key: "genome", label: "🧬 DNA Profile" },
     { key: "heatmap", label: "🔥 Safety Heatmap" },
     { key: "fingerprints", label: "🔍 Fingerprints" },
+    { key: "science", label: "📚 Heuristics & Papers" },
   ];
 
   return (
@@ -330,7 +336,70 @@ export default function GenomePage() {
   );
 }
 
-// Wrap with ErrorBoundary so crashes don't kill the whole app
+        {tab === "science" && (
+          <div className="space-y-6 max-w-4xl">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
+              <span className="font-semibold">Scientific grounding</span> — Every Genomia heuristic is backed by peer-reviewed research.
+              Each signal, classifier, and scoring function maps to published papers below.
+              {references && <span className="ml-2 text-blue-500">({references.total_papers} unique papers referenced)</span>}
+            </div>
+
+            {!references ? (
+              <div className="flex justify-center py-12"><Spinner size={20} /></div>
+            ) : (
+              Object.entries(references.references as Record<string, Record<string, any>>).map(([category, heuristics]) => (
+                <div key={category}>
+                  <h2 className="text-sm font-bold text-slate-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <span className="w-px h-4 bg-slate-300" />
+                    {category === "signals" ? "📡 Signal Extractors"
+                      : category === "classifiers" ? "🧬 Failure Classifiers"
+                      : category === "adversarial" ? "🎯 Adversarial / Red Room"
+                      : category === "judge" ? "⚖️ LLM-as-Judge"
+                      : category === "evidence" ? "🔬 RCT / Evidence"
+                      : category}
+                  </h2>
+                  <div className="space-y-3">
+                    {Object.entries(heuristics).map(([key, data]: [string, any]) => (
+                      <div key={key} className="bg-white border border-slate-200 rounded-xl p-4">
+                        <div className="flex items-start justify-between gap-4 mb-2">
+                          <div>
+                            <span className="font-mono text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">{key}</span>
+                            <p className="text-sm text-slate-700 mt-1.5">{data.description}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-2 mt-3">
+                          {(data.papers ?? []).map((paper: any, i: number) => (
+                            <div key={i} className="flex items-start gap-3 text-xs bg-slate-50 rounded-lg p-2.5">
+                              <span className="shrink-0 text-slate-400 font-mono mt-0.5">[{i + 1}]</span>
+                              <div className="flex-1 min-w-0">
+                                <a href={paper.url} target="_blank" rel="noopener noreferrer"
+                                  className="font-medium text-blue-600 hover:underline leading-tight line-clamp-2">
+                                  {paper.title}
+                                </a>
+                                <div className="text-slate-400 mt-0.5">
+                                  {paper.authors} · {paper.venue} {paper.year}
+                                </div>
+                                {paper.contribution && (
+                                  <div className="text-slate-500 mt-1 italic">{paper.contribution}</div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 const GenomePageInner = GenomePage;
 export default function GenomePageWrapper() {
   return (
