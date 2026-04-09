@@ -63,7 +63,10 @@ export interface Benchmark {
 
 export interface EvalRunSummary {
   id: number; model_id: number; benchmark_id: number; status: JobStatus;
-  score: number | null; metrics: Record<string, unknown>;
+  score: number | null;
+  capability_score: number | null;   // Elicited maximum — what model CAN do
+  propensity_score: number | null;   // Operational tendency — what model TENDS to do
+  metrics: Record<string, unknown>;
   total_cost_usd: number; total_latency_ms: number; num_items: number;
   error_message?: string | null;
 }

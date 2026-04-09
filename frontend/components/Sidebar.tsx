@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
          Microscope, Dna, ShieldAlert, Shield, Gavel, Bot,
-         Beaker, AlertCircle, Radio, TestTubes, Lock } from "lucide-react";
+         Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/lib/config";
 
@@ -22,9 +22,10 @@ const NAV_PHASE1 = [
 
 // Renamed: "Dynamic & Behavioral Eval" → "Behavioral Eval"
 const NAV_PHASE2 = [
-  { href: "/genome",  label: "Genomia",      icon: Dna },
-  { href: "/judge",   label: "LLM Judge",    icon: Gavel },
-  { href: "/agents",  label: "Agents",       icon: Bot },
+  { href: "/genome",       label: "Genomia",            icon: Dna },
+  { href: "/judge",        label: "LLM Judge",          icon: Gavel },
+  { href: "/agents",       label: "Agents",             icon: Bot },
+  { href: "/methodology",  label: "Methodology",        icon: FlaskConical },
 ];
 
 // Phase 3 — Real World Eval (ALPHA)

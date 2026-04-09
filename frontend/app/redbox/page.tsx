@@ -198,18 +198,34 @@ export default function RedboxPage() {
 
   return (
     <div>
-      <div className="bg-red-950 px-8 py-5 border-b border-red-900">
-        <div className="flex items-center gap-3 mb-1">
-          <ShieldAlert size={20} className="text-red-400" />
-          <h1 className="text-xl font-bold text-white tracking-wide">REDBOX</h1>
-          <span className="text-xs bg-red-800 text-red-300 px-2 py-0.5 rounded-full border border-red-700">
-            Adversarial Security Lab
-          </span>
+      {/* ── The Red Room — restricted access banner ─────────────────────── */}
+      <div className="bg-red-700 px-0">
+        {/* Top stripe */}
+        <div className="flex items-center gap-0 h-1.5">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? "bg-red-700" : "bg-red-900"}`} />
+          ))}
         </div>
-        <p className="text-red-300 text-sm italic">Break the model before reality does.</p>
+        <div className="px-8 py-5">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-8 h-8 rounded-full bg-red-900 border-2 border-red-500 flex items-center justify-center">
+              <span className="text-red-300 text-base">🔒</span>
+            </div>
+            <h1 className="text-xl font-bold text-white tracking-widest uppercase">The Red Room</h1>
+            <span className="text-[10px] bg-red-900 text-red-300 px-2 py-0.5 rounded font-bold border border-red-600 tracking-widest uppercase">
+              RESTRICTED ACCESS
+            </span>
+          </div>
+          <p className="text-red-200 text-sm">Adversarial evaluation lab — frontier model red-teaming.</p>
+        </div>
+        <div className="flex items-center gap-0 h-1.5">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? "bg-red-700" : "bg-red-900"}`} />
+          ))}
+        </div>
       </div>
 
-      <div className="px-8 pt-3 flex gap-1 bg-red-950 border-b border-red-900">
+      <div className="px-8 pt-3 flex gap-1 bg-red-900 border-b border-red-800">
         {TABS.map(({ key, label }) => (
           <button key={key} onClick={() => setActiveTab(key as any)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
