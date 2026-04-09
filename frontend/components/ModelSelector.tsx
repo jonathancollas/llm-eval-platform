@@ -19,7 +19,7 @@ interface ModelSelectorProps {
 export function ModelSelector({ mode, selected, onChange, idType = "db_id", label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps) {
   const [models, setModels] = useState<LLMModel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "free" | "local">("all");
+  const [filter, setFilter] = useState<"all" | "free" | "local" | "open">("all");
   const [search, setSearch] = useState("");
   const [pulling, setPulling] = useState<number | null>(null);
   const [pullStatus, setPullStatus] = useState<Record<number, "pulling" | "done" | "error">>({});
@@ -111,10 +111,12 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
 
   const localCount = models.filter(m => (m as any).provider === "ollama").length;
   const freeCount = models.filter(m => (m as any).is_free).length;
+  const openWeightCount = models.filter(m => (m as any).is_open_weight).length;
 
   const filtered = models.filter(m => {
     if (filter === "free" && !(m as any).is_free) return false;
     if (filter === "local" && (m as any).provider !== "ollama") return false;
+    if (filter === "open" && !(m as any).is_open_weight) return false;
     if (search && !m.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -132,6 +134,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
           {[
             { key: "all" as const, label: `All (${models.length})`, cls: "bg-slate-900 text-white border-slate-900" },
             { key: "free" as const, label: `Free (${freeCount})`, cls: "bg-green-700 text-white border-green-700" },
+            ...(openWeightCount > 0 ? [{ key: "open" as const, label: `Open (${openWeightCount})`, cls: "bg-orange-600 text-white border-orange-600" }] : []),
             ...(localCount > 0 ? [{ key: "local" as const, label: `🦙 (${localCount})`, cls: "bg-purple-700 text-white border-purple-700" }] : []),
           ].map(f => (
             <button key={f.key} onClick={() => setFilter(f.key)}
@@ -163,6 +166,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                   <div className={`text-xs font-medium truncate ${sel ? "text-white" : "text-slate-800"}`}>{m.name}</div>
                   <div className={`text-[10px] ${sel ? "text-slate-300" : "text-slate-400"}`}>
                     {isLocal && <span className="font-bold text-purple-500 mr-1">🦙 LOCAL</span>}
+                    {(m as any).is_open_weight && !isLocal && <span className="font-bold text-orange-500 mr-1">OPEN</span>}
                     {(m as any).is_free && !isLocal && <span className="font-bold text-green-500 mr-1">FREE</span>}
                     {(m as any).provider}
                   </div>

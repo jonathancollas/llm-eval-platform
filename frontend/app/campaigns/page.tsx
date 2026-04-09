@@ -465,7 +465,7 @@ export default function CampaignsPage() {
                   ["Models", form.model_ids.length],
                   ["Benchmarks", form.benchmark_ids.length],
                   ["Runs total", form.model_ids.length * form.benchmark_ids.length],
-                  ["Max samples / bench", form.max_samples],
+                  ["Max items per benchmark", form.max_samples],
                   ["Temperature", form.temperature],
                 ].map(([label, val]) => (
                   <div key={String(label)} className="flex justify-between">
@@ -532,7 +532,7 @@ export default function CampaignsPage() {
                     <div className="flex gap-3 text-xs text-slate-400 flex-wrap">
                       <span>{modelCount} model{modelCount !== 1 ? "s" : ""}</span>
                       <span>{benchCount} benchmark{benchCount !== 1 ? "s" : ""}</span>
-                      <span>{c.max_samples ?? 50} samples</span>
+                      <span>{c.max_samples ?? 50} items/bench</span>
                       {c.created_at && <span>{timeAgo(c.created_at)}</span>}
                     </div>
 

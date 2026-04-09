@@ -52,6 +52,7 @@ class LLMModel(SQLModel, table=True):
     supports_reasoning: bool   = Field(default=False)
     # Extended metadata from OpenRouter
     is_free: bool              = Field(default=False)  # zero cost + :free suffix
+    is_open_weight: bool       = Field(default=False)  # weights publicly available
     max_output_tokens: int     = Field(default=0)
     is_moderated: bool         = Field(default=False)
     tokenizer: str             = Field(default="")

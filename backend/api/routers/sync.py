@@ -196,6 +196,15 @@ def _build_model(m: dict) -> LLMModel | None:
     created_at = int(m.get("created") or 0)
     is_free = (cost_in == 0.0 and cost_out == 0.0 and ":free" in model_id)
 
+    # Detect open-weight models (weights publicly downloadable)
+    OPEN_WEIGHT_PREFIXES = [
+        "meta-llama/", "google/gemma", "mistralai/mistral-", "mistralai/mixtral",
+        "mistralai/mistral-small", "qwen/", "deepseek/", "microsoft/phi",
+        "01-ai/", "allenai/", "stabilityai/", "tiiuae/", "nvidia/",
+        "databricks/", "internlm/", "cohere/command-r",  # Command-R is open
+    ]
+    is_open_weight = bool(hf_id) or any(model_id.startswith(p) for p in OPEN_WEIGHT_PREFIXES)
+
     return LLMModel(
         name=name,
         provider=ModelProvider.CUSTOM,
@@ -211,6 +220,7 @@ def _build_model(m: dict) -> LLMModel | None:
         supports_tools=supports_tools,
         supports_reasoning=supports_reasoning,
         is_free=is_free,
+        is_open_weight=is_open_weight,
         max_output_tokens=max_output,
         is_moderated=is_moderated,
         tokenizer=tokenizer,

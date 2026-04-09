@@ -2,8 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
-         Microscope, FlaskConical, ShieldAlert, Shield, Gavel, Bot,
-         Beaker, AlertCircle, Radio, Crosshair, Scan, Globe } from "lucide-react";
+         Microscope, Dna, ShieldAlert, Shield, Gavel, Bot,
+         Beaker, AlertCircle, Radio, TestTubes } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Foundation — always visible
@@ -23,14 +23,14 @@ const NAV_PHASE1 = [
 
 // Phase 2 — Dynamic & Behavioral Eval
 const NAV_PHASE2 = [
-  { href: "/genome",     label: "Genomia",         icon: FlaskConical },
+  { href: "/genome",     label: "Genomia",         icon: Dna },
   { href: "/judge",      label: "LLM Judge",       icon: Gavel },
   { href: "/agents",     label: "Agents",           icon: Bot },
 ];
 
 // Phase 3 — Real World Eval
 const NAV_PHASE3 = [
-  { href: "/evidence",   label: "Evidence (RCT)",   icon: FlaskConical },
+  { href: "/evidence",   label: "Evidence (RCT)",   icon: TestTubes },
   { href: "/research",   label: "Workspaces",      icon: Beaker },
   { href: "/incidents",  label: "Incidents (SIX)",  icon: AlertCircle },
   { href: "/telemetry",  label: "Monitoring",       icon: Radio },
