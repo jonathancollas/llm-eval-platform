@@ -2,10 +2,10 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { campaignsApi } from "@/lib/api";
+import { API_BASE } from "@/lib/config";
 import type { Campaign } from "@/lib/api";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 interface GenomeData {
   models: Record<string, Record<string, number>>;
@@ -74,8 +74,14 @@ export default function GenomePage() {
   const [tab, setTab] = useState<"genome" | "heatmap" | "fingerprints">("genome");
 
   const reload = () => {
-    fetch(`${API_BASE}/genome/models`).then(r => r.json()).then(d => setFingerprints(d.fingerprints ?? [])).catch(() => {});
-    fetch(`${API_BASE}/genome/safety-heatmap`).then(r => r.json()).then(setHeatmap).catch(() => {});
+    fetch(`${API_BASE}/genome/models`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setFingerprints(d.fingerprints ?? []))
+      .catch(() => {});
+    fetch(`${API_BASE}/genome/safety-heatmap`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setHeatmap(d))
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -83,29 +89,53 @@ export default function GenomePage() {
       const completed = cs.filter(c => c.status === "completed");
       setCampaigns(completed);
       if (completed.length) setSelectedId(completed[0].id);
-    });
+    }).catch(() => {});
     reload();
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
-    setLoading(true);
-    fetch(`${API_BASE}/genome/campaigns/${selectedId}`)
-      .then(r => r.json()).then(setGenome).finally(() => setLoading(false));
+    handleFetchGenome(selectedId);
   }, [selectedId]);
+
+  const [computeError, setComputeError] = useState<string | null>(null);
 
   const handleCompute = async (hybrid = false) => {
     if (!selectedId) return;
     setComputing(true);
+    setComputeError(null);
     try {
       const endpoint = hybrid
         ? `${API_BASE}/genome/campaigns/${selectedId}/compute-hybrid`
         : `${API_BASE}/genome/campaigns/${selectedId}/compute`;
-      await fetch(endpoint, { method: "POST" });
-      const d = await fetch(`${API_BASE}/genome/campaigns/${selectedId}`).then(r => r.json());
-      setGenome(d);
+      const res = await fetch(endpoint, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail ?? `HTTP ${res.status}`);
+      }
+      const updated = await fetch(`${API_BASE}/genome/campaigns/${selectedId}`);
+      if (!updated.ok) throw new Error(`Failed to reload genome data`);
+      const d = await updated.json();
+      setGenome(d ?? null);
       reload();
-    } finally { setComputing(false); }
+    } catch (e: any) {
+      setComputeError(e.message ?? String(e));
+    } finally {
+      setComputing(false);
+    }
+  };
+
+  const handleFetchGenome = (id: number) => {
+    setLoading(true);
+    setComputeError(null);
+    fetch(`${API_BASE}/genome/campaigns/${id}`)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(d => setGenome(d ?? null))
+      .catch(e => setComputeError(e.message ?? String(e)))
+      .finally(() => setLoading(false));
   };
 
   const TABS = [
@@ -150,6 +180,12 @@ export default function GenomePage() {
                 Hybrid (LLM)
               </button>
             </div>
+
+            {computeError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-600 flex items-center gap-2">
+                ⚠️ {computeError}
+              </div>
+            )}
 
             {loading ? <div className="flex justify-center py-20"><Spinner size={24} /></div>
               : !genome?.computed ? (
@@ -291,5 +327,15 @@ export default function GenomePage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Wrap with ErrorBoundary so crashes don't kill the whole app
+const GenomePageInner = GenomePage;
+export default function GenomePageWrapper() {
+  return (
+    <AppErrorBoundary>
+      <GenomePageInner />
+    </AppErrorBoundary>
   );
 }

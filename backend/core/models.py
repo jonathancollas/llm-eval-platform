@@ -87,7 +87,9 @@ class Benchmark(SQLModel, table=True):
     is_builtin: bool             = Field(default=True)
     has_dataset: bool            = Field(default=False)
     risk_threshold: Optional[float] = Field(default=None)
-    created_at: datetime         = Field(default_factory=datetime.utcnow)
+    # Source classification: "inesia" | "public" | "community"
+    source: str                      = Field(default="public", sa_column_kwargs={"nullable": True})
+    created_at: datetime             = Field(default_factory=datetime.utcnow)
 
 
 class Campaign(SQLModel, table=True):

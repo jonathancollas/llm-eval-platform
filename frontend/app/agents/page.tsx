@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { ChevronDown, ChevronUp, Play, Zap, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 interface Trajectory {
   id: number; model_name: string; task_description: string; task_type: string;

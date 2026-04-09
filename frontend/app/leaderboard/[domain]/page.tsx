@@ -8,7 +8,7 @@ import { formatScore, formatCost, formatLatency } from "@/lib/utils";
 import { FileText, RefreshCw, ArrowLeft, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 interface LeaderboardRow {
   rank: number; model_name: string; model_provider: string;

@@ -86,6 +86,7 @@ def sync_benchmarks_from_catalog(session: Session) -> int:
             risk_threshold=item.get("risk_threshold"),
             is_builtin=True,
             has_dataset=has_dataset,
+            source=item.get("source", "public"),
         )
 
         session.add(benchmark)

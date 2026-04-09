@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { formatScore, formatCost, formatLatency } from "@/lib/utils";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 interface Domain { key: string; label: string; description: string; icon: string; }
 interface LeaderboardRow {

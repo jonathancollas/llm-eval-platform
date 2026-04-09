@@ -43,6 +43,7 @@ class BenchmarkRead(BaseModel):
     is_builtin: bool
     risk_threshold: Optional[float]
     has_dataset: bool
+    source: str          # "inesia" | "public" | "community"
     created_at: datetime
 
 
@@ -63,6 +64,7 @@ def _to_read(b: Benchmark) -> BenchmarkRead:
         is_builtin=b.is_builtin,
         risk_threshold=b.risk_threshold,
         has_dataset=has_dataset,
+        source=getattr(b, "source", "public") or "public",
         created_at=b.created_at,
     )
 

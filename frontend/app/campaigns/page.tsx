@@ -13,7 +13,7 @@ import { Plus, Play, Square, Trash2, BarChart2, RefreshCw,
          ChevronRight, ChevronLeft, Check, Radio, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 type BenchmarkFilterKey = "all" | "academic" | "safety" | "coding" | "custom" | "inesia";
 const BENCH_FILTERS: { key: BenchmarkFilterKey; label: string }[] = [

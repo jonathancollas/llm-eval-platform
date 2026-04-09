@@ -36,6 +36,8 @@ export type BenchmarkType = "academic" | "safety" | "coding" | "custom";
 export const ollamaApi = {
   check: () => apiFetch<{ available: boolean; url: string; models: any[]; total: number }>("/sync/ollama"),
   import: () => apiFetch<{ added: number; available: boolean }>("/sync/ollama/import", { method: "POST" }),
+  pull: (modelName: string) => apiFetch<{ status: string; model: string }>(`/sync/ollama/pull?model_name=${encodeURIComponent(modelName)}`, { method: "POST", timeoutMs: 300000 }),
+  pullAndRegister: (modelName: string) => apiFetch<{ status: string; model_name: string }>("/sync/ollama/pull-and-register", { method: "POST", body: JSON.stringify({ model_name: modelName }), timeoutMs: 300000 }),
 };
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
@@ -54,7 +56,9 @@ export interface Benchmark {
   id: number; name: string; type: BenchmarkType; description: string;
   tags: string[]; metric: string; num_samples: number | null;
   config: Record<string, unknown>; is_builtin: boolean;
-  risk_threshold: number | null; has_dataset: boolean; created_at: string;
+  risk_threshold: number | null; has_dataset: boolean;
+  source: "inesia" | "public" | "community";
+  created_at: string;
 }
 
 export interface EvalRunSummary {

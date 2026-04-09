@@ -6,7 +6,7 @@ import { Spinner } from "./Spinner";
 import { benchmarkTypeColor } from "@/lib/utils";
 import { X, Plus, CheckCircle, AlertTriangle, Shield } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 interface CatalogBenchmark {
   key: string; name: string; type: string; domain: string;

@@ -13,7 +13,7 @@ import { benchmarkTypeColor } from "@/lib/utils";
 import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles,
          Search, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE } from "@/lib/config";
 
 const TYPE_LABELS: Record<string, string> = {
   academic: "Academic", safety: "Safety", coding: "Coding", custom: "Custom",
@@ -441,6 +441,11 @@ export default function BenchmarksPage() {
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="font-medium text-slate-900">{b.name}</span>
                       <Badge className={benchmarkTypeColor(b.type as any)}>{TYPE_LABELS[b.type] ?? b.type}</Badge>
+                      {/* Source badge — INESIA vs Public */}
+                      {b.source === "inesia"
+                        ? <Badge className="bg-purple-100 text-purple-700 border border-purple-200 font-bold text-[10px]">☿ INESIA</Badge>
+                        : <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[10px]">PUBLIC</Badge>
+                      }
                       {b.is_builtin && <Badge className="bg-slate-100 text-slate-500"><Lock size={10} className="inline mr-1" />Built-in</Badge>}
                       {b.risk_threshold && <Badge className="bg-red-100 text-red-600"><AlertTriangle size={10} className="inline mr-1" />Frontier</Badge>}
                       {b.has_dataset && <Badge className="bg-green-100 text-green-600">Dataset ✓</Badge>}

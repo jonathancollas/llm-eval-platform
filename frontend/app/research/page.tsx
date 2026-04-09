@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { Plus, GitFork, Globe, Lock, FileText, Beaker } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE as API } from "@/lib/config";
 
 interface Workspace {
   id: number; name: string; slug: string; description: string;

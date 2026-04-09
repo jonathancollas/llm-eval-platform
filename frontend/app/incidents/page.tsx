@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { Plus, AlertTriangle, Shield, CheckCircle2, XCircle } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE as API } from "@/lib/config";
 
 interface Incident {
   incident_id: string; title: string; category: string; severity: string;

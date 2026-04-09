@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { Plus, FlaskConical, Database, Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
+import { API_BASE as API } from "@/lib/config";
 
 type Tab = "trials" | "rwd" | "rwe";
 
