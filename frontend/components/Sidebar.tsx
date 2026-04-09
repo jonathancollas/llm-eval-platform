@@ -3,28 +3,35 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
          Microscope, FlaskConical, ShieldAlert, Shield, Gavel, Bot,
-         Beaker, AlertCircle, Radio } from "lucide-react";
+         Beaker, AlertCircle, Radio, Crosshair, Scan, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV_CORE = [
+// Foundation — always visible
+const NAV_FOUNDATION = [
   { href: "/",           label: "Overview",       icon: Activity },
   { href: "/models",     label: "Models",          icon: Cpu },
   { href: "/benchmarks", label: "Benchmarks",      icon: Library },
+];
+
+// Phase 1 — Static Evaluation
+const NAV_PHASE1 = [
   { href: "/campaigns",  label: "Campaigns",       icon: Rocket },
   { href: "/dashboard",  label: "Dashboard",       icon: BarChart3 },
   { href: "/leaderboard",label: "Leaderboard",     icon: Trophy },
 ];
 
-const NAV_ANALYZERS = [
+// Phase 2 — Dynamic & Behavioral (Capability vs Propensity)
+const NAV_PHASE2 = [
   { href: "/genome",     label: "Genomia",         icon: FlaskConical },
   { href: "/judge",      label: "LLM Judge",       icon: Gavel },
   { href: "/agents",     label: "Agents",           icon: Bot },
   { href: "/policy",     label: "Compliance",       icon: Shield },
 ];
 
-const NAV_RESEARCH = [
-  { href: "/research",   label: "Workspaces",      icon: Beaker },
+// Phase 3 — Real World Conditions
+const NAV_PHASE3 = [
   { href: "/evidence",   label: "Evidence (RCT)",   icon: FlaskConical },
+  { href: "/research",   label: "Workspaces",      icon: Beaker },
   { href: "/incidents",  label: "Incidents (SIX)",  icon: AlertCircle },
   { href: "/telemetry",  label: "Monitoring",       icon: Radio },
 ];
@@ -49,10 +56,39 @@ const MercurySymbol = () => (
   </svg>
 );
 
+function NavSection({ items, activeColor = "bg-slate-900 text-white", hoverColor = "hover:bg-slate-100 hover:text-slate-900" }: {
+  items: typeof NAV_FOUNDATION; activeColor?: string; hoverColor?: string;
+}) {
+  const pathname = usePathname();
+  return (
+    <>
+      {items.map(({ href, label, icon: Icon }) => (
+        <Link key={href} href={href}
+          className={cn(
+            "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
+            pathname === href || (href !== "/" && pathname.startsWith(href))
+              ? `${activeColor} font-medium` : `text-slate-600 ${hoverColor}`
+          )}>
+          <Icon size={14} />{label}
+        </Link>
+      ))}
+    </>
+  );
+}
+
+function PhaseHeader({ number, label, color, badge }: { number: number; label: string; color: string; badge?: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
+      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${color}`}>{number}</span>
+      <span className={`text-[10px] font-semibold tracking-wider uppercase ${color.replace("bg-", "text-")}`}>{label}</span>
+      {badge && <span className={`text-[8px] px-1.5 py-0.5 rounded-full tracking-wide border ${color.replace("bg-", "border-").replace("700", "200").replace("600", "200")} ${color.replace("bg-", "text-").replace("700", "400").replace("600", "400")} bg-opacity-10`}>{badge}</span>}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const isRedbox = pathname.startsWith("/redbox");
-  const isAnalyzer = NAV_ANALYZERS.some(a => pathname.startsWith(a.href) && a.href !== "/");
 
   return (
     <aside className="w-56 border-r border-slate-200 bg-white flex flex-col shrink-0">
@@ -64,93 +100,51 @@ export function Sidebar() {
               MERCURY<br />RETROGRADE
             </div>
             <div className="text-slate-400 mt-0.5 tracking-wide" style={{ fontSize: "9px" }}>
-              INESIA · AI EVALUATION
+              INESIA · RESEARCH OS
             </div>
           </div>
         </div>
       </Link>
 
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {/* Core navigation */}
-        {NAV_CORE.map(({ href, label, icon: Icon }) => (
-          <Link key={href} href={href}
-            className={cn(
-              "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-              pathname === href || (href !== "/" && pathname.startsWith(href))
-                ? "bg-slate-900 text-white font-medium"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            )}>
-            <Icon size={15} />{label}
-          </Link>
-        ))}
+        {/* Foundation */}
+        <NavSection items={NAV_FOUNDATION} />
 
-        {/* Analyzers section */}
+        {/* Phase 1 — Static Evaluation */}
         <div className="pt-2 mt-2 border-t border-slate-100">
-          <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
-            <Microscope size={12} className="text-cyan-400" />
-            <span className="text-[10px] font-semibold text-cyan-500 tracking-wider uppercase">Analyzers</span>
-            <span className="text-[8px] bg-cyan-50 text-cyan-400 border border-cyan-200 px-1.5 py-0.5 rounded-full tracking-wide">BETA</span>
-          </div>
-          {NAV_ANALYZERS.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href}
-              className={cn(
-                "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-                pathname === href || pathname.startsWith(href)
-                  ? "bg-cyan-700 text-white font-medium"
-                  : "text-slate-600 hover:bg-cyan-50 hover:text-cyan-700"
-              )}>
-              <Icon size={15} />{label}
-            </Link>
-          ))}
+          <PhaseHeader number={1} label="Static Eval" color="bg-slate-700" />
+          <NavSection items={NAV_PHASE1} />
         </div>
 
-        {/* REDBOX — Red team lab */}
+        {/* Phase 2 — Dynamic & Behavioral */}
         <div className="pt-2 mt-2 border-t border-slate-100">
+          <PhaseHeader number={2} label="Dynamic & Behavioral" color="bg-cyan-700" badge="BETA" />
+          <NavSection items={NAV_PHASE2} activeColor="bg-cyan-700 text-white" hoverColor="hover:bg-cyan-50 hover:text-cyan-700" />
+          {/* REDBOX */}
           <Link href="/redbox"
             className={cn(
-              "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors font-medium",
-              isRedbox
-                ? "bg-red-600 text-white"
-                : "text-red-600 hover:bg-red-50 border border-red-200"
+              "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors font-medium mt-0.5",
+              isRedbox ? "bg-red-600 text-white" : "text-red-600 hover:bg-red-50 border border-red-200"
             )}>
-            <ShieldAlert size={15} />
+            <ShieldAlert size={14} />
             <span>🔴 REDBOX</span>
-            <span className={cn(
-              "ml-auto text-[8px] px-1.5 py-0.5 rounded-full tracking-wide",
-              isRedbox ? "bg-red-500 text-red-100" : "bg-red-50 text-red-400 border border-red-200"
-            )}>
-              BETA
-            </span>
           </Link>
         </div>
 
-        {/* Research OS */}
+        {/* Phase 3 — Real World Conditions */}
         <div className="pt-2 mt-2 border-t border-slate-100">
-          <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
-            <Beaker size={12} className="text-violet-400" />
-            <span className="text-[10px] font-semibold text-violet-500 tracking-wider uppercase">Research OS</span>
-          </div>
-          {NAV_RESEARCH.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href}
-              className={cn(
-                "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-                pathname === href || pathname.startsWith(href + "/")
-                  ? "bg-violet-700 text-white font-medium"
-                  : "text-slate-600 hover:bg-violet-50 hover:text-violet-700"
-              )}>
-              <Icon size={15} />{label}
-            </Link>
-          ))}
+          <PhaseHeader number={3} label="Real World" color="bg-violet-700" />
+          <NavSection items={NAV_PHASE3} activeColor="bg-violet-700 text-white" hoverColor="hover:bg-violet-50 hover:text-violet-700" />
         </div>
 
         {/* About */}
         <div className="pt-2 mt-1">
           <Link href="/about"
             className={cn(
-              "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
+              "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
               pathname === "/about" ? "bg-slate-900 text-white font-medium" : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
             )}>
-            <Info size={15} />About
+            <Info size={14} />About
           </Link>
         </div>
       </nav>

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
+import { ModelSelector } from "@/components/ModelSelector";
 import { timeAgo } from "@/lib/utils";
 import { Plus, Play, Square, Trash2, BarChart2, RefreshCw,
          ChevronRight, ChevronLeft, Check, Radio, ChevronDown, ChevronUp } from "lucide-react";
@@ -405,86 +406,14 @@ export default function CampaignsPage() {
 
           {/* Step 1 — Models */}
           {step === 1 && (
-            <div>
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <div className="flex gap-1.5">
-                  <button onClick={() => setModelFilter("all")}
-                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    Tous ({models.length})
-                  </button>
-                  <button onClick={() => setModelFilter("free")}
-                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "free" ? "bg-green-700 text-white border-green-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    🆓 Free ({freeCount})
-                  </button>
-                  {localCount > 0 && (
-                    <button onClick={() => setModelFilter("local")}
-                      className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${modelFilter === "local" ? "bg-purple-700 text-white border-purple-700" : "border-purple-200 text-purple-600 hover:bg-purple-50"}`}>
-                      🦙 Local ({localCount})
-                    </button>
-                  )}
-                </div>
-                <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
-                  {form.model_ids.length} selected{form.model_ids.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-              {models.length === 0 ? (
-                <div className="py-10 text-center text-slate-400 text-sm">No models registered.</div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-                  {filteredModels.map(m => {
-                    const selected = form.model_ids.includes(m.id);
-                    const isFree = (m as any).is_free;
-                    const isLocal = (m as any).provider === "ollama";
-                    return (
-                      <button key={m.id} type="button"
-                        onClick={() => setForm(f => ({ ...f, model_ids: toggleId(f.model_ids, m.id) }))}
-                        className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? "border-slate-900 bg-slate-900 text-white" : isLocal ? "border-purple-200 bg-purple-50 hover:border-purple-300" : "border-slate-200 bg-white hover:border-slate-300"}`}>
-                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selected ? "border-white bg-white" : "border-slate-300"}`}>
-                          {selected && <Check size={11} className="text-slate-900" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className={`text-sm font-medium truncate ${selected ? "text-white" : "text-slate-900"}`}>{m.name}</div>
-                          <div className={`text-xs ${selected ? "text-slate-300" : "text-slate-400"}`}>
-                            {isLocal && <span className={`font-bold mr-1 ${selected ? "text-purple-300" : "text-purple-600"}`}>🦙 LOCAL</span>}
-                            {isFree && !isLocal && <span className={`font-bold mr-1 ${selected ? "text-green-300" : "text-green-600"}`}>FREE</span>}
-                            {m.provider}
-                          </div>
-                        </div>
-                        {/* Run locally button for open-weight models */}
-                        {!isLocal && ollamaSuggestions[(m as any).model_id?.replace("openrouter/", "")] && (
-                          <button
-                            onClick={(e) => handlePullLocal((m as any).model_id?.replace("openrouter/", ""), e)}
-                            disabled={pulling === (m as any).model_id?.replace("openrouter/", "")}
-                            className={`shrink-0 text-[10px] px-2 py-1 rounded-md border transition-colors ${
-                              pulling === (m as any).model_id?.replace("openrouter/", "")
-                                ? "bg-purple-100 text-purple-400 border-purple-200"
-                                : "bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
-                            }`}>
-                            {pulling === (m as any).model_id?.replace("openrouter/", "") ? "⏳" : "🦙"} Local
-                          </button>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Ollama suggestion banner — between step 1 and 2 */}
-          {step === 1 && form.model_ids.length > 0 && localCount === 0 && (
-            <div className="mt-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-xs">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">🦙</span>
-                <span className="font-semibold text-purple-700">Run locally for free?</span>
-              </div>
-              <p className="text-purple-600">
-                Some selected models have local Ollama equivalents. Install Ollama and pull models to run evaluations locally — zero cost, zero latency, full privacy.
-              </p>
-              <code className="block mt-2 bg-purple-100 text-purple-800 px-3 py-1.5 rounded font-mono text-[11px]">
-                curl -fsSL https://ollama.com/install.sh | sh && ollama pull llama3.2
-              </code>
-            </div>
+            <ModelSelector
+              mode="multi"
+              selected={form.model_ids}
+              onChange={(ids) => setForm(f => ({ ...f, model_ids: ids }))}
+              idType="db_id"
+              label="Select models to evaluate"
+              maxHeight="max-h-72"
+            />
           )}
 
           {/* Step 2 — Benchmarks */}

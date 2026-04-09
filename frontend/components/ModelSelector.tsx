@@ -1,17 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModel } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
-import { Check } from "lucide-react";
+import { Check, Download, CheckCircle2 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://llm-eval-backend-kqlh.onrender.com/api";
 
 interface ModelSelectorProps {
   mode: "single" | "multi";
-  selected: string[] | number[];  // model_ids (string for judge) or ids (number for campaign)
+  selected: string[] | number[];
   onChange: (selected: any[]) => void;
-  idType?: "model_id" | "db_id";  // "model_id" for judge/redbox, "db_id" for campaigns
+  idType?: "model_id" | "db_id";
   label?: string;
   maxHeight?: string;
 }
@@ -21,11 +21,16 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "free" | "local">("all");
   const [search, setSearch] = useState("");
-  const [pulling, setPulling] = useState<string | null>(null);
+  const [pulling, setPulling] = useState<number | null>(null);
+  const [pullStatus, setPullStatus] = useState<Record<number, "pulling" | "done" | "error">>({});
   const [ollamaSuggestions, setOllamaSuggestions] = useState<Record<string, string>>({});
 
-  useEffect(() => {
+  const loadModels = useCallback(() => {
     modelsApi.list().then(ms => { setModels(ms); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    loadModels();
     fetch(`${API_BASE}/sync/ollama/suggestions`).then(r => r.json()).then(data => {
       if (data.suggestions) {
         const map: Record<string, string> = {};
@@ -33,29 +38,38 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
         setOllamaSuggestions(map);
       }
     }).catch(() => {});
-  }, []);
+  }, [loadModels]);
 
   const getId = (m: LLMModel) => idType === "model_id" ? ((m as any).model_id || m.name) : m.id;
   const isSelected = (m: LLMModel) => (selected as any[]).includes(getId(m));
 
   const toggle = (m: LLMModel) => {
     const id = getId(m);
-    if (mode === "single") {
-      onChange([id]);
-    } else {
-      onChange(isSelected(m) ? (selected as any[]).filter(x => x !== id) : [...selected, id]);
-    }
+    if (mode === "single") onChange([id]);
+    else onChange(isSelected(m) ? (selected as any[]).filter(x => x !== id) : [...selected, id]);
   };
 
-  const handlePullLocal = async (openrouterId: string, e: React.MouseEvent) => {
+  const handleDownload = async (model: LLMModel, e: React.MouseEvent) => {
     e.stopPropagation();
-    setPulling(openrouterId);
+    const orId = ((model as any).model_id || "").replace("openrouter/", "");
+    setPulling(model.id);
+    setPullStatus(prev => ({ ...prev, [model.id]: "pulling" }));
+
     try {
-      await fetch(`${API_BASE}/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(openrouterId)}`, { method: "POST" });
-      const ms = await modelsApi.list();
-      setModels(ms);
-      setOllamaSuggestions(prev => { const n = {...prev}; delete n[openrouterId]; return n; });
-    } catch {} finally { setPulling(null); }
+      const res = await fetch(`${API_BASE}/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(orId)}`, { method: "POST" });
+      const data = await res.json();
+      if (data.status === "ok" || data.status === "pulled") {
+        setPullStatus(prev => ({ ...prev, [model.id]: "done" }));
+        // Refresh model list to show the new local model
+        setTimeout(() => loadModels(), 1000);
+      } else {
+        setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+      }
+    } catch {
+      setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+    } finally {
+      setPulling(null);
+    }
   };
 
   const localCount = models.filter(m => (m as any).provider === "ollama").length;
@@ -74,59 +88,74 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     <div>
       <label className="text-xs font-medium text-slate-600 mb-2 block">{label} {mode === "multi" && `(${(selected as any[]).length} selected)`}</label>
 
-      {/* Search + filters */}
       <div className="flex items-center gap-2 mb-2">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search…" className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-xs" />
         <div className="flex gap-1">
-          <button onClick={() => setFilter("all")}
-            className={`text-[10px] px-2 py-1 rounded-md border ${filter === "all" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-500"}`}>
-            All ({models.length})
-          </button>
-          <button onClick={() => setFilter("free")}
-            className={`text-[10px] px-2 py-1 rounded-md border ${filter === "free" ? "bg-green-700 text-white border-green-700" : "border-slate-200 text-slate-500"}`}>
-            Free ({freeCount})
-          </button>
-          {localCount > 0 && (
-            <button onClick={() => setFilter("local")}
-              className={`text-[10px] px-2 py-1 rounded-md border ${filter === "local" ? "bg-purple-700 text-white border-purple-700" : "border-purple-200 text-purple-500"}`}>
-              🦙 ({localCount})
+          {[
+            { key: "all" as const, label: `All (${models.length})`, cls: "bg-slate-900 text-white border-slate-900" },
+            { key: "free" as const, label: `Free (${freeCount})`, cls: "bg-green-700 text-white border-green-700" },
+            ...(localCount > 0 ? [{ key: "local" as const, label: `🦙 (${localCount})`, cls: "bg-purple-700 text-white border-purple-700" }] : []),
+          ].map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)}
+              className={`text-[10px] px-2 py-1 rounded-md border ${filter === f.key ? f.cls : "border-slate-200 text-slate-500"}`}>
+              {f.label}
             </button>
-          )}
+          ))}
         </div>
       </div>
 
-      {/* Model grid */}
-      <div className={`grid grid-cols-2 gap-1.5 ${maxHeight} overflow-y-auto`}>
+      <div className={`grid grid-cols-1 gap-1.5 ${maxHeight} overflow-y-auto`}>
         {filtered.map(m => {
           const sel = isSelected(m);
           const isLocal = (m as any).provider === "ollama";
           const orId = ((m as any).model_id || "").replace("openrouter/", "");
-          const canPull = !isLocal && ollamaSuggestions[orId];
+          const canDownload = !isLocal && !!ollamaSuggestions[orId];
+          const status = pullStatus[m.id];
 
           return (
-            <button key={m.id} type="button" onClick={() => toggle(m)}
-              className={`flex items-center gap-2 p-2.5 rounded-lg border text-left transition-colors text-xs ${
-                sel ? "border-slate-900 bg-slate-900 text-white" : isLocal ? "border-purple-200 bg-purple-50" : "border-slate-200 hover:border-slate-300"
-              }`}>
-              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${sel ? "border-white bg-white" : "border-slate-300"}`}>
-                {sel && <Check size={10} className="text-slate-900" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className={`font-medium truncate ${sel ? "text-white" : "text-slate-800"}`}>{m.name}</div>
-                <div className={sel ? "text-slate-300" : "text-slate-400"}>
-                  {isLocal && <span className="font-bold text-purple-500 mr-1">🦙 LOCAL</span>}
-                  {(m as any).is_free && !isLocal && <span className="font-bold text-green-500 mr-1">FREE</span>}
-                  {(m as any).provider}
+            <div key={m.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+              sel ? "border-slate-900 bg-slate-900 text-white" : isLocal ? "border-purple-200 bg-purple-50" : "border-slate-200 hover:border-slate-300"
+            }`}>
+              {/* Checkbox + model info (clickable) */}
+              <button type="button" onClick={() => toggle(m)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${sel ? "border-white bg-white" : "border-slate-300"}`}>
+                  {sel && <Check size={10} className="text-slate-900" />}
                 </div>
-              </div>
-              {canPull && (
-                <button onClick={(e) => handlePullLocal(orId, e)} disabled={pulling === orId}
-                  className="shrink-0 text-[9px] px-1.5 py-0.5 rounded border border-purple-200 text-purple-600 hover:bg-purple-100 disabled:opacity-40">
-                  {pulling === orId ? "⏳" : "🦙"} Local
+                <div className="min-w-0 flex-1">
+                  <div className={`text-xs font-medium truncate ${sel ? "text-white" : "text-slate-800"}`}>{m.name}</div>
+                  <div className={`text-[10px] ${sel ? "text-slate-300" : "text-slate-400"}`}>
+                    {isLocal && <span className="font-bold text-purple-500 mr-1">🦙 LOCAL</span>}
+                    {(m as any).is_free && !isLocal && <span className="font-bold text-green-500 mr-1">FREE</span>}
+                    {(m as any).provider}
+                  </div>
+                </div>
+              </button>
+
+              {/* Download button — THE key feature */}
+              {canDownload && !status && (
+                <button onClick={(e) => handleDownload(m, e)} disabled={pulling === m.id}
+                  title={`Download ${ollamaSuggestions[orId]} via Ollama`}
+                  className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 transition-colors font-medium">
+                  <Download size={11} /> Download
                 </button>
               )}
-            </button>
+              {status === "pulling" && (
+                <div className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-purple-100 text-purple-600">
+                  <Spinner size={10} /> Downloading…
+                </div>
+              )}
+              {status === "done" && (
+                <div className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-green-100 text-green-700 font-medium">
+                  <CheckCircle2 size={11} /> Ready
+                </div>
+              )}
+              {status === "error" && (
+                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600">
+                  Failed — is Ollama running?
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
