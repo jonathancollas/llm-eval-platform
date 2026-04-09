@@ -149,6 +149,33 @@ async def upload_dataset(
     return _to_read(bench)
 
 
+class BenchmarkUpdate(BaseModel):
+    tags: Optional[list[str]] = None
+    source: Optional[str] = None   # "inesia" | "public" | "community"
+    description: Optional[str] = None
+    risk_threshold: Optional[float] = None
+
+
+@router.patch("/{benchmark_id}", response_model=BenchmarkRead)
+def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Session = Depends(get_session)):
+    """Update benchmark metadata — tags, source classification, description."""
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(status_code=404, detail="Benchmark not found.")
+    if payload.tags is not None:
+        bench.tags = json.dumps(payload.tags)
+    if payload.source is not None:
+        bench.source = payload.source
+    if payload.description is not None:
+        bench.description = payload.description
+    if payload.risk_threshold is not None:
+        bench.risk_threshold = payload.risk_threshold
+    session.add(bench)
+    session.commit()
+    session.refresh(bench)
+    return _to_read(bench)
+
+
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_benchmark(benchmark_id: int, session: Session = Depends(get_session)):
     bench = session.get(Benchmark, benchmark_id)

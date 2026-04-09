@@ -33,12 +33,7 @@ type FilterKey = typeof FILTER_TABS[number]["key"];
 
 function matchFilter(b: Benchmark, f: FilterKey): boolean {
   if (f === "all") return true;
-  if (f === "inesia") {
-    const tags = b.tags ?? [];
-    return tags.some(t => ["INESIA","frontier","cyber","disinformation","MITRE","DISARM","ATLAS"].includes(t))
-      || b.type === "safety"
-      || (b.name ?? "").toLowerCase().includes("inesia");
-  }
+  if (f === "inesia") return b.source === "inesia";
   return b.type === f;
 }
 
@@ -208,6 +203,46 @@ export default function BenchmarksPage() {
   const { benchmarksAdded: newBenchmarks } = useSync();
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  // Tag management state
+  const [editingTagsId, setEditingTagsId] = useState<number | null>(null);
+  const [newTagInput, setNewTagInput] = useState("");
+
+  const handleFlipSource = async (b: Benchmark) => {
+    const newSource = b.source === "inesia" ? "public" : "inesia";
+    try {
+      await fetch(`${API_BASE}/benchmarks/${b.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: newSource }),
+      });
+      load();
+    } catch {}
+  };
+
+  const handleAddTag = async (b: Benchmark) => {
+    const tag = newTagInput.trim();
+    if (!tag || b.tags.includes(tag)) return;
+    try {
+      await fetch(`${API_BASE}/benchmarks/${b.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: [...b.tags, tag] }),
+      });
+      setNewTagInput("");
+      load();
+    } catch {}
+  };
+
+  const handleRemoveTag = async (b: Benchmark, tag: string) => {
+    try {
+      await fetch(`${API_BASE}/benchmarks/${b.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: b.tags.filter(t => t !== tag) }),
+      });
+      load();
+    } catch {}
+  };
 
   const { benchmarks: swrBenches, isLoading: swrBenchLoading, refresh: refreshBenches } = useBenchmarks();
   useEffect(() => { setBenches(swrBenches); if (!swrBenchLoading) setLoading(false); }, [swrBenches, swrBenchLoading]);
@@ -556,11 +591,67 @@ export default function BenchmarksPage() {
                       {b.risk_threshold && <div><span className="font-medium">Seuil risque :</span> {(b.risk_threshold * 100).toFixed(0)}%</div>}
                     </div>
                     <p className="text-slate-600 text-xs mb-3">{b.description}</p>
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {b.tags?.map((t: string) => <Badge key={t} className="bg-white border border-slate-200 text-slate-600">{t}</Badge>)}
+
+                    {/* ── Tag manager ─────────────────────────────────── */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Tags</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); setEditingTagsId(editingTagsId === b.id ? null : b.id); setNewTagInput(""); }}
+                          className="text-[10px] text-blue-500 hover:underline"
+                        >
+                          {editingTagsId === b.id ? "Done" : "Edit"}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {b.tags?.map((t: string) => (
+                          <span key={t} className="inline-flex items-center gap-1 text-[10px] bg-white border border-slate-200 text-slate-600 rounded-full px-2 py-0.5">
+                            {t}
+                            {editingTagsId === b.id && (
+                              <button
+                                onClick={e => { e.stopPropagation(); handleRemoveTag(b, t); }}
+                                className="text-slate-400 hover:text-red-500 ml-0.5"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                        {editingTagsId === b.id && (
+                          <form
+                            onSubmit={e => { e.preventDefault(); e.stopPropagation(); handleAddTag(b); }}
+                            className="flex items-center gap-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <input
+                              value={newTagInput}
+                              onChange={e => setNewTagInput(e.target.value)}
+                              placeholder="New tag…"
+                              className="text-[10px] border border-dashed border-slate-300 rounded-full px-2 py-0.5 w-20 focus:outline-none focus:border-blue-400"
+                            />
+                            <button type="submit" className="text-[10px] text-blue-500 hover:underline">+ Add</button>
+                          </form>
+                        )}
+                      </div>
                     </div>
+
+                    {/* ── Source flip button ───────────────────────────── */}
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Source</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); handleFlipSource(b); }}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border font-bold transition-colors cursor-pointer hover:opacity-80 ${
+                          b.source === "inesia"
+                            ? "bg-purple-100 text-purple-700 border-purple-200"
+                            : "bg-slate-100 text-slate-500 border-slate-200"
+                        }`}
+                        title="Click to toggle INESIA / Public classification"
+                      >
+                        {b.source === "inesia" ? "☿ INESIA" : "PUBLIC"} ↔ click to change
+                      </button>
+                    </div>
+
                     <div className="flex gap-2 flex-wrap">
-                      {/* Explorer button — always shown */}
                       <button onClick={e => { e.stopPropagation(); setExploringId(b.id); }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
                         <Eye size={12} /> Explorer le dataset
