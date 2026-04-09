@@ -55,9 +55,20 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
   const benchmarks = [...new Set(heatmap.map(c => c.benchmark_name))];
   if (!models.length) return null;
 
+  // Check if any cell has capability/propensity split
+  const hasCapProp = heatmap.some(c => (c as any).capability_score != null || (c as any).propensity_score != null);
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6">
-      <h3 className="font-medium text-slate-900 mb-4 text-sm">Heatmap — Models × Benchmarks</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium text-slate-900 text-sm">Heatmap — Models × Benchmarks</h3>
+        {hasCapProp && (
+          <div className="flex items-center gap-3 text-[10px] text-slate-400">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-400 inline-block" />Capability</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-400 inline-block" />Propensity</span>
+          </div>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -75,15 +86,31 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
               <tr key={model}>
                 <td className="font-medium text-slate-800 text-xs pr-4 py-2 whitespace-nowrap">{model}</td>
                 {benchmarks.map(bench => {
-                  const cell = heatmap.find(c => c.model_name === model && c.benchmark_name === bench);
+                  const cell = heatmap.find(c => c.model_name === model && c.benchmark_name === bench) as any;
                   const score = cell?.score;
+                  const capScore = cell?.capability_score;
+                  const propScore = cell?.propensity_score;
                   const color = scoreColor(score ?? null);
                   return (
                     <td key={bench} className="px-3 py-2 text-center">
-                      <div className="inline-flex items-center justify-center w-16 h-10 rounded-lg text-xs font-mono font-medium"
-                        style={{ backgroundColor: score != null ? color : "#e2e8f0", color: score != null ? "white" : "#94a3b8" }}>
-                        {score != null ? `${(score * 100).toFixed(1)}%` : cell?.status ?? "—"}
-                      </div>
+                      {capScore != null && propScore != null ? (
+                        // Split capability / propensity display
+                        <div className="inline-flex flex-col items-center gap-0.5" title={`Capability: ${(capScore*100).toFixed(1)}% | Propensity: ${(propScore*100).toFixed(1)}%`}>
+                          <div className="w-16 h-5 rounded-t flex items-center justify-center text-[10px] font-mono font-bold text-white"
+                            style={{ backgroundColor: scoreColor(capScore) }}>
+                            {(capScore * 100).toFixed(0)}%
+                          </div>
+                          <div className="w-16 h-5 rounded-b flex items-center justify-center text-[10px] font-mono font-bold text-white"
+                            style={{ backgroundColor: scoreColor(propScore) }}>
+                            {(propScore * 100).toFixed(0)}%
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center justify-center w-16 h-10 rounded-lg text-xs font-mono font-medium"
+                          style={{ backgroundColor: score != null ? color : "#e2e8f0", color: score != null ? "white" : "#94a3b8" }}>
+                          {score != null ? `${(score * 100).toFixed(1)}%` : cell?.status ?? "—"}
+                        </div>
+                      )}
                     </td>
                   );
                 })}

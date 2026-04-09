@@ -1,6 +1,8 @@
 "use client";
 import { PageHeader } from "@/components/PageHeader";
-import { FileText, BookOpen, ExternalLink, Github } from "lucide-react";
+import Link from "next/link";
+import { FileText, BookOpen, ExternalLink, Github, FlaskConical, Lock } from "lucide-react";
+import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/lib/config";
 
 const GITHUB_BASE = "https://github.com/jonathancollas/llm-eval-platform/blob/main";
 
@@ -13,15 +15,37 @@ const cards = [
     label: "Lire le README",
     color: "border-blue-200 bg-blue-50 hover:border-blue-300",
     iconColor: "text-blue-600",
+    external: true,
   },
   {
     icon: FileText,
     title: "MANIFESTE",
-    description: "INESIA mission, frontier methodology, benchmark governance, 2026-2027 roadmap.",
+    description: "INESIA mission, frontier evaluation methodology, benchmark governance, 2026-2027 roadmap.",
     href: `${GITHUB_BASE}/MANIFESTO.md`,
     label: "Lire le Manifeste",
     color: "border-purple-200 bg-purple-50 hover:border-purple-300",
     iconColor: "text-purple-600",
+    external: true,
+  },
+  {
+    icon: FlaskConical,
+    title: "Methodology Center",
+    description: "Scientific foundations — papers, heuristics, capability vs. propensity, anti-sandbagging protocols.",
+    href: "/methodology",
+    label: "Ouvrir",
+    color: "border-teal-200 bg-teal-50 hover:border-teal-300",
+    iconColor: "text-teal-600",
+    external: false,
+  },
+  {
+    icon: Lock,
+    title: "The Red Room",
+    description: "Adversarial evaluation lab — prompt injection, goal drift, scheming detection, frontier red-teaming.",
+    href: "/redbox",
+    label: "Accéder",
+    color: "border-red-200 bg-red-50 hover:border-red-300",
+    iconColor: "text-red-600",
+    external: false,
   },
   {
     icon: Github,
@@ -31,6 +55,7 @@ const cards = [
     label: "View on GitHub",
     color: "border-slate-200 bg-slate-50 hover:border-slate-300",
     iconColor: "text-slate-700",
+    external: true,
   },
 ];
 
@@ -39,79 +64,87 @@ export default function AboutPage() {
     <div>
       <PageHeader
         title="About"
-        description="Mercury Retrograde — INESIA open evaluation platform."
+        description={`${APP_NAME} ${APP_VERSION} — ${APP_TAGLINE}`}
       />
-      <div className="p-8 max-w-3xl space-y-8">
+      <div className="p-8 space-y-8 max-w-3xl">
 
-        {/* Logo + tagline */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 flex flex-col items-center text-center gap-4">
-          <svg width="120" height="120" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg">
-            <defs><clipPath id="apc"><circle cx="36" cy="36" r="20"/></clipPath></defs>
-            <ellipse cx="36" cy="36" rx="34" ry="8" fill="none" stroke="#ff00ff" strokeWidth="1.0" opacity="0.5" transform="rotate(-12 36 36)"/>
-            <ellipse cx="36" cy="36" rx="26" ry="6" fill="none" stroke="#cc44ff" strokeWidth="1.4" opacity="0.65" transform="rotate(-12 36 36)"/>
-            <circle cx="36" cy="36" r="20" fill="#1a0033"/>
-            <circle cx="36" cy="36" r="20" fill="#3a0066" clipPath="url(#apc)"/>
-            <ellipse cx="36" cy="30" rx="19" ry="5" fill="#cc00ff" opacity="0.2" clipPath="url(#apc)"/>
-            <ellipse cx="36" cy="40" rx="19" ry="4" fill="#ff0088" opacity="0.18" clipPath="url(#apc)"/>
-            <path d="M36 16 Q52 24 52 36 Q52 48 36 56 Q44 48 43 36 Q41 24 36 16Z" fill="#000022" opacity="0.5" clipPath="url(#apc)"/>
-            <ellipse cx="28" cy="28" rx="9" ry="5" fill="#ff44ff" opacity="0.22" clipPath="url(#apc)"/>
-            <ellipse cx="26" cy="26" rx="4" ry="2.5" fill="#ffffff" opacity="0.18" clipPath="url(#apc)"/>
-            <circle cx="36" cy="36" r="20" fill="none" stroke="#ff00ff" strokeWidth="1.5" opacity="0.7"/>
-            <path d="M10 22 Q22 12 36 14 Q50 12 62 22" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round"/>
-            <path d="M58 18 L62 22 L58 26" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M14 18 L10 22 L14 26" fill="none" stroke="#00ffff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <div>
-            <h1 className="text-2xl font-bold tracking-widest text-slate-900">MERCURY RETROGRADE</h1>
-            <p className="text-sm text-slate-500 mt-1 tracking-wide">↺ MR · v0.5.0 · INESIA 2026</p>
-          </div>
-          <p className="text-sm text-slate-600 max-w-lg leading-relaxed">
-            Open technical infrastructure for evaluating advanced AI models and systems,
-            developed as part of the INESIA 2026-2027 roadmap.
+        {/* Identity */}
+        <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-100 rounded-xl p-6">
+          <div className="text-[10px] font-bold tracking-widest text-purple-400 uppercase mb-2">{APP_VERSION}</div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">{APP_NAME}</h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            The operating system for frontier AI safety evaluation — built by INESIA.
+            Covers static benchmarking, behavioral diagnostics, continuous monitoring, adversarial red-teaming,
+            and scientific evaluation methodology grounded in peer-reviewed research.
           </p>
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <span>SGDSN · DGE</span>
-            <span>·</span>
-            <span>ANSSI · Inria · LNE · PEReN</span>
-            <span>·</span>
-            <span>Etalab 2.0 / Apache 2.0</span>
-          </div>
         </div>
 
-        {/* Docs cards */}
-        <div className="grid grid-cols-1 gap-4">
-          {cards.map(({ icon: Icon, title, description, href, label, color, iconColor }) => (
-            <a key={title} href={href} target="_blank" rel="noopener noreferrer"
-              className={`border rounded-xl p-5 flex items-start gap-4 transition-colors group ${color}`}>
-              <div className={`${iconColor} mt-0.5 shrink-0`}><Icon size={20} /></div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-slate-900 mb-1">{title}</div>
-                <p className="text-sm text-slate-600">{description}</p>
-              </div>
-              <div className="flex items-center gap-1 text-xs text-slate-400 group-hover:text-slate-600 transition-colors shrink-0 mt-1">
-                {label} <ExternalLink size={12} className="ml-1"/>
-              </div>
-            </a>
-          ))}
-        </div>
-
-        {/* Network */}
+        {/* Doctrine */}
         <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h2 className="font-medium text-slate-900 mb-3 text-sm">International network</h2>
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+          <h3 className="font-semibold text-slate-800 text-sm mb-3">INESIA Research Doctrine</h3>
+          <div className="space-y-2 text-xs text-slate-600">
             {[
-              ["METR", "Model Evaluation & Threat Research", "https://metr.org"],
-              ["UK AISI", "AI Safety Institute, DSIT", "https://www.gov.uk/government/organisations/ai-safety-institute"],
-              ["INAIMES", "International Network for Advanced AI Measurement", "https://www.gov.uk/government/publications/international-ai-safety-report"],
-              ["EleutherAI", "lm-evaluation-harness", "https://github.com/EleutherAI/lm-evaluation-harness"],
-            ].map(([name, desc, url]) => (
-              <a key={name} href={url} target="_blank" rel="noopener noreferrer"
-                className="flex flex-col p-3 rounded-lg border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-colors">
-                <span className="font-medium text-slate-700">{name}</span>
-                <span className="text-slate-400 mt-0.5">{desc}</span>
-              </a>
+              ["🔭", "System-in-context evaluation", "Evaluate the system (model + tools + memory + orchestration), not the model in isolation."],
+              ["⚖️", "Capability vs. Propensity", "Separate what a model CAN do (elicited max) from what it TENDS to do (operational distribution)."],
+              ["🎭", "Anti-sandbagging", "Detect when models modify behaviour based on perceived evaluation context."],
+              ["📡", "Continuous monitoring", "Pre-deployment evaluation is necessary but insufficient — post-deployment monitoring is a first-class obligation (NIST AI 800-4, 2026)."],
+              ["🔬", "Benchmark validity", "Every score must be defensible — contamination-checked, expert-validated, reproducible."],
+            ].map(([icon, title, desc]) => (
+              <div key={title as string} className="flex gap-3 py-2 border-b border-slate-50 last:border-0">
+                <span className="text-base shrink-0">{icon}</span>
+                <div>
+                  <div className="font-medium text-slate-800">{title as string}</div>
+                  <div className="text-slate-500 mt-0.5">{desc as string}</div>
+                </div>
+              </div>
             ))}
           </div>
+        </div>
+
+        {/* Tech stack */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-3">Tech Stack</h3>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Frontend", "Next.js 14 · TypeScript · Tailwind CSS"],
+              ["Backend", "FastAPI · SQLModel · SQLite"],
+              ["Inference", "LiteLLM · OpenRouter · Ollama"],
+              ["Eval harness", "lm-evaluation-harness (EleutherAI)"],
+              ["Deployment", "Docker · Render"],
+              ["License", "Etalab 2.0 / Apache 2.0"],
+            ].map(([k, v]) => (
+              <div key={k as string} className="bg-slate-50 rounded-lg p-2.5">
+                <div className="text-slate-400 mb-0.5">{k as string}</div>
+                <div className="font-medium text-slate-700">{v as string}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Links */}
+        <div className="grid grid-cols-1 gap-3">
+          {cards.map(({ icon: Icon, title, description, href, label, color, iconColor, external }) => (
+            external ? (
+              <a key={title} href={href} target="_blank" rel="noopener noreferrer"
+                className={`flex items-start gap-4 border rounded-xl p-5 transition-colors ${color}`}>
+                <Icon size={20} className={`${iconColor} mt-0.5 shrink-0`} />
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-900 text-sm">{title}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{description}</div>
+                </div>
+                <ExternalLink size={14} className="text-slate-400 mt-0.5 shrink-0" />
+              </a>
+            ) : (
+              <Link key={title} href={href}
+                className={`flex items-start gap-4 border rounded-xl p-5 transition-colors ${color}`}>
+                <Icon size={20} className={`${iconColor} mt-0.5 shrink-0`} />
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-900 text-sm">{title}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{description}</div>
+                </div>
+              </Link>
+            )
+          ))}
         </div>
 
       </div>
