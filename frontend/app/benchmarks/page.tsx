@@ -248,10 +248,30 @@ export default function BenchmarksPage() {
     } finally { setImporting(false); }
   };
 
-  // HuggingFace import
+  // HuggingFace explorer
   const [showHfImport, setShowHfImport] = useState(false);
-  const [hfForm, setHfForm] = useState({ repo_id: "", split: "test", subset: "", max_items: 500 });
-  const [hfLoading, setHfLoading] = useState(false);
+  const [hfQuery, setHfQuery]           = useState("");
+  const [hfResults, setHfResults]       = useState<any[]>([]);
+  const [hfSearching, setHfSearching]   = useState(false);
+  const [hfSelected, setHfSelected]     = useState<any | null>(null);
+  const [hfForm, setHfForm]             = useState({ repo_id: "", split: "test", subset: "", max_items: 500 });
+  const [hfLoading, setHfLoading]       = useState(false);
+
+  const searchHF = async (q: string) => {
+    if (!q.trim()) { setHfResults([]); return; }
+    setHfSearching(true);
+    try {
+      const res = await fetch(`https://huggingface.co/api/datasets?search=${encodeURIComponent(q)}&limit=12&sort=downloads&direction=-1`);
+      const data = await res.json();
+      setHfResults(Array.isArray(data) ? data : []);
+    } catch { setHfResults([]); }
+    setHfSearching(false);
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => searchHF(hfQuery), 400);
+    return () => clearTimeout(t);
+  }, [hfQuery]);
 
   const handleHfImport = async () => {
     if (!hfForm.repo_id.trim()) return;
@@ -267,6 +287,9 @@ export default function BenchmarksPage() {
       alert(`✅ ${data.items_imported} items imported from ${data.source}\nBenchmark: ${data.benchmark_name}`);
       setShowHfImport(false);
       setHfForm({ repo_id: "", split: "test", subset: "", max_items: 500 });
+      setHfSelected(null);
+      setHfResults([]);
+      setHfQuery("");
       load();
     } catch (e: any) { alert(`Error: ${e.message}`); }
     finally { setHfLoading(false); }
@@ -308,47 +331,113 @@ export default function BenchmarksPage() {
         </div>
       )}
 
-      {/* HuggingFace import form */}
+      {/* HuggingFace Explorer */}
       {showHfImport && (
         <div className="mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 Import depuis HuggingFace</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Repository ID *</label>
+          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 HuggingFace Dataset Explorer</h3>
+
+          {/* Search */}
+          <div className="relative mb-4">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={hfQuery}
+              onChange={e => setHfQuery(e.target.value)}
+              placeholder="Search datasets… (e.g. mmlu, truthfulqa, gsm8k)"
+              className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400"
+            />
+            {hfSearching && <Spinner size={13} className="absolute right-3 top-1/2 -translate-y-1/2" />}
+          </div>
+
+          {/* Results grid */}
+          {hfResults.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 mb-4 max-h-64 overflow-y-auto">
+              {hfResults.map((ds: any) => (
+                <button
+                  key={ds.id}
+                  onClick={() => { setHfSelected(ds); setHfForm(f => ({ ...f, repo_id: ds.id })); }}
+                  className={`text-left p-3 rounded-lg border transition-colors text-xs ${
+                    hfSelected?.id === ds.id
+                      ? "border-yellow-400 bg-yellow-50"
+                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="font-medium text-slate-900 truncate">{ds.id}</div>
+                  <div className="text-slate-400 mt-0.5 flex items-center gap-2">
+                    {ds.downloads != null && <span>⬇ {(ds.downloads / 1000).toFixed(0)}k</span>}
+                    {ds.likes != null && <span>♥ {ds.likes}</span>}
+                    {ds.gated && <span className="text-amber-600 font-medium">GATED</span>}
+                  </div>
+                  {ds.tags?.slice(0, 3).map((t: string) => (
+                    <span key={t} className="inline-block mt-1 mr-1 px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px]">{t}</span>
+                  ))}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Import config — shown once dataset selected */}
+          {hfSelected && (
+            <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50 mb-4">
+              <div className="text-sm font-semibold text-slate-800 mb-3">
+                Import: <span className="font-mono text-yellow-700">{hfSelected.id}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Split</label>
+                  <select value={hfForm.split} onChange={e => setHfForm(f => ({ ...f, split: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white">
+                    <option value="test">test</option>
+                    <option value="train">train</option>
+                    <option value="validation">validation</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Subset (optional)</label>
+                  <input value={hfForm.subset} onChange={e => setHfForm(f => ({ ...f, subset: e.target.value }))}
+                    placeholder="abstract_algebra…"
+                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Max items</label>
+                  <input type="number" value={hfForm.max_items} onChange={e => setHfForm(f => ({ ...f, max_items: +e.target.value }))}
+                    min={10} max={5000}
+                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 mt-3">
+                <button onClick={handleHfImport} disabled={hfLoading}
+                  className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-40">
+                  {hfLoading ? <Spinner size={13} /> : "🤗"}
+                  {hfLoading ? "Importing…" : "Import dataset"}
+                </button>
+                <button onClick={() => { setHfSelected(null); setHfForm(f => ({ ...f, repo_id: "" })); }}
+                  className="text-sm text-slate-500 hover:text-slate-700">
+                  Deselect
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Manual entry fallback */}
+          {!hfSelected && (
+            <div className="text-xs text-slate-400 flex items-center gap-2 mt-2">
+              Or enter manually:
               <input value={hfForm.repo_id} onChange={e => setHfForm(f => ({ ...f, repo_id: e.target.value }))}
-                placeholder="ex. cais/mmlu, tatsu-lab/alpaca_eval, Anthropic/hh-rlhf"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+                placeholder="owner/dataset-name"
+                className="border border-slate-200 rounded px-2 py-1 text-xs w-48" />
+              {hfForm.repo_id && (
+                <button onClick={handleHfImport} disabled={hfLoading}
+                  className="text-xs bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 disabled:opacity-40">
+                  {hfLoading ? "…" : "Import"}
+                </button>
+              )}
             </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Split</label>
-              <select value={hfForm.split} onChange={e => setHfForm(f => ({ ...f, split: e.target.value }))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                <option value="test">test</option>
-                <option value="train">train</option>
-                <option value="validation">validation</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Subset (optionnel)</label>
-              <input value={hfForm.subset} onChange={e => setHfForm(f => ({ ...f, subset: e.target.value }))}
-                placeholder="ex. abstract_algebra, anatomy"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Max items</label>
-              <input type="number" value={hfForm.max_items} onChange={e => setHfForm(f => ({ ...f, max_items: +e.target.value }))}
-                min={10} max={5000}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3 mt-4">
-            <button onClick={handleHfImport} disabled={hfLoading || !hfForm.repo_id.trim()}
-              className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-40">
-              {hfLoading ? <Spinner size={13} /> : null}
-              {hfLoading ? "Importing…" : "Import"}
-            </button>
-            <button onClick={() => setShowHfImport(false)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
-          </div>
+          )}
+
+          <button onClick={() => { setShowHfImport(false); setHfResults([]); setHfSelected(null); setHfQuery(""); }}
+            className="mt-4 text-xs text-slate-400 hover:text-slate-600">
+            ✕ Fermer
+          </button>
         </div>
       )}
 
