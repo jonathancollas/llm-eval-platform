@@ -18,17 +18,17 @@ const NAV_PHASE1 = [
   { href: "/campaigns",  label: "Campaigns",       icon: Rocket },
   { href: "/dashboard",  label: "Dashboard",       icon: BarChart3 },
   { href: "/leaderboard",label: "Leaderboard",     icon: Trophy },
+  { href: "/policy",     label: "Compliance",       icon: Shield },
 ];
 
-// Phase 2 — Dynamic & Behavioral (Capability vs Propensity)
+// Phase 2 — Dynamic & Behavioral Eval
 const NAV_PHASE2 = [
   { href: "/genome",     label: "Genomia",         icon: FlaskConical },
   { href: "/judge",      label: "LLM Judge",       icon: Gavel },
   { href: "/agents",     label: "Agents",           icon: Bot },
-  { href: "/policy",     label: "Compliance",       icon: Shield },
 ];
 
-// Phase 3 — Real World Conditions
+// Phase 3 — Real World Eval
 const NAV_PHASE3 = [
   { href: "/evidence",   label: "Evidence (RCT)",   icon: FlaskConical },
   { href: "/research",   label: "Workspaces",      icon: Beaker },
@@ -118,7 +118,7 @@ export function Sidebar() {
 
         {/* Phase 2 — Dynamic & Behavioral */}
         <div className="pt-2 mt-2 border-t border-slate-100">
-          <PhaseHeader number={2} label="Dynamic & Behavioral" color="bg-cyan-700" badge="BETA" />
+          <PhaseHeader number={2} label="Dynamic & Behavioral Eval" color="bg-cyan-700" badge="BETA" />
           <NavSection items={NAV_PHASE2} activeColor="bg-cyan-700 text-white" hoverColor="hover:bg-cyan-50 hover:text-cyan-700" />
           {/* REDBOX */}
           <Link href="/redbox"
@@ -133,7 +133,7 @@ export function Sidebar() {
 
         {/* Phase 3 — Real World Conditions */}
         <div className="pt-2 mt-2 border-t border-slate-100">
-          <PhaseHeader number={3} label="Real World" color="bg-violet-700" />
+          <PhaseHeader number={3} label="Real World Eval" color="bg-violet-700" />
           <NavSection items={NAV_PHASE3} activeColor="bg-violet-700 text-white" hoverColor="hover:bg-violet-50 hover:text-violet-700" />
         </div>
 

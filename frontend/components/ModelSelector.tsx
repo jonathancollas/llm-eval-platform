@@ -29,15 +29,52 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     modelsApi.list().then(ms => { setModels(ms); setLoading(false); });
   }, []);
 
+  // Known OpenRouter → Ollama mappings (client-side fallback)
+  const KNOWN_OLLAMA: Record<string, string> = {
+    "meta-llama/llama-3.3-70b-instruct": "llama3.3:70b",
+    "meta-llama/llama-3.2-3b-instruct": "llama3.2:3b",
+    "meta-llama/llama-3.2-1b-instruct": "llama3.2:1b",
+    "meta-llama/llama-3.1-8b-instruct": "llama3.1:8b",
+    "meta-llama/llama-3.1-70b-instruct": "llama3.1:70b",
+    "google/gemma-3-27b-it": "gemma3:27b",
+    "google/gemma-3-12b-it": "gemma3:12b",
+    "google/gemma-2-9b-it": "gemma2:9b",
+    "google/gemma-2-27b-it": "gemma2:27b",
+    "mistralai/mistral-7b-instruct": "mistral:7b",
+    "mistralai/mixtral-8x7b-instruct": "mixtral:8x7b",
+    "mistralai/mistral-small-24b-instruct-2501": "mistral-small:24b",
+    "qwen/qwen-2.5-7b-instruct": "qwen2.5:7b",
+    "qwen/qwen-2.5-14b-instruct": "qwen2.5:14b",
+    "qwen/qwen-2.5-32b-instruct": "qwen2.5:32b",
+    "qwen/qwen-2.5-72b-instruct": "qwen2.5:72b",
+    "deepseek/deepseek-r1-distill-qwen-7b": "deepseek-r1:7b",
+    "deepseek/deepseek-r1-distill-qwen-14b": "deepseek-r1:14b",
+    "microsoft/phi-3-mini-128k-instruct": "phi3:mini",
+    "microsoft/phi-3-medium-128k-instruct": "phi3:medium",
+  };
+  // Also match :free variants
+  const KNOWN_OLLAMA_FULL: Record<string, string> = {};
+  for (const [k, v] of Object.entries(KNOWN_OLLAMA)) {
+    KNOWN_OLLAMA_FULL[k] = v;
+    KNOWN_OLLAMA_FULL[k + ":free"] = v;
+  }
+
   useEffect(() => {
     loadModels();
+    // Try server-side suggestions first, fallback to client-side map
     fetch(`${API_BASE}/sync/ollama/suggestions`).then(r => r.json()).then(data => {
-      if (data.suggestions) {
+      if (data.suggestions && data.suggestions.length > 0) {
         const map: Record<string, string> = {};
         for (const s of data.suggestions) if (!s.already_installed) map[s.openrouter_id] = s.ollama_name;
         setOllamaSuggestions(map);
+      } else {
+        // Fallback: use client-side mappings
+        setOllamaSuggestions(KNOWN_OLLAMA_FULL);
       }
-    }).catch(() => {});
+    }).catch(() => {
+      // Ollama not running — use client-side mappings anyway
+      setOllamaSuggestions(KNOWN_OLLAMA_FULL);
+    });
   }, [loadModels]);
 
   const getId = (m: LLMModel) => idType === "model_id" ? ((m as any).model_id || m.name) : m.id;
