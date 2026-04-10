@@ -578,3 +578,29 @@ def get_scientific_references():
         "total_papers": get_reference_count(),
         "categories": list(refs.keys()),
     }
+
+
+@router.get("/heuristics")
+def get_heuristic_graph():
+    """
+    Full heuristic graph — all evaluation heuristics with detection logic,
+    severity weights, false positive profiles, failure cases, and paper references.
+
+    This is the 'explainability layer' of EVAL RESEARCH OS:
+    every score is traceable to a heuristic, which maps to papers.
+    """
+    from eval_engine.heuristic_graph import get_all_heuristics
+    heuristics = get_all_heuristics()
+    return {
+        "heuristics": heuristics,
+        "total": len(heuristics),
+        "eval_dimensions": list(set(h["eval_dimension"] for h in heuristics)),
+    }
+
+
+@router.get("/heuristics/{benchmark_name}")
+def get_benchmark_heuristics(benchmark_name: str):
+    """Returns heuristics applicable to a specific benchmark."""
+    from eval_engine.heuristic_graph import get_heuristics_for_benchmark
+    heuristics = get_heuristics_for_benchmark(benchmark_name)
+    return {"benchmark": benchmark_name, "heuristics": heuristics}

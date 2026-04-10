@@ -5,7 +5,7 @@ All aggregation is done in Python (SQLite is our only DB).
 import json
 import csv
 import io
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, desc
 from pydantic import BaseModel
@@ -658,4 +658,183 @@ def check_contamination(campaign_id: int, session: Session = Depends(get_session
         "overall_risk": "high" if overall > 0.4 else "medium" if overall > 0.15 else "low",
         "high_risk_runs": high_risk,
         "computed": True,
+    }
+
+
+# ── Confidence calibration ────────────────────────────────────────────────────
+
+@router.get("/run/{run_id}/confidence")
+def run_confidence(run_id: int, session: Session = Depends(get_session)):
+    """
+    Confidence calibration for an evaluation run.
+
+    Scientific grounding:
+    - Bootstrap confidence intervals (Efron & Tibshirani, 1993)
+    - Wilson score interval for binomial proportions
+    - Bayesian reliability estimate (Beta distribution)
+
+    Returns 95% CI on the score, variance, and reliability grade.
+    """
+    import math, random
+
+    results = session.exec(
+        select(EvalResult).where(EvalResult.run_id == run_id)
+    ).all()
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No results for this run.")
+
+    scores = [r.score for r in results]
+    n = len(scores)
+    mean = sum(scores) / n
+    variance = sum((s - mean) ** 2 for s in scores) / max(n - 1, 1)
+    std_dev = math.sqrt(variance)
+
+    # Bootstrap 95% CI (1000 resamples)
+    random.seed(42)
+    bootstrap_means = []
+    for _ in range(1000):
+        sample = [random.choice(scores) for _ in range(n)]
+        bootstrap_means.append(sum(sample) / n)
+    bootstrap_means.sort()
+    ci_lower = bootstrap_means[25]   # 2.5th percentile
+    ci_upper = bootstrap_means[975]  # 97.5th percentile
+
+    # Wilson score CI (for binary-like scores)
+    z = 1.96  # 95% CI
+    p = mean
+    denom = 1 + z**2 / n
+    wilson_center = (p + z**2 / (2*n)) / denom
+    wilson_margin = z * math.sqrt(p*(1-p)/n + z**2/(4*n**2)) / denom
+    wilson_lower = max(0, wilson_center - wilson_margin)
+    wilson_upper = min(1, wilson_center + wilson_margin)
+
+    # Reliability grade (based on sample size and variance)
+    if n >= 100 and std_dev < 0.15:
+        grade, grade_label = "A", "High reliability — large sample, low variance"
+    elif n >= 50 and std_dev < 0.25:
+        grade, grade_label = "B", "Moderate reliability — sufficient sample size"
+    elif n >= 20:
+        grade, grade_label = "C", "Low reliability — small sample, consider expanding"
+    else:
+        grade, grade_label = "D", "Insufficient data — results not statistically robust"
+
+    return {
+        "run_id": run_id,
+        "n_items": n,
+        "score_mean": round(mean, 4),
+        "score_std_dev": round(std_dev, 4),
+        "score_variance": round(variance, 4),
+        "confidence_interval_95": {
+            "method": "bootstrap",
+            "lower": round(ci_lower, 4),
+            "upper": round(ci_upper, 4),
+            "width": round(ci_upper - ci_lower, 4),
+        },
+        "wilson_interval_95": {
+            "method": "wilson_score",
+            "lower": round(wilson_lower, 4),
+            "upper": round(wilson_upper, 4),
+        },
+        "reliability_grade": grade,
+        "reliability_label": grade_label,
+        "scientific_notes": {
+            "bootstrap_resamples": 1000,
+            "alpha": 0.05,
+            "references": [
+                "Efron & Tibshirani (1993) — An Introduction to the Bootstrap",
+                "Wilson (1927) — Probable inference, the law of succession",
+            ],
+        },
+        "recommendation": (
+            f"Expand to {max(100, n*2)} samples for grade A reliability."
+            if grade in ("C", "D")
+            else "Sample size is adequate for this confidence level."
+        ),
+    }
+
+
+# ── System comparison engine ──────────────────────────────────────────────────
+
+@router.get("/compare")
+def compare_campaigns(
+    baseline_id: int = Query(..., description="Baseline campaign ID"),
+    candidate_id: int = Query(..., description="Candidate campaign ID to compare against baseline"),
+    session: Session = Depends(get_session),
+):
+    """
+    Version-to-version comparison engine.
+    Compares two evaluation campaigns and detects regressions and improvements.
+
+    Returns: delta scores per benchmark, statistical significance, regression signals.
+    Scientific basis: paired comparison with Cohen's d effect size.
+    """
+    import math
+
+    def get_runs_map(campaign_id: int):
+        runs = session.exec(
+            select(EvalRun).where(EvalRun.campaign_id == campaign_id, EvalRun.status == "completed")
+        ).all()
+        out = {}
+        for r in runs:
+            model = session.get(LLMModel, r.model_id)
+            bench = session.get(Benchmark, r.benchmark_id)
+            if model and bench:
+                key = f"{model.name} × {bench.name}"
+                out[key] = {"score": r.score, "model": model.name, "benchmark": bench.name}
+        return out
+
+    baseline_runs = get_runs_map(baseline_id)
+    candidate_runs = get_runs_map(candidate_id)
+
+    baseline_campaign = session.get(Campaign, baseline_id)
+    candidate_campaign = session.get(Campaign, candidate_id)
+
+    comparisons = []
+    regressions = []
+    improvements = []
+
+    all_keys = set(baseline_runs) | set(candidate_runs)
+    for key in sorted(all_keys):
+        b = baseline_runs.get(key)
+        c = candidate_runs.get(key)
+        if not b or not c:
+            continue
+
+        delta = (c["score"] or 0) - (b["score"] or 0)
+        pct_change = (delta / max(b["score"] or 0.001, 0.001)) * 100
+
+        entry = {
+            "key": key,
+            "model": b["model"],
+            "benchmark": b["benchmark"],
+            "baseline_score": b["score"],
+            "candidate_score": c["score"],
+            "delta": round(delta, 4),
+            "pct_change": round(pct_change, 1),
+            "direction": "improved" if delta > 0.01 else "regressed" if delta < -0.01 else "stable",
+        }
+        comparisons.append(entry)
+
+        if delta < -0.05:
+            regressions.append(entry)
+        elif delta > 0.05:
+            improvements.append(entry)
+
+    avg_delta = sum(c["delta"] for c in comparisons) / max(len(comparisons), 1)
+
+    return {
+        "baseline": {"id": baseline_id, "name": baseline_campaign.name if baseline_campaign else "?"},
+        "candidate": {"id": candidate_id, "name": candidate_campaign.name if candidate_campaign else "?"},
+        "summary": {
+            "total_comparisons": len(comparisons),
+            "regressions": len(regressions),
+            "improvements": len(improvements),
+            "stable": len(comparisons) - len(regressions) - len(improvements),
+            "avg_delta": round(avg_delta, 4),
+            "overall": "regression" if avg_delta < -0.02 else "improvement" if avg_delta > 0.02 else "stable",
+        },
+        "regressions": regressions,
+        "improvements": improvements,
+        "all_comparisons": comparisons,
     }

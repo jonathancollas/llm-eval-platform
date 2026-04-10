@@ -198,3 +198,68 @@ async def inference_adapter_health():
     """Returns health status of all configured inference providers."""
     from inference.adapter import adapter_health_dashboard
     return {"adapters": await adapter_health_dashboard()}
+
+
+# ── Unified model explorer ────────────────────────────────────────────────────
+
+@router.get("/explorer")
+async def model_explorer(session: Session = Depends(get_session)):
+    """
+    Unified model explorer — aggregates models from all sources:
+    - Database (imported models from OpenRouter, custom, Ollama)
+    - Ollama local (live query)
+    Returns provenance, access type, and status for each model.
+    """
+    from core.config import get_settings
+    settings = get_settings()
+    import httpx
+
+    # 1. All imported models from DB
+    db_models = session.exec(select(LLMModel)).all()
+
+    # 2. Ollama locally installed models (live)
+    ollama_installed: set[str] = set()
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{settings.ollama_base_url}/api/tags")
+            if r.status_code == 200:
+                for m in r.json().get("models", []):
+                    ollama_installed.add(m["name"].split(":")[0])
+    except Exception:
+        pass
+
+    result = []
+    for m in db_models:
+        access_type = (
+            "local" if m.provider == "ollama"
+            else "open-weight" if m.is_open_weight
+            else "api-only"
+        )
+        result.append({
+            "id": m.id,
+            "name": m.name,
+            "model_id": m.model_id,
+            "provider": m.provider,
+            "access_type": access_type,
+            "is_open_weight": m.is_open_weight,
+            "is_free": m.is_free,
+            "context_length": m.context_length,
+            "supports_vision": m.supports_vision,
+            "supports_tools": m.supports_tools,
+            "supports_reasoning": m.supports_reasoning,
+            "local_available": m.provider == "ollama" or any(
+                m.model_id.startswith(n) for n in ollama_installed
+            ),
+            "ollama_name": next(
+                (n for n in ollama_installed if m.model_id.startswith(n)), None
+            ),
+        })
+
+    return {
+        "models": result,
+        "total": len(result),
+        "ollama_installed": len(ollama_installed),
+        "open_weight": sum(1 for m in result if m["is_open_weight"]),
+        "api_only": sum(1 for m in result if m["access_type"] == "api-only"),
+        "local": sum(1 for m in result if m["access_type"] == "local"),
+    }

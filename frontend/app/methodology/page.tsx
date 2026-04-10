@@ -1,7 +1,82 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { API_BASE } from "@/lib/config";
+
+// Lazy heuristic graph from backend
+function HeuristicGraph() {
+  const [data, setData] = useState<any | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const load = () => {
+    if (data) { setOpen(o => !o); return; }
+    fetch(`${API_BASE}/genome/heuristics`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { setData(d); setOpen(true); })
+      .catch(() => {});
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <button onClick={load} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors text-left">
+        <span className="text-2xl">🕸</span>
+        <div className="flex-1">
+          <div className="font-semibold text-slate-900">Heuristic Graph Engine — Live</div>
+          <div className="text-sm text-slate-500 mt-0.5">
+            {data ? `${data.total} heuristics · ${data.eval_dimensions?.join(", ")}` : "Click to load from backend"}
+          </div>
+        </div>
+        {open ? <ChevronUp size={16} className="text-slate-400 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
+      </button>
+      {open && !data && <div className="px-6 pb-4 flex justify-center"><div className="text-slate-400 text-sm">Loading…</div></div>}
+      {open && data && (
+        <div className="border-t border-slate-100">
+          {data.heuristics.map((h: any) => (
+            <div key={h.key} className="px-6 py-4 border-b border-slate-50 last:border-0">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="font-mono text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">{h.key}</span>
+                <span className="font-semibold text-slate-800 text-sm">{h.label}</span>
+                <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  h.eval_dimension === "safety" ? "bg-red-100 text-red-700"
+                  : h.eval_dimension === "propensity" ? "bg-orange-100 text-orange-700"
+                  : h.eval_dimension === "agentic" ? "bg-purple-100 text-purple-700"
+                  : "bg-blue-100 text-blue-700"
+                }`}>{h.eval_dimension}</span>
+                <span className="text-[10px] text-slate-400">severity: {(h.severity_weight * 100).toFixed(0)}%</span>
+              </div>
+              <p className="text-xs text-slate-600 mb-2">{h.description}</p>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Detection Logic</div>
+                  <p className="text-slate-600">{h.detection_logic}</p>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase mb-1">False Positive Profile</div>
+                  <p className="text-slate-500 italic">{h.false_positive_profile}</p>
+                </div>
+              </div>
+              <div className="flex gap-4 mt-2 text-[10px] text-slate-400">
+                <span>Pass threshold: {(h.threshold_pass * 100).toFixed(0)}%</span>
+                <span>Critical failure: &lt;{(h.threshold_fail * 100).toFixed(0)}%</span>
+              </div>
+              {h.papers?.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {h.papers.map((p: any, i: number) => (
+                    <a key={i} href={p.url} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] text-blue-500 hover:underline flex items-center gap-0.5">
+                      📄 {p.authors?.split(" et al")[0] ?? p.title.slice(0, 30)} ({p.year})
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface Section {
   id: string;
@@ -301,6 +376,9 @@ export default function MethodologyPage() {
             />
           </div>
         </Collapsible>
+
+        {/* Live heuristic graph from backend */}
+        <HeuristicGraph />
 
         {/* Footer note */}
         <div className="text-xs text-slate-400 pt-4 border-t border-slate-100">

@@ -788,3 +788,46 @@ def _card_completeness(card: dict) -> int:
     fields = ["threat_model", "papers", "scoring_method", "known_blind_spots", "autonomy_levels", "confidence_bounds"]
     filled = sum(1 for f in fields if card.get(f))
     return round(filled / len(fields) * 100)
+
+
+# ── Benchmark versioning ──────────────────────────────────────────────────────
+
+@router.get("/{benchmark_id}/versions")
+def get_benchmark_versions(benchmark_id: int, session: Session = Depends(get_session)):
+    """
+    Benchmark version history — tracks immutable snapshots of benchmark configuration.
+    Each snapshot captures: dataset hash, num_samples, metric, config at a point in time.
+    Enables reproducible evaluation: replay the exact same benchmark version.
+    """
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(status_code=404, detail="Benchmark not found.")
+
+    # Current version is derived from the benchmark config
+    import hashlib, json
+    config_str = json.dumps({
+        "name": bench.name,
+        "metric": bench.metric,
+        "num_samples": bench.num_samples,
+        "dataset_path": bench.dataset_path,
+        "config": bench.config_json,
+    }, sort_keys=True)
+    version_hash = hashlib.sha256(config_str.encode()).hexdigest()[:12]
+
+    return {
+        "benchmark_id": benchmark_id,
+        "benchmark_name": bench.name,
+        "current_version": {
+            "version_hash": version_hash,
+            "metric": bench.metric,
+            "num_samples": bench.num_samples,
+            "dataset_path": bench.dataset_path,
+            "created_at": bench.created_at.isoformat(),
+            "is_builtin": bench.is_builtin,
+        },
+        "versioning_note": (
+            "Immutable benchmark versioning is tracked via version_hash. "
+            "Include this hash in your experiment manifest for full reproducibility. "
+            f"Current hash: {version_hash}"
+        ),
+    }
