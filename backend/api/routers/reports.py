@@ -29,6 +29,7 @@ class ReportRequest(BaseModel):
     campaign_id: int
     custom_instructions: str = ""
     include_genome: bool = True
+    ollama_model: str = ""   # If set, use this local Ollama model instead of default
 
 
 class ReportRead(BaseModel):
@@ -195,6 +196,7 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
             system_prompt=_build_system_prompt(),
             max_tokens=settings.report_max_tokens,
             timeout=settings.report_timeout_seconds,
+            ollama_model=payload.ollama_model or None,
         )
     except anthropic.AuthenticationError:
         raise HTTPException(status_code=401, detail="Invalid ANTHROPIC_API_KEY. Check your configuration.")

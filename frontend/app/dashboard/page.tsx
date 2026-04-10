@@ -334,14 +334,26 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
   const [error, setError] = useState<string | null>(null);
   const [customInstructions, setCustomInstructions] = useState("");
   const [open, setOpen] = useState(false);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");  // "" = auto (default)
 
   useEffect(() => { reportsApi.list(campaignId).then(setReports).catch(() => {}); }, [campaignId]);
+
+  // Discover locally installed Ollama models
+  useEffect(() => {
+    fetch("http://localhost:11434/api/tags")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.models) setOllamaModels(d.models.map((m: any) => m.name));
+      })
+      .catch(() => {});
+  }, []);
 
   const generate = async () => {
     setGenerating(true);
     setError(null);
     try {
-      await reportsApi.generate(campaignId, customInstructions);
+      await reportsApi.generate(campaignId, customInstructions, selectedModel);
       reportsApi.list(campaignId).then(setReports);
     } catch (err: any) {
       setError(err?.message ?? String(err));
@@ -361,6 +373,24 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
 
       {open && (
         <div className="space-y-3 mb-4">
+          {/* Model selector */}
+          <div>
+            <label className="text-xs font-medium text-slate-600 mb-1 block">Model for report generation</label>
+            <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
+              <option value="">🤖 Auto (Ollama local → Claude Sonnet)</option>
+              {ollamaModels.map(m => (
+                <option key={m} value={m}>🦙 {m} (local)</option>
+              ))}
+              <option value="__anthropic__" disabled>─ Cloud ─</option>
+            </select>
+            {ollamaModels.length > 0 && (
+              <p className="text-[10px] text-slate-400 mt-1">🦙 {ollamaModels.length} local model(s) detected via Ollama</p>
+            )}
+            {ollamaModels.length === 0 && (
+              <p className="text-[10px] text-slate-400 mt-1">No local Ollama models detected — using Claude Sonnet by default</p>
+            )}
+          </div>
           <textarea rows={2} placeholder="Custom instructions for the analyst…"
             value={customInstructions} onChange={e => setCustomInstructions(e.target.value)}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none" />
@@ -373,7 +403,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
               <span className="font-medium">Error : </span>{error}
-              <p className="text-red-400 mt-1">Check that the backend is active and the Anthropic key is configured.</p>
+              <p className="text-red-400 mt-1">Check that the backend is active and the model is configured.</p>
             </div>
           )}
         </div>

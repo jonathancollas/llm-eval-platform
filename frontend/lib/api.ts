@@ -154,10 +154,10 @@ export const resultsApi = {
 };
 
 export const reportsApi = {
-  generate: (campaignId: number, customInstructions = "") =>
+  generate: (campaignId: number, customInstructions = "", ollamaModel = "") =>
     apiFetch<Report>("/reports/generate", {
       method: "POST",
-      body: JSON.stringify({ campaign_id: campaignId, custom_instructions: customInstructions }),
+      body: JSON.stringify({ campaign_id: campaignId, custom_instructions: customInstructions, ollama_model: ollamaModel }),
       timeoutMs: 120000,
     }),
   list: (campaignId: number) => apiFetch<Report[]>(`/reports/campaign/${campaignId}`),

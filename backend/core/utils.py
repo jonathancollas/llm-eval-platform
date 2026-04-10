@@ -39,9 +39,10 @@ async def generate_text(
     max_tokens: int = 2048,
     timeout: float = 120,
     model_override: str | None = None,
+    ollama_model: str | None = None,
 ) -> str:
     """Generate text using the best available model.
-    Priority: model_override → Ollama local → Anthropic API.
+    Priority: ollama_model (explicit local) → model_override → Ollama auto → Anthropic API.
     Returns generated text or raises.
     """
     import asyncio
@@ -52,6 +53,24 @@ async def generate_text(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
+
+    # Option 0: explicit local Ollama model chosen by user
+    if ollama_model:
+        try:
+            from litellm import acompletion
+            resp = await asyncio.wait_for(
+                acompletion(
+                    model=f"ollama/{ollama_model}",
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                    api_base=settings.ollama_base_url,
+                ),
+                timeout=timeout,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as e:
+            raise RuntimeError(f"Ollama model '{ollama_model}' failed: {e}")
 
     # Option 1: explicit model override (litellm format)
     if model_override:
