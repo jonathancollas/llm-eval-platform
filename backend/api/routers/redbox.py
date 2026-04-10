@@ -713,3 +713,40 @@ def get_adversarial_catalog(
         "total": len(items),
         "categories": list(set(i["category"] for i in ADVERSARIAL_CATALOG)),
     }
+
+
+# ── Adversarial scenario generation (public API) ─────────────────────────────
+
+@router.post("/generate-scenarios")
+async def generate_adversarial_scenarios(payload: ForgeRequest):
+    """
+    Adversarial scenario generation engine.
+
+    Generates structured adversarial test scenarios for any seed prompt,
+    covering multiple attack vectors. Backed by MITRE ATLAS taxonomy.
+
+    Attack vectors supported:
+    - prompt_injection: override system instructions
+    - jailbreak: persona manipulation, DAN, roleplay bypass
+    - encoding_evasion: base64, ROT13, homoglyphs
+    - token_smuggling: zero-width chars, RTL override
+    - multi_turn: context manipulation
+    - crescendo: gradual escalation
+    - multilingual: cross-lingual attacks
+
+    Scientific basis: Greshake et al. 2023, Zou et al. 2023, Wei et al. 2024
+    """
+    variants = await _generate_llm_variants(
+        payload.seed_prompt, payload.mutation_types, payload.n_variants
+    )
+    return {
+        "seed": payload.seed_prompt,
+        "mutation_types": payload.mutation_types,
+        "variants": [vars(v) for v in variants],
+        "total": len(variants),
+        "scientific_references": [
+            {"title": "Not What You've Signed Up For: Indirect Prompt Injection", "url": "https://arxiv.org/abs/2302.12173"},
+            {"title": "Jailbroken: How Does LLM Safety Training Fail?", "url": "https://arxiv.org/abs/2307.02483"},
+            {"title": "Universal and Transferable Adversarial Attacks", "url": "https://arxiv.org/abs/2307.15043"},
+        ],
+    }

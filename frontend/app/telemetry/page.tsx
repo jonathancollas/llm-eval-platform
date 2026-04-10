@@ -118,6 +118,54 @@ function TelemetryContent() {
             )}
           </>
         )}
+
+        {/* Live evaluation feed */}
+        <LiveEvalFeed />
+
+      </div>
+    </div>
+  );
+}
+
+function LiveEvalFeed() {
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+
+  useEffect(() => {
+    const load = () => {
+      fetch(`${API_BASE}/campaigns/`)
+        .then(r => r.ok ? r.json() : [])
+        .then(cs => setCampaigns(cs.filter((c: any) => ["running", "pending"].includes(c.status))))
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (campaigns.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <h3 className="text-sm font-medium text-slate-900 mb-3 flex items-center gap-2">
+        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+        Live Evaluations ({campaigns.length} running)
+      </h3>
+      <div className="space-y-3">
+        {campaigns.map((c: any) => (
+          <div key={c.id} className="flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-slate-800 truncate">{c.name}</div>
+              <div className="text-[10px] text-slate-400">{c.current_item_label ?? `${c.status}…`}</div>
+            </div>
+            <div className="w-32 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+              <div className="h-full bg-blue-500 rounded-full transition-all"
+                style={{ width: `${(c.progress ?? 0) * 100}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-slate-500 shrink-0 w-8 text-right">
+              {Math.round((c.progress ?? 0) * 100)}%
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
