@@ -64,9 +64,10 @@ export default function OverviewPage() {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 10_000);
+    // 30s refresh — stats don't need to be real-time
+    const interval = setInterval(fetchStats, 30_000);
     return () => clearInterval(interval);
-  }, [fetchStats]);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="p-8 space-y-6 max-w-5xl">

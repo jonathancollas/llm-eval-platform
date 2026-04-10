@@ -19,7 +19,7 @@ function TelemetryContent() {
   const [error, setError] = useState<string | null>(null);
   const [hours, setHours] = useState(24);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
     fetch(`${API_BASE}/research/telemetry/dashboard?hours=${hours}`)
@@ -30,8 +30,9 @@ function TelemetryContent() {
       .then(setData)
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
-  };
-  useEffect(() => { load(); const p = setInterval(load, 30000); return () => clearInterval(p); }, [hours]);
+  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hours]);
+  useEffect(() => { load(); const p = setInterval(load, 30000); return () => clearInterval(p); }, [load]);
 
   return (
     <div>

@@ -56,7 +56,7 @@ function RedboxLiveFeed({ modelId }: { modelId: number }) {
       } catch {}
     };
     fetchLive();
-    const poll = setInterval(fetchLive, 1500);
+    const poll = setInterval(fetchLive, 5000);  // 5s — was 1.5s
     return () => clearInterval(poll);
   }, [modelId]);
 
