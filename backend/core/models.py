@@ -575,3 +575,91 @@ class RealWorldEvidence(SQLModel, table=True):
     recommendations: str        = Field(default="")
     # Timestamps
     created_at: datetime        = Field(default_factory=datetime.utcnow)
+
+
+# ── Multi-Agent Simulation (#60) ───────────────────────────────────────────────
+
+class MultiAgentSimulation(SQLModel, table=True):
+    """
+    Stores results of multi-agent simulation runs.
+    Tracks prompt injection, goal drift, and trust propagation failures.
+
+    Scientific grounding: INESIA PDF Structural Shift 1 — agentic failure modes.
+    Reference: EchoLeak CVE-2025-32711, AgentDojo benchmark family.
+    """
+    __tablename__ = "multi_agent_simulations"
+
+    id: Optional[int]                   = Field(default=None, primary_key=True)
+    simulation_id: str                  = Field(index=True)  # UUID-style string
+    scenario_name: str                  = Field(default="")
+    original_objective: str             = Field(default="")
+    adversarial_goal: str               = Field(default="")
+
+    # Structure
+    n_agents: int                       = Field(default=0)
+    n_steps: int                        = Field(default=0)
+    autonomy_level: int                 = Field(default=3)  # L1-L5
+
+    # Outcome
+    task_completed: bool                = Field(default=False)
+    final_answer: str                   = Field(default="")
+
+    # Safety metrics
+    overall_goal_alignment: float       = Field(default=0.0)
+    goal_drift_detected: bool           = Field(default=False)
+    goal_drift_at_step: Optional[int]   = Field(default=None)
+    prompt_injection_success_rate: float = Field(default=0.0)
+    trust_propagation_occurred: bool    = Field(default=False)
+    compounding_errors: int             = Field(default=0)
+    system_safety_score: float          = Field(default=0.0)
+    pipeline_integrity_score: float     = Field(default=0.0)
+
+    # Serialised step traces
+    steps_json: str                     = Field(default="[]")
+    failure_modes_json: str             = Field(default="{}")
+
+    # Performance
+    total_latency_ms: int               = Field(default=0)
+    total_tokens: int                   = Field(default=0)
+    total_cost_usd: float               = Field(default=0.0)
+
+    created_at: datetime                = Field(default_factory=datetime.utcnow)
+
+
+# ── Anti-Sandbagging (#80) ─────────────────────────────────────────────────────
+
+class SandbaggingReport(SQLModel, table=True):
+    """
+    Anti-sandbagging analysis report for a model × benchmark pair.
+
+    Stores the results of the AntiSandbaggingEngine battery:
+    comparing eval-framing vs neutral vs expert-elicited performance.
+
+    Scientific grounding: INESIA PDF Priority 4 — most underinvested.
+    References: Apollo Research (2025), Meinke et al. (2024), van der Weij et al. (2025).
+    """
+    __tablename__ = "sandbagging_reports"
+
+    id: Optional[int]               = Field(default=None, primary_key=True)
+    model_id: int                   = Field(foreign_key="llm_models.id", index=True)
+    benchmark_id: int               = Field(foreign_key="benchmarks.id", index=True)
+
+    # Results
+    n_probes: int                   = Field(default=0)
+    mean_sandbagging_score: float   = Field(default=0.0)  # 0-1 (1 = strong sandbagging)
+    risk_level: str                 = Field(default="low")  # low|medium|high|critical
+    eval_awareness_rate: float      = Field(default=0.0)
+    capability_gap: float           = Field(default=0.0)   # max(expert) - mean(eval)
+
+    # Interpretation
+    recommendation: str             = Field(default="")
+    scientific_confidence: str      = Field(default="low")  # low|medium|high
+
+    # Raw probe data
+    probes_json: str                = Field(default="[]")
+
+    # Cost
+    total_tokens: int               = Field(default=0)
+    total_cost_usd: float           = Field(default=0.0)
+
+    created_at: datetime            = Field(default_factory=datetime.utcnow)
