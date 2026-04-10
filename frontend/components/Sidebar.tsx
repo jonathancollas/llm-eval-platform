@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
          Microscope, Dna, ShieldAlert, Shield, Gavel, Bot,
-         Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical } from "lucide-react";
+         Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -15,10 +15,11 @@ const NAV_FOUNDATION = [
 ];
 
 const NAV_PHASE1 = [
-  { href: "/campaigns",   label: "Campaigns",      icon: Rocket },
-  { href: "/dashboard",   label: "Dashboard",      icon: BarChart3 },
-  { href: "/leaderboard", label: "Leaderboard",    icon: Trophy },
-  { href: "/policy",      label: "Compliance",     icon: Shield },
+  { href: "/evaluate",    label: "New Evaluation",   icon: Rocket },
+  { href: "/campaigns",   label: "Campaigns",        icon: List },
+  { href: "/dashboard",   label: "Dashboard",        icon: BarChart3 },
+  { href: "/leaderboard", label: "Leaderboard",      icon: Trophy },
+  { href: "/policy",      label: "Compliance",       icon: Shield },
 ];
 
 // Renamed: "Dynamic & Behavioral Eval" → "Behavioral Eval"
