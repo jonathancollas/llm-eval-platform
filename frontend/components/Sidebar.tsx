@@ -23,10 +23,9 @@ const NAV_PHASE1 = [
 
 // Renamed: "Dynamic & Behavioral Eval" → "Behavioral Eval"
 const NAV_PHASE2 = [
-  { href: "/genome",       label: "Genomia",            icon: Dna },
-  { href: "/judge",        label: "LLM Judge",          icon: Gavel },
-  { href: "/agents",       label: "Agents",             icon: Bot },
-  { href: "/methodology",  label: "Methodology",        icon: FlaskConical },
+  { href: "/genome",  label: "Genomia",      icon: Dna },
+  { href: "/judge",   label: "LLM Judge",    icon: Gavel },
+  { href: "/agents",  label: "Agents",       icon: Bot },
 ];
 
 // Phase 3 — Real World Eval (ALPHA)
@@ -151,7 +150,14 @@ export function Sidebar() {
         </div>
 
         {/* About */}
-        <div className="pt-2 mt-1">
+        <div className="pt-2 mt-1 border-t border-slate-100">
+          <Link href="/methodology"
+            className={cn(
+              "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
+              pathname === "/methodology" ? "bg-teal-700 text-white font-medium" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+            )}>
+            <FlaskConical size={14} />Methodology
+          </Link>
           <Link href="/about"
             className={cn(
               "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",

@@ -102,7 +102,12 @@ function OllamaPullButton({ modelId }: { modelId: string }) {
         <span className="text-[10px] text-slate-400 max-w-28 truncate">{progress}</span>
       )}
       {status === "error" && (
-        <span className="text-[10px] text-red-500 max-w-28 truncate" title={progress}>Ollama hors ligne</span>
+        <span className="text-[10px] text-red-500 max-w-44" title={progress}>
+          Ollama not running —{" "}
+          <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" className="underline">
+            install & start Ollama
+          </a>
+        </span>
       )}
     </div>
   );

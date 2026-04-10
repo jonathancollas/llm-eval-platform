@@ -21,7 +21,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org)
 [![lm-eval](https://img.shields.io/badge/Engine-lm--evaluation--harness-orange.svg)](https://github.com/EleutherAI/lm-evaluation-harness)
 
-**[Démo live](https://llm-eval-frontend.onrender.com)** · **[Architecture](ARCHITECTURE.md)** · **[Manifeste](MANIFESTO.md)**
+**[Démo live](https://llm-eval-frontend.onrender.com)** · **[Architecture](ARCHITECTURE.md)** · **[Manifeste](MANIFESTO.md)** · **[Why Evaluators Should Prioritise](WHY_EVALUATORS_SHOULD_PRIORITIZE.md)**
 
 </div>
 
