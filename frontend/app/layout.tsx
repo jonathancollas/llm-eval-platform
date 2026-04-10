@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 export const metadata: Metadata = {
-  title: "EVAL RESEARCH OS (made with love by INESIA)",
+  title: "MERCURY RETROGRADE, an evaluation research OS (made with love by INESIA)",
   description: "INESIA · The operating system for frontier AI safety evaluation",
 };
 
