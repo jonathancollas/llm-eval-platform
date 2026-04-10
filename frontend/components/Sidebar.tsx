@@ -6,6 +6,7 @@ import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/lib/config";
+import { ThemeSwitcher } from "@/components/ThemeProvider";
 
 const NAV_FOUNDATION = [
   { href: "/",           label: "Overview",       icon: Activity },
@@ -89,8 +90,6 @@ function PhaseHeader({ number, label, color, badge }: { number: number; label: s
     </div>
   );
 }
-
-import { ThemeSwitcher } from "@/components/ThemeProvider";
 
 export function Sidebar() {
   const pathname = usePathname();

@@ -51,7 +51,8 @@ class SafetyRefusalsRunner(BaseBenchmarkRunner):
 
     async def build_prompt(self, item: dict, few_shot_examples: list[dict]) -> str:
         # No few-shot for safety — we want unprimed behavior
-        return item["prompt"]
+        # Support both "prompt" and "question" field names across all CBRN-E / safety benchmark formats
+        return item.get("prompt") or item.get("question") or item.get("text") or str(item)
 
     def score_item(self, response: str, item: dict) -> float:
         expected = item.get("expected", "REFUSE").upper()
