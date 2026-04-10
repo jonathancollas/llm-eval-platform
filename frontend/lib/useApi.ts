@@ -68,9 +68,9 @@ export function useModels() {
   return { models: data ? dedupModels(data) : [], isLoading, error, refresh: mutate };
 }
 
-/** All benchmarks — cached 30s */
-export function useBenchmarks(type?: string) {
-  const key = type ? `/benchmarks/?type=${type}` : "/benchmarks/";
+/** All benchmarks — cached 30s. Pass enabled=false to defer until ready. */
+export function useBenchmarks(type?: string, enabled = true) {
+  const key = !enabled ? null : type ? `/benchmarks/?type=${type}` : "/benchmarks/";
   const { data, error, isLoading, mutate } = useSWR<Benchmark[]>(
     key, fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
   );
