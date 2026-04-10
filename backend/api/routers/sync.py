@@ -1,14 +1,20 @@
 """
 Sync — auto-imports benchmarks + all OpenRouter models at startup.
+
+Startup sync runs as a background task so it never blocks the API.
+Frontend polls GET /sync/startup/status to know when it's done.
 """
+import asyncio
 import json
 import logging
-from fastapi import APIRouter, Depends
+from datetime import datetime
+from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
 import httpx
 
-from core.database import get_session
+from core.database import get_session, engine
 from core.config import get_settings
 from core.models import Benchmark, BenchmarkType, LLMModel, ModelProvider
 from api.routers.catalog import BENCHMARK_CATALOG
@@ -17,8 +23,29 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# ── Startup sync state (in-process, survives across requests) ─────────────────
+_sync_state: dict = {
+    "status": "idle",          # idle | running | done | error
+    "started_at": None,
+    "finished_at": None,
+    "benchmarks_added": 0,
+    "models_added": 0,
+    "total_benchmarks": 0,
+    "total_models": 0,
+    "openrouter_synced": False,
+    "error": None,
+}
+_sync_lock = asyncio.Lock()
+
+# ── Ollama circuit breaker — avoids 5s wait on every request ─────────────────
+_ollama_available: Optional[bool] = None
+_ollama_last_check: Optional[datetime] = None
+OLLAMA_TIMEOUT = 2.0        # seconds — was 5.0, now aggressive
+OLLAMA_CACHE_TTL = 30.0     # seconds between re-checks
+
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+OPENROUTER_TIMEOUT = 8.0    # seconds — was 20.0, background task so can be lower
 
 OPEN_SOURCE_PROVIDERS = {
     "meta-llama", "mistralai", "google", "microsoft", "qwen", "deepseek",
@@ -46,6 +73,18 @@ class SyncResult(BaseModel):
     total_benchmarks: int
     total_models: int
     openrouter_synced: bool
+
+
+class StartupStatus(BaseModel):
+    status: str            # idle | running | done | error
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    benchmarks_added: int = 0
+    models_added: int = 0
+    total_benchmarks: int = 0
+    total_models: int = 0
+    openrouter_synced: bool = False
+    error: Optional[str] = None
 
 
 # ── Reusable sync functions (called from lifespan AND from API routes) ─────────
@@ -128,7 +167,7 @@ def sync_starter_models(session: Session) -> int:
 async def sync_openrouter_models(session: Session) -> tuple[int, bool]:
     """
     Fetch full OpenRouter catalog and import missing models.
-    Async — makes HTTP call.
+    Async — makes HTTP call. Called from background task, never from a route handler.
     Returns (models_added, openrouter_synced).
     """
     api_key = settings.openrouter_api_key
@@ -141,7 +180,7 @@ async def sync_openrouter_models(session: Session) -> tuple[int, bool]:
     added = 0
     try:
         headers = {"Authorization": f"Bearer {api_key}"}
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=OPENROUTER_TIMEOUT) as client:
             resp = await client.get(OPENROUTER_MODELS_URL, headers=headers)
             resp.raise_for_status()
             raw_models = resp.json().get("data", [])
@@ -161,6 +200,58 @@ async def sync_openrouter_models(session: Session) -> tuple[int, bool]:
         logger.warning(f"OpenRouter sync failed: {e} — importing starter pack.")
         added = sync_starter_models(session)
         return added, False
+
+
+async def _run_startup_sync_task() -> None:
+    """
+    Background task: runs benchmarks + OpenRouter sync without blocking any request.
+    Uses its own DB session (not the request-scoped one which would be closed).
+    Idempotent: won't re-run if already done or running.
+    """
+    global _sync_state
+    async with _sync_lock:
+        if _sync_state["status"] in ("running", "done"):
+            return
+        _sync_state["status"] = "running"
+        _sync_state["started_at"] = datetime.utcnow().isoformat()
+
+    try:
+        # Open a fresh session — request session is already closed by this point
+        with Session(engine) as session:
+            benches_added = sync_benchmarks_from_catalog(session)
+
+            try:
+                models_added, or_synced = await asyncio.wait_for(
+                    sync_openrouter_models(session),
+                    timeout=OPENROUTER_TIMEOUT + 2,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("[startup] OpenRouter sync timed out — starter pack used.")
+                models_added = sync_starter_models(session)
+                or_synced = False
+
+            total_benches = len(session.exec(select(Benchmark)).all())
+            total_models = len(session.exec(select(LLMModel)).all())
+
+        _sync_state.update({
+            "status": "done",
+            "finished_at": datetime.utcnow().isoformat(),
+            "benchmarks_added": benches_added,
+            "models_added": models_added,
+            "total_benchmarks": total_benches,
+            "total_models": total_models,
+            "openrouter_synced": or_synced,
+            "error": None,
+        })
+        logger.info(f"[startup] Sync done — {benches_added} benchmarks, {models_added} models.")
+
+    except Exception as e:
+        logger.error(f"[startup] Sync failed: {e}")
+        _sync_state.update({
+            "status": "error",
+            "finished_at": datetime.utcnow().isoformat(),
+            "error": str(e),
+        })
 
 
 def _build_model(m: dict) -> LLMModel | None:
@@ -248,22 +339,22 @@ def _build_model(m: dict) -> LLMModel | None:
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 
-@router.post("/startup", response_model=SyncResult)
-async def startup_sync(session: Session = Depends(get_session)):
-    """Called by frontend once per session (cached 15min in localStorage)."""
-    benches_added = sync_benchmarks_from_catalog(session)
-    models_added, or_synced = await sync_openrouter_models(session)
+@router.post("/startup")
+async def startup_sync(background_tasks: BackgroundTasks):
+    """
+    Triggers the startup sync in the background and returns immediately (<5ms).
+    Frontend polls GET /sync/startup/status to track progress.
+    Idempotent: safe to call multiple times — only runs once.
+    """
+    if _sync_state["status"] == "idle":
+        background_tasks.add_task(_run_startup_sync_task)
+    return {"status": _sync_state["status"], "message": "Sync dispatched to background"}
 
-    total_benches = len(session.exec(select(Benchmark)).all())
-    total_models  = len(session.exec(select(LLMModel)).all())
 
-    return SyncResult(
-        benchmarks_added=benches_added,
-        models_added=models_added,
-        total_benchmarks=total_benches,
-        total_models=total_models,
-        openrouter_synced=or_synced,
-    )
+@router.get("/startup/status", response_model=StartupStatus)
+async def startup_status():
+    """Poll this to know when background sync completed."""
+    return StartupStatus(**_sync_state)
 
 
 @router.get("/benchmarks")
@@ -286,18 +377,46 @@ def import_all_benchmarks(session: Session = Depends(get_session)):
 
 # ── Ollama Local Models ────────────────────────────────────────────────────────
 
-async def sync_ollama_models(session: Session) -> tuple[int, bool]:
-    """Discover and import local Ollama models."""
+async def _ollama_fetch_tags() -> tuple[bool, list]:
+    """
+    Circuit-breaker wrapper for GET /api/tags.
+    - Timeout: OLLAMA_TIMEOUT (2s) — was 5s
+    - Caches availability for OLLAMA_CACHE_TTL (30s) to avoid hammering
+    - Returns (available, models_list)
+    """
+    global _ollama_available, _ollama_last_check
+    now = datetime.utcnow()
+
+    # Cache hit: Ollama known unavailable — skip entirely
+    if (
+        _ollama_available is False
+        and _ollama_last_check is not None
+        and (now - _ollama_last_check).total_seconds() < OLLAMA_CACHE_TTL
+    ):
+        return False, []
+
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             resp = await client.get(f"{settings.ollama_base_url}/api/tags")
             resp.raise_for_status()
             data = resp.json()
+        _ollama_available = True
+        _ollama_last_check = now
+        return True, data.get("models", [])
     except Exception as e:
-        logger.info(f"Ollama not available at {settings.ollama_base_url}: {e}")
+        _ollama_available = False
+        _ollama_last_check = now
+        logger.debug(f"Ollama unavailable: {e}")
+        return False, []
+
+
+async def sync_ollama_models(session: Session) -> tuple[int, bool]:
+    """Discover and import local Ollama models. Uses circuit-breaker — never blocks > 2s."""
+    available, models_data = await _ollama_fetch_tags()
+    if not available:
+        logger.info(f"Ollama not available at {settings.ollama_base_url}")
         return 0, False
 
-    models_data = data.get("models", [])
     if not models_data:
         return 0, True
 
@@ -358,17 +477,13 @@ async def sync_ollama_models(session: Session) -> tuple[int, bool]:
 
 @router.get("/ollama")
 async def check_ollama():
-    """Check Ollama availability and list local models."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        return {"available": False, "error": str(e), "url": settings.ollama_base_url, "models": []}
+    """Check Ollama availability and list local models. Uses circuit-breaker — max 2s wait."""
+    available, raw_models = await _ollama_fetch_tags()
+    if not available:
+        return {"available": False, "error": "Ollama unreachable", "url": settings.ollama_base_url, "models": []}
 
     models = []
-    for m in data.get("models", []):
+    for m in raw_models:
         details = m.get("details", {})
         models.append({
             "name": m.get("name", ""),
@@ -433,16 +548,12 @@ async def get_ollama_suggestions(session: Session = Depends(get_session)):
     # Get all registered models
     models = session.exec(select(LLMModel)).all()
 
-    # Get available Ollama models
-    local_models = set()
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{settings.ollama_base_url}/api/tags")
-            if resp.status_code == 200:
-                for m in resp.json().get("models", []):
-                    local_models.add(m.get("name", ""))
-    except Exception:
+    # Get available Ollama models — circuit-breaker, max 2s, cached 30s
+    available, raw_models = await _ollama_fetch_tags()
+    if not available:
         return {"suggestions": [], "ollama_available": False}
+
+    local_models = {m.get("name", "") for m in raw_models}
 
     suggestions = []
     for model in models:

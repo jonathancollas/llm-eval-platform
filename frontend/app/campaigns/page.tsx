@@ -234,10 +234,13 @@ export default function CampaignsPage() {
     benchmark_ids: [] as number[], max_samples: 50, temperature: 0.0,
   });
 
-  // SWR hooks — auto-refresh, dedup, cache
+  // SWR hooks — staggered to avoid saturating FastAPI workers on first load.
+  // campaigns first (most critical), then models, then benchmarks (most static).
   const { campaigns: swrCampaigns, isLoading: campaignsLoading, refresh: refreshCampaigns, hasRunning } = useCampaigns();
   const { models: swrModels, isLoading: modelsLoading, refresh: refreshModels } = useModels();
-  const { benchmarks: swrBenches, isLoading: benchesLoading } = useBenchmarks();
+  // Benchmarks only activate once campaigns have resolved (null key = disabled)
+  const benchmarksReady = !campaignsLoading;
+  const { benchmarks: swrBenches, isLoading: benchesLoading } = useBenchmarks(undefined, benchmarksReady);
 
   // Sync SWR data to local state (preserves existing refs)
   useEffect(() => { if (swrCampaigns.length || !campaignsLoading) setCampaigns(swrCampaigns); }, [swrCampaigns, campaignsLoading]);
@@ -250,16 +253,26 @@ export default function CampaignsPage() {
   const [ollamaSuggestions, setOllamaSuggestions] = useState<Record<string, string>>({});
   const [pulling, setPulling] = useState<string | null>(null);
 
+  // Deferred 1s + 2s timeout — Ollama suggestions are non-critical, never block mount
   useEffect(() => {
-    fetch(`${API_BASE}/sync/ollama/suggestions`).then(r => r.json()).then(data => {
-      if (data.suggestions) {
-        const map: Record<string, string> = {};
-        for (const s of data.suggestions) {
-          if (!s.already_installed) map[s.openrouter_id] = s.ollama_name;
-        }
-        setOllamaSuggestions(map);
-      }
-    }).catch(() => {});
+    const timer = setTimeout(() => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      fetch(`${API_BASE}/sync/ollama/suggestions`, { signal: controller.signal })
+        .then(r => r.json())
+        .then(data => {
+          if (data.suggestions) {
+            const map: Record<string, string> = {};
+            for (const s of data.suggestions) {
+              if (!s.already_installed) map[s.openrouter_id] = s.ollama_name;
+            }
+            setOllamaSuggestions(map);
+          }
+        })
+        .catch(() => {})
+        .finally(() => clearTimeout(timeout));
+    }, 1000); // 1s defer — let campaigns/models paint first
+    return () => clearTimeout(timer);
   }, []);
 
   const handlePullLocal = async (openrouterId: string, e: React.MouseEvent) => {

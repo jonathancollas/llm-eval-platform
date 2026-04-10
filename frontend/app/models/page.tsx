@@ -262,9 +262,19 @@ export default function ModelsPage() {
   useEffect(() => { setModels(swrModels); if (!swrLoading) setLoading(false); }, [swrModels, swrLoading]);
   const load = useCallback(() => { refreshModels(); }, [refreshModels]);
 
+  // Lazy Ollama check — runs only after models are loaded, never at mount.
+  // AbortSignal.timeout(2000) caps the wait at 2s if Ollama is absent.
   useEffect(() => {
-    ollamaApi.check().then(setOllamaStatus).catch(() => {});
-  }, []);
+    if (swrLoading) return; // Wait until models are fetched first
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      ollamaApi.check(controller.signal).then(setOllamaStatus).catch(() => {});
+    }, 300); // 300ms defer — lets the UI paint before the check
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [swrLoading]);
 
   const handleImportOllama = async () => {
     setImportingOllama(true);

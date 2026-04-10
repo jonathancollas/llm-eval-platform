@@ -1,9 +1,12 @@
 import { API_BASE } from "./config";
 
 async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const { timeoutMs = 30000, ...fetchInit } = init ?? {};
+  const { timeoutMs = 30000, signal: externalSignal, ...fetchInit } = init ?? {};
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  // If caller passes a signal (e.g. component unmount), abort on that too
+  externalSignal?.addEventListener("abort", () => controller.abort());
 
   try {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -46,7 +49,12 @@ export type BenchmarkType = "academic" | "safety" | "coding" | "custom";
 
 // Ollama API
 export const ollamaApi = {
-  check: () => apiFetch<{ available: boolean; url: string; models: any[]; total: number }>("/sync/ollama"),
+  /** Max 2s — if Ollama is absent, returns fast instead of blocking 5s */
+  check: (signal?: AbortSignal) =>
+    apiFetch<{ available: boolean; url: string; models: any[]; total: number }>(
+      "/sync/ollama",
+      { timeoutMs: 2000, signal }
+    ),
   import: () => apiFetch<{ added: number; available: boolean }>("/sync/ollama/import", { method: "POST" }),
   pull: (modelName: string) => apiFetch<{ status: string; model: string }>(`/sync/ollama/pull?model_name=${encodeURIComponent(modelName)}`, { method: "POST", timeoutMs: 300000 }),
   pullAndRegister: (modelName: string) => apiFetch<{ status: string; model_name: string }>("/sync/ollama/pull-and-register", { method: "POST", body: JSON.stringify({ model_name: modelName }), timeoutMs: 300000 }),
