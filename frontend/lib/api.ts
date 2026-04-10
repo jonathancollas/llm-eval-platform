@@ -29,6 +29,18 @@ async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: numb
   }
 }
 
+/**
+ * Canonical model identity — separates DB primary key from provider identifier.
+ * Never compare model.id (dbId) with model.model_id (providerModelId).
+ *
+ * dbId          — internal DB integer PK, used for foreign keys / relations
+ * model_id      — provider string identifier e.g. "openai/gpt-4o", "llama3:8b"
+ */
+export interface ModelIdentity {
+  dbId: number;           // Internal DB primary key
+  model_id: string;       // Provider identifier (OpenRouter format, Ollama name, etc.)
+}
+
 export type ModelProvider = "ollama" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
 export type BenchmarkType = "academic" | "safety" | "coding" | "custom";
 

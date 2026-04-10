@@ -187,6 +187,107 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
+// ── Benchmark Card — scientific provenance ────────────────────────────────────
+function BenchmarkCard({ benchmarkId, benchmarkName }: { benchmarkId: number; benchmarkName: string }) {
+  const [card, setCard] = useState<any | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const load = () => {
+    if (card) { setOpen(o => !o); return; }
+    fetch(`${API_BASE}/benchmarks/${benchmarkId}/card`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { setCard(d); setOpen(true); })
+      .catch(() => {});
+  };
+
+  if (!card && !open) {
+    return (
+      <button onClick={e => { e.stopPropagation(); load(); }}
+        className="mb-3 text-[10px] text-blue-500 hover:underline flex items-center gap-1">
+        📄 View benchmark card
+      </button>
+    );
+  }
+
+  return (
+    <div className="mb-4 bg-white border border-blue-100 rounded-xl overflow-hidden">
+      <button onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs hover:bg-blue-50 transition-colors">
+        <span className="font-semibold text-blue-800">📄 Benchmark Card</span>
+        {card && (
+          <span className="text-[10px] text-slate-400">
+            {card.completeness_score}% complete
+            {card.completeness_score < 100 && " · contributions welcome"}
+          </span>
+        )}
+      </button>
+      {open && card && (
+        <div className="px-4 pb-4 space-y-3 text-xs">
+          {/* Threat model */}
+          {card.threat_model && (
+            <div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Threat Model</div>
+              <p className="text-slate-700">{card.threat_model}</p>
+            </div>
+          )}
+          {/* Papers */}
+          {card.papers?.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Scientific Grounding</div>
+              <div className="space-y-1.5">
+                {card.papers.map((p: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="text-slate-300 shrink-0">[{i+1}]</span>
+                    <div>
+                      {p.url
+                        ? <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">{p.title}</a>
+                        : <span className="font-medium text-slate-700">{p.title}</span>
+                      }
+                      {p.authors && <span className="text-slate-400"> — {p.authors}{p.year ? `, ${p.year}` : ""}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Grid: scoring, confidence, autonomy */}
+          <div className="grid grid-cols-3 gap-3">
+            {card.scoring_method && (
+              <div className="bg-slate-50 rounded-lg p-2">
+                <div className="text-[10px] font-semibold text-slate-400 mb-1">Scoring</div>
+                <p className="text-slate-600">{card.scoring_method}</p>
+              </div>
+            )}
+            {card.confidence_bounds && (
+              <div className="bg-slate-50 rounded-lg p-2">
+                <div className="text-[10px] font-semibold text-slate-400 mb-1">Confidence</div>
+                <p className="text-slate-600">{card.confidence_bounds}</p>
+              </div>
+            )}
+            {card.autonomy_levels?.length > 0 && (
+              <div className="bg-slate-50 rounded-lg p-2">
+                <div className="text-[10px] font-semibold text-slate-400 mb-1">Autonomy levels</div>
+                <div className="flex flex-wrap gap-1">
+                  {card.autonomy_levels.map((l: string) => (
+                    <span key={l} className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-mono">{l}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Known blind spots */}
+          {card.known_blind_spots && card.known_blind_spots !== "Not yet documented for this benchmark." && (
+            <div>
+              <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">⚠ Known Blind Spots</div>
+              <p className="text-slate-600 italic">{card.known_blind_spots}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BenchmarksPage() {
   const [benches, setBenches] = useState<Benchmark[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -572,6 +673,9 @@ export default function BenchmarksPage() {
                       }
                       {b.is_builtin && <Badge className="bg-slate-100 text-slate-500"><Lock size={10} className="inline mr-1" />Built-in</Badge>}
                       {b.risk_threshold && <Badge className="bg-red-100 text-red-600"><AlertTriangle size={10} className="inline mr-1" />Frontier</Badge>}
+                      {b.risk_threshold && b.source === "inesia" && (
+                        <Badge className="bg-red-700 text-white text-[9px] font-bold">🔴 BLOCKING</Badge>
+                      )}
                       {b.has_dataset && <Badge className="bg-green-100 text-green-600">Dataset ✓</Badge>}
                     </div>
                     <p className="text-xs text-slate-500 truncate">{b.description}</p>
@@ -591,6 +695,9 @@ export default function BenchmarksPage() {
                       {b.risk_threshold && <div><span className="font-medium">Seuil risque :</span> {(b.risk_threshold * 100).toFixed(0)}%</div>}
                     </div>
                     <p className="text-slate-600 text-xs mb-3">{b.description}</p>
+
+                    {/* ── Benchmark Card (scientific provenance) ────────── */}
+                    <BenchmarkCard benchmarkId={b.id} benchmarkName={b.name} />
 
                     {/* ── Tag manager ─────────────────────────────────── */}
                     <div className="mb-3">

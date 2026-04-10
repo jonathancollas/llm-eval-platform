@@ -189,3 +189,12 @@ async def test_model_connection(model_id: int, session: Session = Depends(get_se
     from eval_engine.litellm_client import test_connection
     result = await test_connection(model)
     return result
+
+
+# ── Inference adapter health dashboard ──────────────────────────────────────
+
+@router.get("/inference/adapters")
+async def inference_adapter_health():
+    """Returns health status of all configured inference providers."""
+    from inference.adapter import adapter_health_dashboard
+    return {"adapters": await adapter_health_dashboard()}
