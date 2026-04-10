@@ -91,16 +91,16 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
   const countdown = useCountdown(data?.eta_seconds ?? null);
 
   useEffect(() => {
-    // Immediate first poll (don't wait 1.5s)
+    let active = true;
     const fetchLive = async () => {
       try {
         const res = await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=8`);
-        if (res.ok) setData(await res.json());
+        if (res.ok && active) setData(await res.json());
       } catch {}
     };
     fetchLive();
-    const poll = setInterval(fetchLive, 1500);
-    return () => clearInterval(poll);
+    const poll = setInterval(fetchLive, 4000);  // 4s — was 1.5s, too aggressive
+    return () => { active = false; clearInterval(poll); };
   }, [campaignId]);
 
   const latest = data?.items?.[0] ?? null;
@@ -306,12 +306,14 @@ export default function CampaignsPage() {
       const TERMINAL = ["completed", "failed", "cancelled"];
       const poll = setInterval(async () => {
         try {
+          // Use SWR refresh instead of a direct fetch to avoid duplicate requests
+          refreshCampaigns();
           const updated = await campaignsApi.list();
           setCampaigns(updated);
           const c = updated.find((x: Campaign) => x.id === id);
           if (!c || TERMINAL.includes(c.status)) { clearInterval(poll); setRunningId(null); }
         } catch { clearInterval(poll); setRunningId(null); }
-      }, 2000);
+      }, 5000);  // 5s — was 2s, let SWR handle the rest
       setTimeout(() => { clearInterval(poll); setRunningId(null); }, 30 * 60 * 1000);
     } catch (e: any) {
       console.error("RUN ERROR:", e);

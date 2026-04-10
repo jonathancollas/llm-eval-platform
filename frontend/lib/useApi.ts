@@ -27,12 +27,20 @@ async function fetcher<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** All campaigns — auto-refresh every 3s when running */
+/** All campaigns — auto-refresh only when a campaign is running */
 export function useCampaigns() {
   const { data, error, isLoading, mutate } = useSWR<Campaign[]>(
     "/campaigns/",
     fetcher,
-    { refreshInterval: 3000, revalidateOnFocus: true }
+    {
+      // Refresh every 3s only if there's a running/pending campaign
+      refreshInterval: (data) => {
+        const hasActive = data?.some(c => c.status === "running" || c.status === "pending");
+        return hasActive ? 3000 : 0;
+      },
+      revalidateOnFocus: false,   // Don't hammer on tab focus
+      dedupingInterval: 2000,
+    }
   );
   return {
     campaigns: data ?? [],
@@ -55,7 +63,7 @@ export function useModels() {
   const { data, error, isLoading, mutate } = useSWR<LLMModel[]>(
     "/models/",
     fetcher,
-    { dedupingInterval: 30000 }
+    { dedupingInterval: 30000, revalidateOnFocus: false }
   );
   return { models: data ? dedupModels(data) : [], isLoading, error, refresh: mutate };
 }
@@ -64,7 +72,7 @@ export function useModels() {
 export function useBenchmarks(type?: string) {
   const key = type ? `/benchmarks/?type=${type}` : "/benchmarks/";
   const { data, error, isLoading, mutate } = useSWR<Benchmark[]>(
-    key, fetcher, { dedupingInterval: 30000 }
+    key, fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
   );
   return { benchmarks: data ?? [], isLoading, error, refresh: mutate };
 }
@@ -73,7 +81,7 @@ export function useBenchmarks(type?: string) {
 export function useDashboard(campaignId: number | null) {
   const { data, error, isLoading } = useSWR<DashboardData>(
     campaignId ? `/results/campaign/${campaignId}/dashboard` : null,
-    fetcher, { dedupingInterval: 10000 }
+    fetcher, { dedupingInterval: 10000, revalidateOnFocus: false }
   );
   return { dashboard: data ?? null, isLoading, error };
 }
@@ -82,7 +90,7 @@ export function useDashboard(campaignId: number | null) {
 export function useGenome(campaignId: number | null) {
   const { data, error, isLoading } = useSWR<GenomeData>(
     campaignId ? `/genome/campaigns/${campaignId}` : null,
-    fetcher, { dedupingInterval: 10000 }
+    fetcher, { dedupingInterval: 10000, revalidateOnFocus: false }
   );
   return { genome: data ?? null, isLoading, error };
 }
@@ -91,7 +99,7 @@ export function useGenome(campaignId: number | null) {
 export function useFailedItems(campaignId: number | null) {
   const { data, error, isLoading } = useSWR<FailedItemsData>(
     campaignId ? `/results/campaign/${campaignId}/failed-items` : null,
-    fetcher, { dedupingInterval: 10000 }
+    fetcher, { dedupingInterval: 10000, revalidateOnFocus: false }
   );
   return { failedData: data ?? null, isLoading, error };
 }
@@ -100,7 +108,7 @@ export function useFailedItems(campaignId: number | null) {
 export function useInsights(campaignId: number | null) {
   const { data, error, isLoading } = useSWR(
     campaignId ? `/results/campaign/${campaignId}/insights` : null,
-    fetcher, { dedupingInterval: 10000 }
+    fetcher, { dedupingInterval: 10000, revalidateOnFocus: false }
   );
   return { insights: data ?? null, isLoading, error };
 }
@@ -108,7 +116,7 @@ export function useInsights(campaignId: number | null) {
 /** Generic hook for any API path */
 export function useApi<T>(path: string | null, options?: { refreshInterval?: number }) {
   const { data, error, isLoading, mutate } = useSWR<T>(
-    path, fetcher, { dedupingInterval: 5000, ...options }
+    path, fetcher, { dedupingInterval: 5000, revalidateOnFocus: false, ...options }
   );
   return { data: data ?? null, isLoading, error, refresh: mutate };
 }
