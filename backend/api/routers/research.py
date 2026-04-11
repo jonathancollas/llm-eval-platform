@@ -603,3 +603,118 @@ def get_replications(workspace_id: int, session: Session = Depends(get_session))
                                "C" if n_success >= 1 else "insufficient",
         }
     }
+
+
+# ── #111 Executable paper artifacts ──────────────────────────────────────────
+
+@router.post("/workspaces/{workspace_id}/publish")
+def publish_workspace(workspace_id: int, session: Session = Depends(get_session)):
+    """
+    Publish workspace as an executable paper artifact (#111).
+
+    Generates a reproducibility package containing:
+    - Metadata (hypothesis, protocol, risk domain)
+    - All linked campaign manifests
+    - Replication history and scientific confidence
+    - Replication command
+    - Permanent citation link (workspace slug)
+    """
+    ws = session.get(Workspace, workspace_id)
+    if not ws:
+        raise HTTPException(404, "Workspace not found.")
+
+    import json as _json
+    from core.models import ExperimentManifest
+
+    # Get all linked manifests
+    manifests = session.exec(
+        select(ExperimentManifest).where(ExperimentManifest.workspace_id == workspace_id)
+    ).all()
+
+    # Get replication data from tags
+    try:
+        reps = _json.loads(getattr(ws, "tags", "[]") or "[]")
+        replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
+        completed = [r for r in replications if r.get("status") == "completed" or r.get("type") == "replication_result"]
+        n_success = sum(1 for r in completed if r.get("successful"))
+        avg_concordance = sum(r.get("concordance_score", 0) for r in completed) / max(len(completed), 1) if completed else 0
+        confidence_grade = "A" if avg_concordance >= 0.9 and n_success >= 3 else \
+                          "B" if avg_concordance >= 0.75 and n_success >= 2 else \
+                          "C" if n_success >= 1 else "insufficient"
+    except Exception:
+        replications = []; confidence_grade = "insufficient"; avg_concordance = 0; n_success = 0
+
+    # Build the executable artifact
+    artifact = {
+        "mercury_paper": {
+            "version": "1.0",
+            "workspace_id": workspace_id,
+            "workspace_slug": ws.slug,
+            "title": ws.name,
+            "description": ws.description,
+
+            "science": {
+                "hypothesis": ws.hypothesis,
+                "protocol": ws.protocol,
+                "risk_domain": ws.risk_domain,
+            },
+
+            "reproducibility": {
+                "manifests": [
+                    {
+                        "manifest_id": m.id,
+                        "campaign_id": m.campaign_id,
+                        "seed": m.seed,
+                        "temperature": getattr(m, "temperature", 0.0),
+                        "judge_version": getattr(m, "judge_version", ""),
+                        "benchmark_versions": _json.loads(getattr(m, "benchmark_versions_json", "{}") or "{}"),
+                        "platform_version": getattr(m, "platform_version", "v0.6"),
+                        "created_at": m.created_at.isoformat() if m.created_at else "",
+                    }
+                    for m in manifests
+                ],
+                "replication_command": (
+                    f"mercury replicate --workspace {ws.slug} "
+                    f"--seed {manifests[0].seed if manifests else 42} "
+                    f"--verify"
+                ),
+            },
+
+            "scientific_confidence": {
+                "n_replications": len(replications),
+                "n_successful": n_success,
+                "avg_concordance": round(avg_concordance, 3),
+                "grade": confidence_grade,
+                "interpretation": (
+                    f"{n_success}/{len(replications)} successful replications. "
+                    f"Avg concordance: {avg_concordance:.0%}."
+                    if replications else "No independent replications yet."
+                ),
+            },
+
+            "citation": {
+                "mercury_url": f"mercury://workspace/{ws.slug}",
+                "cite_as": (
+                    f"Mercury Retrograde Research Workspace '{ws.name}' "
+                    f"(INESIA, 2026). mercury://workspace/{ws.slug}"
+                ),
+            },
+
+            "interactive": {
+                "run_experiment": f"POST /api/research/workspaces/{workspace_id}/replications/submit",
+                "view_results": f"GET /api/results/campaign/{{campaign_id}}",
+                "generate_manifest": f"POST /api/research/manifests/generate/{{campaign_id}}",
+            },
+
+            "published_at": datetime.utcnow().isoformat(),
+            "visibility": "public",
+        }
+    }
+
+    # Update workspace status to published
+    ws.status = "published"
+    ws.visibility = "public"
+    session.add(ws)
+    session.commit()
+
+    return artifact

@@ -599,6 +599,83 @@ export default function MethodologyPage() {
           </div>
         </Collapsible>
 
+        {/* 8. NIST AI 800-4 — Continuous monitoring mandate */}
+        <Collapsible
+          icon="📡"
+          title="Continuous Safety Monitoring — NIST AI 800-4"
+          summary="Post-deployment monitoring as a first-class evaluation obligation"
+        >
+          <p>NIST's landmark report <em>Challenges to the Monitoring of Deployed AI Systems</em> (NIST AI 800-4, March 2026)
+          formally establishes post-deployment monitoring as a <strong>first-class obligation</strong>, not an afterthought.</p>
+          <p className="mt-2">NIST AI 800-4 identifies <strong>six monitoring dimensions</strong> that must be addressed continuously:</p>
+          <ul className="list-disc pl-5 space-y-1 mt-2">
+            <li><strong>Functionality drift</strong> — behaviour changes as real-world conditions diverge from training</li>
+            <li><strong>Operational reliability</strong> — latency, error rates, availability under load</li>
+            <li><strong>Human factors</strong> — how users interact with and override the system</li>
+            <li><strong>Security posture</strong> — prompt injection, adversarial inputs, model extraction</li>
+            <li><strong>Fairness and bias</strong> — distributional drift across demographic groups</li>
+            <li><strong>Societal impact</strong> — downstream effects beyond the immediate deployment context</li>
+          </ul>
+          <p className="mt-2">The EU AI Act mandates continuous monitoring of high-risk AI applications as current law.
+          Mercury implements NIST AI 800-4 compliant telemetry via <code className="text-xs bg-slate-100 px-1 rounded">POST /monitoring/ingest</code> (native),
+          Langfuse webhook, and OpenTelemetry OTLP endpoints.</p>
+          <div className="mt-3 space-y-2">
+            <Paper
+              title="Challenges to the Monitoring of Deployed AI Systems"
+              authors="NIST"
+              venue="NIST AI 800-4"
+              year={2026}
+              url="https://doi.org/10.6028/NIST.AI.800-4"
+              contribution="First formal standard for post-deployment AI monitoring. Defines six monitoring dimensions as mandatory obligations."
+            />
+          </div>
+        </Collapsible>
+
+        {/* 9. Scaling laws for safety (#86) */}
+        <Collapsible
+          icon="📈"
+          title="Scaling Laws for Safety Properties — Foundational Research Gap"
+          summary="What we don't know about how safety properties scale with model size"
+        >
+          <p>Scaling laws for <em>capabilities</em> are well-characterised. Scaling laws for
+          <em> safety-relevant properties</em> are <strong>almost entirely unknown</strong>.</p>
+          <p className="mt-2">We do not know whether:</p>
+          <ul className="list-disc pl-5 space-y-1 mt-2">
+            <li>Alignment robustness <em>improves</em>, degrades, or emerges <strong>discontinuously</strong> as models scale</li>
+            <li>Resistance to manipulation increases or decreases with scale</li>
+            <li>Scheming and self-preservation propensity has a phase transition (like in-context learning)</li>
+            <li>Safety interventions generalise to scales where they have not been tested</li>
+          </ul>
+          <p className="mt-2">Without predictive models of how safety properties evolve, evaluators cannot
+          design prospective evaluations for capabilities that do not yet exist, and cannot advise
+          policymakers on deployment timelines with epistemic rigour.</p>
+          <p className="mt-2 font-medium text-slate-700">Mercury research programme (#86):</p>
+          <ul className="list-disc pl-5 space-y-1 mt-1">
+            <li>Empirical scaling curves for scheming propensity across 7B → 70B → frontier</li>
+            <li>Safety-relevant phase transition detection (analogous to capability emergence)</li>
+            <li>Capability-propensity gap as a function of model scale</li>
+            <li>Cross-architecture comparison (dense vs MoE vs multimodal)</li>
+          </ul>
+          <div className="mt-3 space-y-2">
+            <Paper
+              title="Scaling Laws for Neural Language Models"
+              authors="Kaplan et al."
+              venue="OpenAI"
+              year={2020}
+              url="https://arxiv.org/abs/2001.08361"
+              contribution="Foundational scaling laws for capability. The safety analogue remains an open research problem."
+            />
+            <Paper
+              title="Emergent Abilities of Large Language Models"
+              authors="Wei et al."
+              venue="TMLR"
+              year={2022}
+              url="https://arxiv.org/abs/2206.07682"
+              contribution="Documents capability phase transitions — the safety analogue (scheming emergence?) is unknown."
+            />
+          </div>
+        </Collapsible>
+
         {/* Live heuristic graph from backend */}
         <HeuristicGraph />
 
