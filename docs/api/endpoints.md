@@ -135,7 +135,7 @@ LLM-as-Judge — multi-judge ensemble, calibration & bias detection.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/judge/evaluate` | Run multi-judge evaluation on campaign results. |
-| `GET` | `/judge/agreement/{campaign_id}` | Compute inter-judge agreement (Cohen's κ + Pearson r). |
+| `GET` | `/judge/agreement/{campaign_id}` | Compute inter-judge agreement (Cohen's kappa + Pearson r). |
 | `POST` | `/judge/calibrate` | Upload oracle (human) labels and compute judge calibration metrics. |
 | `GET` | `/judge/bias/{campaign_id}` | Detect systematic biases in judge evaluations (length, model preference). |
 | `GET` | `/judge/summary/{campaign_id}` | Summary of all judge evaluations for a campaign. |
