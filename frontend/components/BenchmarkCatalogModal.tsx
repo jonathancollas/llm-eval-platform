@@ -26,10 +26,10 @@ const DOMAIN_ICONS: Record<string, string> = {
 };
 
 const FILTER_TABS = [
-  { key: "all", label: "Tous" },
+  { key: "all", label: "All" },
   { key: "inesia", label: "☿ INESIA" },
-  { key: "raisonnement", label: "Raisonnement" },
-  { key: "connaissances", label: "Connaissances" },
+  { key: "raisonnement", label: "Reasoning" },
+  { key: "connaissances", label: "Knowledge" },
   { key: "maths", label: "Maths" },
   { key: "code", label: "Code" },
   { key: "french", label: "French" },
@@ -126,8 +126,8 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
-            <h2 className="font-semibold text-slate-900">Catalogue de benchmarks</h2>
-            <p className="text-xs text-slate-400 mt-0.5">INESIA · {catalog.length} benchmarks mondiaux</p>
+            <h2 className="font-semibold text-slate-900">Benchmark catalog</h2>
+            <p className="text-xs text-slate-400 mt-0.5">INESIA · {catalog.length} worldwide benchmarks</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X size={16} /></button>
         </div>
@@ -150,7 +150,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
           {!addingAll && notAddedCount > 0 && (
             <button onClick={handleAddAll}
               className="flex items-center gap-1.5 text-xs px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-colors shrink-0">
-              <Plus size={12} /> Tout ajouter ({notAddedCount})
+              <Plus size={12} /> Add all ({notAddedCount})
             </button>
           )}
           {addingAll && addAllProgress && (
@@ -194,7 +194,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
                         <span className="font-medium text-slate-900 text-sm">{b.name}</span>
                         <Badge className={benchmarkTypeColor(b.type as any)}>{b.type}</Badge>
                         {b.is_frontier && <Badge className="bg-red-100 text-red-600"><Shield size={10} className="inline mr-1" />Frontier</Badge>}
-                        {b.risk_threshold && <Badge className="bg-orange-100 text-orange-600">seuil {(b.risk_threshold * 100).toFixed(0)}%</Badge>}
+                        {b.risk_threshold && <Badge className="bg-orange-100 text-orange-600">threshold {(b.risk_threshold * 100).toFixed(0)}%</Badge>}
                         {b.year && <Badge className="bg-slate-100 text-slate-400">{b.year}</Badge>}
                       </div>
                       <p className="text-xs text-slate-500 mb-1">{b.description}</p>

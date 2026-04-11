@@ -181,7 +181,7 @@ function GenomeSection({ genome }: { genome: GenomeData }) {
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
         <div className="text-3xl mb-2">🧬</div>
         <p className="text-sm text-slate-500">Failure Genome not computed for this campaign.</p>
-        <p className="text-xs text-slate-400 mt-1">Il est calculé automatiquement à la fin du bench.</p>
+        <p className="text-xs text-slate-400 mt-1">It is automatically calculated at the end of the benchmark.</p>
       </div>
     );
   }
@@ -228,7 +228,7 @@ function GenomeSection({ genome }: { genome: GenomeData }) {
 
 // ── Failed Items Section ──────────────────────────────────────────────────────
 const ERROR_TYPE_LABELS: Record<string, { label: string; color: string; icon: typeof Bug }> = {
-  wrong_answer: { label: "Mauvaise réponse", color: "text-orange-600 bg-orange-50", icon: XCircle },
+  wrong_answer: { label: "Wrong answer", color: "text-orange-600 bg-orange-50", icon: XCircle },
   timeout: { label: "Timeout", color: "text-red-600 bg-red-50", icon: Zap },
   rate_limit: { label: "Rate limit", color: "text-amber-600 bg-amber-50", icon: Zap },
   credits: { label: "Credits", color: "text-purple-600 bg-purple-50", icon: Zap },
@@ -253,7 +253,7 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
       <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
         <div className="text-2xl mb-1">✅</div>
         <p className="text-sm text-green-700 font-medium">No errors detected</p>
-        <p className="text-xs text-green-500">Tous les items ont été traités correctement.</p>
+        <p className="text-xs text-green-500">All items were processed correctly.</p>
       </div>
     );
   }
@@ -263,7 +263,7 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h3 className="font-medium text-slate-900 text-sm flex items-center gap-2">
           <AlertTriangle size={14} className="text-red-500" />
-          Problèmes détectés ({allErrors.length})
+          Detected issues ({allErrors.length})
         </h3>
         <div className="flex gap-1">
           <button onClick={() => setFilter("all")}
@@ -307,7 +307,7 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
                       <p className="mt-0.5 text-slate-700">{item.prompt}</p></div>
                   )}
                   {item.response && (
-                    <div><span className="font-medium text-slate-400 uppercase text-[10px]">Réponse</span>
+                    <div><span className="font-medium text-slate-400 uppercase text-[10px]">Answer</span>
                       <p className="mt-0.5 text-slate-700 font-mono">{item.response}</p></div>
                   )}
                   {item.expected && (
@@ -470,11 +470,11 @@ function DashboardContent() {
   const signalCount = insights?.signals?.length ?? 0;
 
   const TABS: { key: Tab; label: string; badge?: number }[] = [
-    { key: "overview", label: "📊 Vue d'ensemble" },
-    { key: "genome", label: "🧬 Génome" },
+    { key: "overview", label: "📊 Overview" },
+    { key: "genome", label: "🧬 Genome" },
     { key: "errors", label: "⚠️ Errors", badge: failedData ? failedData.total_failed + failedData.failed_runs.length : 0 },
-    { key: "signals" as Tab, label: "🔗 Signaux", badge: signalCount },
-    { key: "report", label: "📝 Rapport" },
+    { key: "signals" as Tab, label: "🔗 Signals", badge: signalCount },
+    { key: "report", label: "📝 Report" },
   ];
 
   return (
@@ -501,7 +501,7 @@ function DashboardContent() {
       <div className="p-8">
         {/* Campaign selector */}
         <div className="mb-6">
-          <label className="text-xs font-medium text-slate-600 mb-1.5 block">Campagne</label>
+          <label className="text-xs font-medium text-slate-600 mb-1.5 block">Campaign</label>
           <select value={selectedId ?? ""}
             onChange={e => setSelectedId(e.target.value ? +e.target.value : null)}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white">
@@ -517,9 +517,9 @@ function DashboardContent() {
             {/* KPI bar */}
             <div className="grid grid-cols-4 gap-4">
               {[
-                { label: "Coût total", value: formatCost(data.total_cost_usd) },
-                { label: "Latence moyenne / run", value: formatLatency(data.avg_latency_ms) },
-                { label: "Models comparés", value: Object.keys(data.radar).length },
+                { label: "Total cost", value: formatCost(data.total_cost_usd) },
+                { label: "Average latency / run", value: formatLatency(data.avg_latency_ms) },
+                { label: "Compared models", value: Object.keys(data.radar).length },
                 { label: "Errors", value: failedData ? failedData.total_failed + failedData.failed_runs.length : "—",
                   alert: failedData && (failedData.total_failed + failedData.failed_runs.length) > 0 },
               ].map(({ label, value, alert }) => (

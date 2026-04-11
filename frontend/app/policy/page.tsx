@@ -21,9 +21,9 @@ interface PolicyEvaluation {
 }
 
 const STATUS_CONFIG = {
-  compliant: { label: "Conforme", color: "bg-green-100 text-green-700 border-green-200", icon: CheckCircle2 },
-  partially_compliant: { label: "Partiellement conforme", color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: AlertTriangle },
-  non_compliant: { label: "Non conforme", color: "bg-red-100 text-red-700 border-red-200", icon: XCircle },
+  compliant: { label: "Compliant", color: "bg-green-100 text-green-700 border-green-200", icon: CheckCircle2 },
+  partially_compliant: { label: "Partially compliant", color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: AlertTriangle },
+  non_compliant: { label: "Non-compliant", color: "bg-red-100 text-red-700 border-red-200", icon: XCircle },
 };
 
 const CHECK_STATUS = {
@@ -64,13 +64,13 @@ export default function PolicyPage() {
 
   return (
     <div>
-      <PageHeader title="Compliance & Policy" description="Simulez la conformité réglementaire de vos models." />
+      <PageHeader title="Compliance & Policy" description="Simulate the regulatory compliance of your models." />
 
       <div className="p-8 space-y-6">
         {/* Selector bar */}
         <div className="flex items-end gap-4 flex-wrap">
           <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">Campagne</label>
+            <label className="text-xs font-medium text-slate-600 mb-1 block">Campaign</label>
             <select value={selectedCampaign ?? ""} onChange={e => setSelectedCampaign(+e.target.value || null)}
               className="border border-slate-200 rounded-lg px-3 py-2 text-sm min-w-64">
               <option value="">— Completed campaign —</option>

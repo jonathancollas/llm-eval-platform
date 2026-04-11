@@ -57,7 +57,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
       const res = await fetch(`${API_BASE}/leaderboard/${domain}/report?force_refresh=${forceRefresh}`, { method: "POST" });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail ?? "Error lors de la génération");
+        throw new Error(err.detail ?? "Error during generation");
       }
       const r = await res.json();
       setReport(r);
@@ -70,7 +70,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
   };
 
   if (loadingData) return <div className="flex justify-center items-center h-64"><Spinner size={32} /></div>;
-  if (!data) return <div className="p-8 text-red-500">Domaine introuvable.</div>;
+  if (!data) return <div className="p-8 text-red-500">Domain not found.</div>;
 
   return (
     <div>
@@ -89,9 +89,9 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
         {/* Stats bar */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: "Models évalués", value: data.rows.length },
-            { label: "Benchmarks couverts", value: data.benchmarks.length },
-            { label: "Runs complétés", value: data.total_runs },
+            { label: "Evaluated models", value: data.rows.length },
+            { label: "Benchmarks covered", value: data.benchmarks.length },
+            { label: "Completed runs", value: data.total_runs },
           ].map(({ label, value }) => (
             <div key={label} className="bg-white border border-slate-200 rounded-xl p-4">
               <div className="text-xs text-slate-500 mb-1">{label}</div>
@@ -103,7 +103,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
         {/* Leaderboard table */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-medium text-slate-900 text-sm">Classement</h2>
+            <h2 className="font-medium text-slate-900 text-sm">Rankings</h2>
             <span className="text-xs text-slate-400">
               {data.total_runs > 0 ? `Updated ${new Date(data.last_updated).toLocaleDateString("en-US")}` : "No data"}
             </span>
@@ -112,7 +112,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
           {data.rows.length === 0 ? (
             <div className="py-16 text-center text-slate-400 text-sm">
               <div className="text-3xl mb-3">📊</div>
-              <p className="font-medium text-slate-600 mb-1">Pas encore de données pour ce domaine</p>
+              <p className="font-medium text-slate-600 mb-1">No data yet for this domain</p>
               <p className="text-xs mb-4">Create a campaign with benchmarks from this domain.</p>
               <Link href="/campaigns" className="text-xs text-blue-600 hover:underline">Create a campaign →</Link>
             </div>
@@ -122,15 +122,15 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
                     <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide w-10">#</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Modèle</th>
-                    <th className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Moy.</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Model</th>
+                    <th className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Avg.</th>
                     {data.benchmarks.map(b => (
                       <th key={b} className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide max-w-24">
                         <div className="truncate max-w-20" title={b}>{b.split(" ")[0]}</div>
                       </th>
                     ))}
-                    <th className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Coût</th>
-                    <th className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Latence</th>
+                    <th className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Cost</th>
+                    <th className="text-center px-3 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Latency</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -177,7 +177,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
               {report && (
                 <button onClick={() => setShowReport(!showReport)}
                   className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
-                  {showReport ? "Hide" : "Afficher"}
+                  {showReport ? "Hide" : "Show"}
                 </button>
               )}
               <button onClick={() => generateReport(!!report)}
