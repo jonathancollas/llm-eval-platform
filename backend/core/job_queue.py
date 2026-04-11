@@ -115,9 +115,18 @@ def is_running(campaign_id: int) -> bool:
                     return False  # Pre-heartbeat campaign
                 age = (datetime.utcnow() - heartbeat).total_seconds()
                 return age <= STALE_THRESHOLD_S
-    except OSError:
+    except Exception:
         pass
     return False
+
+
+def get_queue_status() -> dict:
+    """Return queue status summary for the health endpoint."""
+    in_memory = {cid for cid, t in _running_tasks.items() if not t.done()}
+    return {
+        "mode": "in_memory",
+        "in_memory_tasks": len(in_memory),
+    }
 
 
 def get_all_running() -> dict[int, str]:
