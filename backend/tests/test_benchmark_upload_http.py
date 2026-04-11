@@ -1,6 +1,7 @@
 import os
 import sys
 import importlib.util
+import uuid
 from pathlib import Path
 
 import pytest
@@ -62,12 +63,12 @@ def client(app):
         yield c
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def benchmark_id(client):
     resp = client.post(
         "/benchmarks/",
         json={
-            "name": "upload-http-test-benchmark",
+            "name": f"upload-http-test-benchmark-{uuid.uuid4().hex[:8]}",
             "type": "custom",
             "description": "fixture benchmark",
             "tags": [],
@@ -79,13 +80,16 @@ def benchmark_id(client):
     return resp.json()["id"]
 
 
-def test_upload_dataset_json_success(client, benchmark_id):
+def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
     files = {"file": ("dataset.json", b'[{"prompt":"p","answer":"a"}]', "application/json")}
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["id"] == benchmark_id
     assert body["has_dataset"] is True
+    custom_files = list((test_dirs["bench_library"] / "custom").glob("*_dataset.json"))
+    assert len(custom_files) == 1
+    assert custom_files[0].read_bytes() == b'[{"prompt":"p","answer":"a"}]'
 
 
 def test_upload_dataset_empty_json_rejected(client, benchmark_id):
@@ -93,6 +97,9 @@ def test_upload_dataset_empty_json_rejected(client, benchmark_id):
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 422
     assert "non-empty list" in resp.json()["detail"]
+    bench = client.get(f"/benchmarks/{benchmark_id}")
+    assert bench.status_code == 200
+    assert bench.json()["has_dataset"] is False
 
 
 def test_upload_dataset_invalid_json_rejected(client, benchmark_id):
@@ -100,3 +107,6 @@ def test_upload_dataset_invalid_json_rejected(client, benchmark_id):
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 422
     assert "Invalid JSON" in resp.json()["detail"]
+    bench = client.get(f"/benchmarks/{benchmark_id}")
+    assert bench.status_code == 200
+    assert bench.json()["has_dataset"] is False
