@@ -54,13 +54,13 @@ const RISK_DOMAINS = [
   { value: "alignment",   label: "Alignment",             icon: "🎯" },
   { value: "mixed",       label: "Multi-domain",          icon: "🔬" },
 ];
-const STATUS_CFG = {
+const STATUS_CFG: Record<string, { color: string; label: string }> = {
   draft:     { color: "bg-slate-100 text-slate-500",  label: "Draft"     },
   active:    { color: "bg-blue-100 text-blue-600",    label: "Active"    },
   published: { color: "bg-green-100 text-green-700",  label: "Published" },
   archived:  { color: "bg-slate-100 text-slate-400",  label: "Archived"  },
 };
-const CONFIDENCE_CFG = {
+const CONFIDENCE_CFG: Record<string, { color: string; label: string }> = {
   A:            { color: "bg-green-100 text-green-700",  label: "Grade A — High confidence"  },
   B:            { color: "bg-blue-100 text-blue-700",    label: "Grade B — Moderate"         },
   C:            { color: "bg-yellow-100 text-yellow-700",label: "Grade C — Limited"          },
@@ -69,10 +69,10 @@ const CONFIDENCE_CFG = {
 };
 
 export default function ResearchPage() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [selected, setSelected] = useState<Workspace | null>(null);
-  const [replications, setReplications] = useState<Replication[]>([]);
-  const [repSummary, setRepSummary] = useState<RepSummary | null>(null);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [replications, setReplications] = useState<any[]>([]);
+  const [repSummary, setRepSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -82,7 +82,7 @@ export default function ResearchPage() {
   const [newWs, setNewWs] = useState({ name: "", description: "", hypothesis: "", protocol: "", risk_domain: "capability", visibility: "private" });
   const [repForm, setRepForm] = useState({ lab: "", notes: "" });
   const [submitForm, setSubmitForm] = useState({ lab: "", concordance: "0.85", successful: true, notes: "" });
-  const [manifest, setManifest] = useState<Manifest | null>(null);
+  const [manifest, setManifest] = useState<any>(null);
   const [manifestLoading, setManifestLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -93,7 +93,7 @@ export default function ResearchPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const selectWorkspace = async (ws: Workspace) => {
+  const selectWorkspace = async (ws: any) => {
     setSelected(ws); setTab("overview"); setManifest(null);
     const r = await fetch(`${API}/research/workspaces/${ws.id}/replications`);
     if (r.ok) { const d = await r.json(); setReplications(d.replications ?? []); setRepSummary(d.summary); }
@@ -105,8 +105,8 @@ export default function ResearchPage() {
     setShowCreateForm(false); setNewWs({ name: "", description: "", hypothesis: "", protocol: "", risk_domain: "capability", visibility: "private" }); load(); setSaving(false);
   };
 
-  const fork = async (id: number) => { await fetch(`${API}/research/workspaces/${id}/fork?new_name=Fork`, { method: "POST" }); load(); };
-  const publish = async (id: number) => {
+  const fork = async (id: any) => { await fetch(`${API}/research/workspaces/${id}/fork?new_name=Fork`, { method: "POST" }); load(); };
+  const publish = async (id: any) => {
     await fetch(`${API}/research/workspaces/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "published", visibility: "public" }) });
     load();
   };
