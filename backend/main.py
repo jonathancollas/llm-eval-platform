@@ -22,6 +22,7 @@ from api.routers import tenants
 from api.routers import research
 from api.routers import evidence
 from api.routers import deep_analysis
+from api.routers import monitoring
 
 logging.basicConfig(
     level=logging.INFO,
