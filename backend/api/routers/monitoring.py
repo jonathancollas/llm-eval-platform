@@ -409,3 +409,196 @@ async def _auto_score_event(event_id: int, prompt: str, response: str) -> None:
 
 
 import asyncio  # noqa: E402 — needed for fleet dashboard gather
+
+
+# ── #112 OpenTelemetry + Langfuse integration ─────────────────────────────────
+
+class LangfuseWebhookPayload(BaseModel):
+    """Langfuse trace webhook — maps to our TelemetryEvent schema."""
+    trace_id: str = ""
+    session_id: str = ""
+    name: str = ""
+    input: Optional[str] = None
+    output: Optional[str] = None
+    model: Optional[str] = None
+    latency_ms: Optional[int] = None
+    total_tokens: Optional[int] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    cost_usd: Optional[float] = None
+    metadata: dict = {}
+    tags: list[str] = []
+
+
+@router.post("/ingest/langfuse", status_code=201)
+async def ingest_from_langfuse(
+    payload: LangfuseWebhookPayload,
+    session: Session = Depends(get_session),
+):
+    """
+    Langfuse webhook ingestion (#112).
+
+    Transforms a Langfuse trace into a Mercury TelemetryEvent.
+    Set this URL as your Langfuse webhook endpoint:
+      POST {BACKEND_URL}/api/monitoring/ingest/langfuse
+
+    Mercury adds safety classification on top of the trace data.
+    Langfuse handles: token usage, latency, cost, prompt versioning.
+    Mercury adds: safety signals, failure taxonomy, drift detection.
+
+    Reference: INESIA — 'Mercury as the scientific layer above Langfuse'
+    """
+    # Resolve model — try to find in registry by name
+    model_id = None
+    if payload.model:
+        from sqlmodel import select as sqlselect
+        from core.models import LLMModel as LLMModelTable
+        m = session.exec(
+            sqlselect(LLMModelTable).where(
+                LLMModelTable.model_id.contains(payload.model)
+            ).limit(1)
+        ).first()
+        if m:
+            model_id = m.id
+
+    event = TelemetryEvent(
+        model_id=model_id,
+        event_type="production_trace",
+        prompt_hash=hashlib.sha256((payload.input or "").encode()).hexdigest()[:16],
+        response_hash=hashlib.sha256((payload.output or "").encode()).hexdigest()[:16],
+        latency_ms=payload.latency_ms or 0,
+        input_tokens=payload.prompt_tokens or 0,
+        output_tokens=payload.completion_tokens or 0,
+        cost_usd=payload.cost_usd,
+        deployment_context=json.dumps({
+            "source": "langfuse",
+            "trace_id": payload.trace_id,
+            "session_id": payload.session_id,
+            "name": payload.name,
+            "tags": payload.tags,
+        }),
+        model_version=payload.model or "",
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return {"event_id": event.id, "status": "ingested", "source": "langfuse"}
+
+
+class OTELSpanPayload(BaseModel):
+    """OpenTelemetry span — minimal schema for LLM spans."""
+    trace_id: str = ""
+    span_id: str = ""
+    name: str = ""
+    attributes: dict = {}
+    start_time_unix_nano: int = 0
+    end_time_unix_nano: int = 0
+    status: dict = {}
+
+
+class OTELBatchPayload(BaseModel):
+    resource_spans: list[dict] = []
+
+
+@router.post("/ingest/otel", status_code=201)
+async def ingest_from_otel(
+    payload: OTELBatchPayload,
+    session: Session = Depends(get_session),
+):
+    """
+    OpenTelemetry span ingestion (#112).
+
+    Accepts OTLP-formatted spans. LLM spans are detected by standard
+    semantic conventions (gen_ai.* attributes) and transformed to TelemetryEvents.
+
+    Compatible with: OpenLLMetry, LangChain OTEL, any OTEL-instrumented LLM client.
+    Set OTEL exporter endpoint to: {BACKEND_URL}/api/monitoring/ingest/otel
+    """
+    ingested = 0
+    for resource_span in payload.resource_spans:
+        for scope_span in resource_span.get("scope_spans", []):
+            for span in scope_span.get("spans", []):
+                attrs = span.get("attributes", {})
+                # Only process LLM spans (gen_ai semantic conventions)
+                model_name = attrs.get("gen_ai.request.model") or attrs.get("llm.model_name", "")
+                if not model_name:
+                    continue
+
+                start_ns = span.get("start_time_unix_nano", 0)
+                end_ns = span.get("end_time_unix_nano", 0)
+                latency = int((end_ns - start_ns) / 1_000_000) if end_ns > start_ns else 0
+
+                # Resolve model
+                model_id = None
+                if model_name:
+                    from sqlmodel import select as sqlselect
+                    from core.models import LLMModel as LLMModelTable
+                    m = session.exec(
+                        sqlselect(LLMModelTable).where(
+                            LLMModelTable.model_id.contains(model_name)
+                        ).limit(1)
+                    ).first()
+                    if m:
+                        model_id = m.id
+
+                prompt = attrs.get("gen_ai.prompt", attrs.get("llm.prompts", ""))
+                response = attrs.get("gen_ai.completion", attrs.get("llm.completions", ""))
+
+                event = TelemetryEvent(
+                    model_id=model_id,
+                    event_type="otel_span",
+                    prompt_hash=hashlib.sha256(str(prompt).encode()).hexdigest()[:16],
+                    response_hash=hashlib.sha256(str(response).encode()).hexdigest()[:16],
+                    latency_ms=latency,
+                    input_tokens=int(attrs.get("gen_ai.usage.prompt_tokens", 0)),
+                    output_tokens=int(attrs.get("gen_ai.usage.completion_tokens", 0)),
+                    cost_usd=None,
+                    deployment_context=json.dumps({
+                        "source": "otel",
+                        "trace_id": span.get("trace_id", ""),
+                        "span_id": span.get("span_id", ""),
+                        "span_name": span.get("name", ""),
+                    }),
+                    model_version=model_name,
+                )
+                session.add(event)
+                ingested += 1
+
+    if ingested:
+        session.commit()
+    return {"ingested": ingested, "source": "otel"}
+
+
+@router.get("/integration/setup")
+def get_integration_setup():
+    """
+    Returns setup instructions for Langfuse and OpenTelemetry integrations.
+    """
+    return {
+        "langfuse": {
+            "description": "Set Mercury as a Langfuse webhook to receive traces automatically.",
+            "webhook_url": "POST /api/monitoring/ingest/langfuse",
+            "setup": [
+                "In Langfuse: Settings → Webhooks → Add Webhook",
+                "URL: {YOUR_BACKEND_URL}/api/monitoring/ingest/langfuse",
+                "Events: trace.created",
+                "Mercury enriches traces with safety signals and failure taxonomy.",
+            ],
+            "what_langfuse_provides": ["Token usage", "Latency", "Cost", "Prompt versioning", "Session threading"],
+            "what_mercury_adds": ["Safety signals", "Failure taxonomy", "Drift detection", "Scientific risk labels"],
+        },
+        "opentelemetry": {
+            "description": "Send OTLP spans directly from any OTEL-instrumented LLM client.",
+            "endpoint": "POST /api/monitoring/ingest/otel",
+            "setup": [
+                "Install: pip install opentelemetry-sdk openllmetry",
+                "Set OTEL_EXPORTER_OTLP_ENDPOINT={YOUR_BACKEND_URL}/api/monitoring/ingest/otel",
+                "Compatible with: OpenLLMetry, LangChain OTEL, any gen_ai.* semantic conventions",
+            ],
+            "supported_attributes": [
+                "gen_ai.request.model", "gen_ai.usage.prompt_tokens",
+                "gen_ai.usage.completion_tokens", "gen_ai.prompt", "gen_ai.completion",
+            ],
+        },
+        "reference": "INESIA — Mercury as the scientific interpretation layer above Langfuse/OTEL",
+    }

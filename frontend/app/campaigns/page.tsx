@@ -10,9 +10,80 @@ import { Spinner } from "@/components/Spinner";
 import { ModelSelector } from "@/components/ModelSelector";
 import { timeAgo } from "@/lib/utils";
 import { Plus, Play, Square, Trash2, BarChart2, RefreshCw,
-         ChevronRight, ChevronLeft, Check, Radio, ChevronDown, ChevronUp } from "lucide-react";
+         ChevronRight, ChevronLeft, Check, Radio, ChevronDown, ChevronUp,
+         ScrollText, Copy, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { API_BASE } from "@/lib/config";
+
+// ── Reproducibility manifest button (#93) ────────────────────────────────────
+function ManifestButton({ campaignId }: { campaignId: number }) {
+  const [loading, setLoading] = useState(false);
+  const [manifest, setManifest] = useState<any>(null);
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const generate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (manifest) { setOpen(o => !o); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/research/manifests/generate/${campaignId}`, { method: "POST" });
+      if (res.ok) { setManifest(await res.json()); setOpen(true); }
+    } catch {}
+    setLoading(false);
+  };
+
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(JSON.stringify(manifest, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative">
+      <button onClick={generate} disabled={loading}
+        className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 disabled:opacity-40"
+        title="Generate reproducibility manifest">
+        {loading ? <Spinner size={12} /> : <ScrollText size={13} />}
+        {loading ? "…" : "Manifest"}
+      </button>
+
+      {open && manifest && (
+        <div className="absolute right-0 top-9 z-50 w-80 bg-white border border-slate-200 rounded-xl shadow-xl p-4 space-y-2"
+          onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700">📋 Reproducibility Manifest</span>
+            <button onClick={copy} className="flex items-center gap-1 text-[10px] text-blue-500 hover:underline">
+              {copied ? <><CheckCircle2 size={10} /> Copied</> : <><Copy size={10} /> Copy JSON</>}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              ["Seed", manifest.seed ?? "—"],
+              ["Temperature", manifest.temperature ?? "—"],
+              ["Benchmarks", manifest.benchmark_versions ? Object.keys(manifest.benchmark_versions).length : "—"],
+              ["Judge", manifest.judge_version ?? "—"],
+            ].map(([k, v]) => (
+              <div key={k as string} className="bg-slate-50 rounded-lg p-2">
+                <div className="text-slate-400 text-[10px]">{k}</div>
+                <div className="font-mono font-medium text-slate-800 truncate">{v}</div>
+              </div>
+            ))}
+          </div>
+          {manifest.replication_command && (
+            <div className="bg-slate-900 rounded-lg p-2 font-mono text-[10px] text-green-400 break-all">
+              {manifest.replication_command}
+            </div>
+          )}
+          <button onClick={() => setOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-600 w-full text-right">
+            Close
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type BenchFilterKey = "all"|"academic"|"safety"|"coding"|"custom"|"inesia";
 const BENCH_FILTERS: {key:BenchFilterKey;label:string}[] = [
@@ -342,6 +413,7 @@ export default function CampaignsPage(){
                   {c.status==="completed"&&!running&&(
                     <>
                       <Link href={`/dashboard?campaign=${c.id}`} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><BarChart2 size={13}/> Results</Link>
+                      <ManifestButton campaignId={c.id} />
                       <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
                     </>
                   )}

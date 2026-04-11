@@ -9,10 +9,14 @@ import { API_BASE } from "@/lib/config";
 // ── Science Engine Panel ──────────────────────────────────────────────────────
 
 function ScienceEnginePanel() {
-  const [tool, setTool] = useState<"cap_prop" | "mech_interp" | "contamination" | null>(null);
+  const [tool, setTool] = useState<"cap_prop" | "mech_interp" | "contamination" | "comp_risk" | "failure_cluster" | null>(null);
   const [modelId, setModelId] = useState<number | "">("");
   const [benchmarkId, setBenchmarkId] = useState<number | "">("");
+  const [campaignId, setCampaignId] = useState<number | "">("");
+  const [autonomyLevel, setAutonomyLevel] = useState("L2");
   const [benchmarks, setBenchmarks] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [domains, setDomains] = useState<Record<string, number>>({});
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,15 +24,16 @@ function ScienceEnginePanel() {
 
   useEffect(() => {
     fetch(`${API_BASE}/benchmarks/`).then(r => r.json()).then(d => setBenchmarks(Array.isArray(d) ? d : [])).catch(() => {});
+    fetch(`${API_BASE}/campaigns/`).then(r => r.json()).then(d => setCampaigns(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
-  const run = async (endpoint: string, body: object) => {
+  const run = async (endpoint: string, body: object, method = "POST") => {
     setLoading(true); setResult(null); setError(null);
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: method === "GET" ? undefined : JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -40,10 +45,16 @@ function ScienceEnginePanel() {
   };
 
   const tools = [
-    { key: "cap_prop", icon: <FlaskConical size={14} />, label: "Capability vs Propensity", desc: "Formal separation — #81" },
-    { key: "mech_interp", icon: <Brain size={14} />, label: "Mech Interp Validator", desc: "CoT consistency · Paraphrase invariance · #85" },
-    { key: "contamination", icon: <Shield size={14} />, label: "Contamination Analysis", desc: "n-gram overlap · Confidence anomaly · #82" },
+    { key: "cap_prop",        icon: <FlaskConical size={14} />, label: "Capability vs Propensity", desc: "Formal separation · tail risk · #81" },
+    { key: "mech_interp",     icon: <Brain size={14} />,        label: "Mech Interp Validator",   desc: "CoT consistency · #85" },
+    { key: "contamination",   icon: <Shield size={14} />,       label: "Contamination",           desc: "n-gram overlap · confidence anomaly · #82" },
+    { key: "comp_risk",       icon: <AlertTriangle size={14} />,label: "Compositional Risk",      desc: "System-level threat profile · #113" },
+    { key: "failure_cluster", icon: <Brain size={14} />,        label: "Failure Clustering",      desc: "Novel pattern discovery · #114" },
   ] as const;
+
+  const needsBenchmark = tool === "cap_prop" || tool === "mech_interp" || tool === "contamination";
+  const needsCampaign  = tool === "failure_cluster";
+  const needsModel     = tool === "cap_prop" || tool === "mech_interp" || tool === "comp_risk";
 
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -51,9 +62,7 @@ function ScienceEnginePanel() {
         <h3 className="font-semibold text-slate-900 text-sm">⚗️ Science Engine — Live Analysis Tools</h3>
         <p className="text-xs text-slate-500 mt-0.5">Run evaluation science analyses directly on your models and benchmarks.</p>
       </div>
-
       <div className="p-5 space-y-4">
-        {/* Tool selector */}
         <div className="grid grid-cols-3 gap-2">
           {tools.map(t => (
             <button key={t.key} onClick={() => { setTool(t.key as any); setResult(null); setError(null); }}
@@ -66,33 +75,79 @@ function ScienceEnginePanel() {
 
         {tool && (
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Model</label>
-              <select value={modelId} onChange={e => setModelId(Number(e.target.value))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
-                <option value="">Select model…</option>
-                {models.slice(0, 30).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Benchmark</label>
-              <select value={benchmarkId} onChange={e => setBenchmarkId(Number(e.target.value))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
-                <option value="">Select benchmark…</option>
-                {benchmarks.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
+            {needsModel && (
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Model</label>
+                <select value={modelId} onChange={e => setModelId(Number(e.target.value))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                  <option value="">Select model…</option>
+                  {models.slice(0, 30).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+            )}
+            {needsBenchmark && (
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Benchmark</label>
+                <select value={benchmarkId} onChange={e => setBenchmarkId(Number(e.target.value))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                  <option value="">Select benchmark…</option>
+                  {benchmarks.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+            )}
+            {needsCampaign && (
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Campaign</label>
+                <select value={campaignId} onChange={e => setCampaignId(Number(e.target.value))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                  <option value="">Select campaign…</option>
+                  {campaigns.filter((c: any) => c.status === "completed").map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {tool === "comp_risk" && (
+              <>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Autonomy Level</label>
+                  <select value={autonomyLevel} onChange={e => setAutonomyLevel(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                    {["L1","L2","L3","L4","L5"].map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-slate-500 mb-1 block">Domain scores (0–1)</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {["cyber","scheming","persuasion","cbrn","sycophancy","goal_drift"].map(d => (
+                      <div key={d} className="flex items-center gap-1">
+                        <span className="text-[10px] text-slate-500 w-20 truncate capitalize">{d}</span>
+                        <input type="number" min="0" max="1" step="0.05" placeholder="0.0"
+                          value={domains[d] ?? ""}
+                          onChange={e => setDomains(prev => ({ ...prev, [d]: Number(e.target.value) }))}
+                          className="w-16 border border-slate-200 rounded px-2 py-1 text-xs" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
         {tool && (
           <button
-            disabled={loading || !modelId || !benchmarkId}
+            disabled={loading || (needsModel && !modelId) || (needsBenchmark && !benchmarkId) || (needsCampaign && !campaignId)}
             onClick={() => {
-              const body = { model_id: modelId, benchmark_id: benchmarkId, n_samples: 10 };
-              if (tool === "cap_prop") run("/science/capability-propensity", body);
-              else if (tool === "mech_interp") run("/science/mech-interp/validate", body);
-              else run("/science/contamination/campaign/1", {});  // contamination via GET route
+              if (tool === "cap_prop") run("/science/capability-propensity", { model_id: modelId, benchmark_id: benchmarkId, n_samples: 10 });
+              else if (tool === "mech_interp") run("/science/mech-interp/validate", { model_id: modelId, benchmark_id: benchmarkId, n_samples: 10 });
+              else if (tool === "contamination") run("/science/contamination/campaign/1", {});
+              else if (tool === "comp_risk") run("/science/compositional-risk", {
+                model_name: models.find(m => m.id === modelId)?.name || "unknown",
+                domain_scores: Object.fromEntries(Object.entries(domains).filter(([,v]) => v > 0)),
+                autonomy_level: autonomyLevel,
+              });
+              else if (tool === "failure_cluster") run(`/science/failure-clusters/campaign/${campaignId}`, {}, "GET");
             }}
             className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
             {loading ? <><Spinner size={13} />Running…</> : <>Run Analysis</>}
@@ -101,70 +156,68 @@ function ScienceEnginePanel() {
 
         {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">{error}</div>}
 
-        {result && tool === "cap_prop" && (
+        {result && tool === "comp_risk" && (
           <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="font-medium text-slate-900 text-sm">Capability vs Propensity</h4>
-              <span className={`text-[11px] px-2 py-0.5 rounded border font-medium
-                ${result.scores?.gap_significance === "critical" ? "bg-red-50 text-red-700 border-red-200" :
-                  result.scores?.gap_significance === "large" ? "bg-orange-50 text-orange-700 border-orange-200" :
-                  "bg-slate-50 text-slate-600 border-slate-200"}`}>
-                {result.scores?.gap_significance} gap
+              <h4 className="font-semibold text-slate-900 text-sm">Compositional Risk Profile</h4>
+              <span className={`text-[11px] px-2 py-0.5 rounded border font-bold ${
+                result.verdict?.risk_level === "critical" ? "bg-red-100 text-red-700 border-red-200" :
+                result.verdict?.risk_level === "high"     ? "bg-orange-100 text-orange-700 border-orange-200" :
+                "bg-green-100 text-green-700 border-green-200"}`}>
+                {result.verdict?.risk_level?.toUpperCase()}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              {[
-                { label: "Capability", value: result.scores?.mean_capability },
-                { label: "Propensity", value: result.scores?.mean_propensity },
-                { label: "Gap", value: result.scores?.mean_gap },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-slate-50 rounded-lg py-3">
-                  <div className="text-[11px] text-slate-500">{label}</div>
-                  <div className={`text-lg font-bold ${label === "Gap" && (value ?? 0) > 0.15 ? "text-orange-600" : "text-slate-900"}`}>
-                    {value != null ? (label === "Gap" ? `${value > 0 ? "+" : ""}${Math.round(value * 100)}%` : `${Math.round(value * 100)}%`) : "—"}
-                  </div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {[["Composite", `${Math.round((result.scores?.composite_risk_score ?? 0) * 100)}%`],
+                ["Autonomy ×", `${result.scores?.autonomy_multiplier ?? 1}x`],
+                ["Tools ×", `${result.scores?.tool_multiplier ?? 1}x`],
+                ["Combo ×", `${result.scores?.combo_multiplier ?? 1}x`],
+              ].map(([label, value]) => (
+                <div key={label} className="bg-slate-50 rounded-lg py-2">
+                  <div className="text-[10px] text-slate-400">{label}</div>
+                  <div className="font-bold text-slate-900 text-sm">{value}</div>
                 </div>
               ))}
             </div>
-            {result.safety?.concern && (
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-xs text-orange-800 flex gap-2">
-                <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                <span>{result.safety.reason}</span>
-              </div>
+            {result.key_concerns?.slice(0, 3).map((c: string, i: number) => (
+              <p key={i} className="text-xs text-slate-600">• {c}</p>
+            ))}
+            {result.verdict?.autonomy_recommendation && (
+              <p className="text-xs text-slate-500 border-t border-slate-100 pt-2">
+                <span className="font-medium">Rec: </span>{result.verdict.autonomy_recommendation}
+              </p>
             )}
-            <div className="text-[11px] text-slate-500">P10 tail propensity: {Math.round((result.tail_analysis?.p10_propensity ?? 0) * 100)}% · Worst-case gap: {Math.round((result.tail_analysis?.worst_case_gap ?? 0) * 100)}%</div>
           </div>
         )}
 
-        {result && tool === "mech_interp" && (
+        {result && tool === "failure_cluster" && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+            <h4 className="font-semibold text-slate-900 text-sm">Failure Clustering</h4>
+            <p className="text-xs text-slate-600">{result.summary}</p>
+            {result.novel_clusters?.slice(0, 3).map((c: any) => (
+              <div key={c.cluster_id} className="text-xs bg-red-50 border border-red-100 rounded-lg p-3">
+                <div className="font-medium text-red-700 mb-1">Novel cluster — {c.size} instances {c.cross_model && "· cross-model"}</div>
+                <p className="text-slate-600">{c.causal_hypothesis?.slice(0, 120)}…</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {result && tool === "cap_prop" && (
           <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="font-medium text-slate-900 text-sm">Mech Interp Validation</h4>
-              <span className={`text-[11px] px-2 py-0.5 rounded border font-medium
-                ${result.validation?.signal === "supports" ? "bg-green-50 text-green-700 border-green-200" :
-                  result.validation?.signal === "undermines" ? "bg-red-50 text-red-700 border-red-200" :
-                  "bg-slate-50 text-slate-500 border-slate-200"}`}>
-                {result.validation?.signal}
-              </span>
+              <h4 className="font-semibold text-slate-900 text-sm">Capability vs Propensity</h4>
+              <span className="text-[11px] px-2 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200">{result.scores?.gap_significance} gap</span>
             </div>
-            <p className="text-xs text-slate-600">{result.validation?.interpretation}</p>
-            <div className="grid grid-cols-3 gap-2 text-xs text-center">
-              {[
-                { label: "CoT Consistency", value: result.cot_analysis?.consistency_rate },
-                { label: "Paraphrase Invariance", value: result.paraphrase_invariance?.invariance_rate },
-                { label: "Calibration Accuracy", value: result.calibration?.stated_confidence_accuracy },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-slate-50 rounded-lg py-2">
-                  <div className="text-[10px] text-slate-400">{label}</div>
-                  <div className="font-bold text-slate-900">{value != null ? `${Math.round(value * 100)}%` : "—"}</div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              {[["Capability", result.scores?.mean_capability], ["Propensity", result.scores?.mean_propensity], ["Gap", result.scores?.mean_gap]].map(([label, value]) => (
+                <div key={label as string} className="bg-slate-50 rounded-lg py-3">
+                  <div className="text-[11px] text-slate-500">{label}</div>
+                  <div className="text-lg font-bold text-slate-900">
+                    {value != null ? `${(value as number) > 0 && label === "Gap" ? "+" : ""}${Math.round((value as number) * 100)}%` : "—"}
+                  </div>
                 </div>
               ))}
-            </div>
-            <div className={`text-xs px-3 py-2 rounded-lg border font-medium text-center
-              ${(result.validation?.confidence_adjustment ?? 0) > 0 ? "bg-green-50 border-green-200 text-green-700" :
-                (result.validation?.confidence_adjustment ?? 0) < 0 ? "bg-red-50 border-red-200 text-red-700" :
-                "bg-slate-50 border-slate-200 text-slate-600"}`}>
-              Confidence adjustment: {result.validation?.confidence_adjustment > 0 ? "+" : ""}{result.validation?.confidence_adjustment?.toFixed(2) ?? "0.00"}
             </div>
           </div>
         )}
