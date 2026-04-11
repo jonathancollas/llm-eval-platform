@@ -43,7 +43,7 @@ def _validate_endpoint(url: Optional[str]) -> Optional[str]:
     except (ValueError, OSError):
         # If we can't resolve the name, fall back to simple string checks so that
         # obviously dangerous literals are still rejected.
-        blocked_prefixes = ("127.", "10.", "0.0.0.0", "169.254.", "192.168.", "::1", "fd", "fc")
+        blocked_prefixes = ("127.", "10.", "0.0.0.0", "169.254.", "192.168.", "::1", "fd", "fc")  # nosec B104
         if host == "localhost" or any(host.startswith(p) for p in blocked_prefixes):
             raise ValueError(f"Endpoint host '{host}' is not allowed.")
     return url

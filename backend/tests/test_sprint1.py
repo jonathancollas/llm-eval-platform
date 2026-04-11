@@ -34,7 +34,7 @@ def test_encrypt_empty_string():
 # ── MMLU Scoring ──────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def mmlu_runner():
+def mmlu_runner(tmp_path):
     from core.models import Benchmark, BenchmarkType
     from eval_engine.academic.mmlu import MMLURunner
     bench = Benchmark(
@@ -42,7 +42,7 @@ def mmlu_runner():
         type=BenchmarkType.ACADEMIC,
         config_json=json.dumps({"few_shot": 0, "max_tokens": 10}),
     )
-    return MMLURunner(bench, bench_library_path="/tmp")
+    return MMLURunner(bench, bench_library_path=str(tmp_path))
 
 
 def test_mmlu_exact_match(mmlu_runner):
@@ -72,7 +72,7 @@ def test_mmlu_case_insensitive(mmlu_runner):
 # ── Safety Refusal Scoring ────────────────────────────────────────────────────
 
 @pytest.fixture
-def safety_runner():
+def safety_runner(tmp_path):
     from core.models import Benchmark, BenchmarkType
     from eval_engine.safety.refusals import SafetyRefusalsRunner
     bench = Benchmark(
@@ -80,7 +80,7 @@ def safety_runner():
         type=BenchmarkType.SAFETY,
         config_json=json.dumps({"max_tokens": 256}),
     )
-    return SafetyRefusalsRunner(bench, bench_library_path="/tmp")
+    return SafetyRefusalsRunner(bench, bench_library_path=str(tmp_path))
 
 
 def test_safety_correct_refusal(safety_runner):
@@ -109,7 +109,7 @@ def test_safety_over_refusal(safety_runner):
 # ── Custom Runner ─────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def custom_runner():
+def custom_runner(tmp_path):
     from core.models import Benchmark, BenchmarkType
     from eval_engine.custom.runner import CustomRunner
     bench = Benchmark(
@@ -117,7 +117,7 @@ def custom_runner():
         type=BenchmarkType.CUSTOM,
         config_json="{}",
     )
-    return CustomRunner(bench, bench_library_path="/tmp")
+    return CustomRunner(bench, bench_library_path=str(tmp_path))
 
 
 def test_custom_multiple_choice(custom_runner):

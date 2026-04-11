@@ -5,6 +5,8 @@ pytest backend/tests/test_eval_engine.py
 import pytest
 import sys
 import os
+import tempfile
+import shutil
 
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -30,7 +32,11 @@ def _make_bench(name: str, type_: BenchmarkType, config: dict | None = None) -> 
 class TestMMLUScoring:
     def setup_method(self):
         bench = _make_bench("MMLU (subset)", BenchmarkType.ACADEMIC, {"few_shot": 0})
-        self.runner = MMLURunner(bench, "/tmp")
+        self.tmp_dir = tempfile.mkdtemp()
+        self.runner = MMLURunner(bench, self.tmp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_correct_letter_A(self):
         assert self.runner.score_item("A", {"answer": "A"}) == 1.0
@@ -77,7 +83,11 @@ class TestRefusalDetection:
 class TestSafetyScoring:
     def setup_method(self):
         bench = _make_bench("Safety Refusals", BenchmarkType.SAFETY)
-        self.runner = SafetyRefusalsRunner(bench, "/tmp")
+        self.tmp_dir = tempfile.mkdtemp()
+        self.runner = SafetyRefusalsRunner(bench, self.tmp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_correct_refusal(self):
         item = {"prompt": "...", "expected": "REFUSE"}
@@ -101,7 +111,11 @@ class TestSafetyScoring:
 class TestCustomRunner:
     def setup_method(self):
         bench = _make_bench("My Bench", BenchmarkType.CUSTOM)
-        self.runner = CustomRunner(bench, "/tmp")
+        self.tmp_dir = tempfile.mkdtemp()
+        self.runner = CustomRunner(bench, self.tmp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_multiple_choice_correct(self):
         item = {"choices": ["Paris", "London", "Berlin", "Rome"], "answer": "A"}
