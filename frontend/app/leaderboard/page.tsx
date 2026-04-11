@@ -48,7 +48,7 @@ export default function LeaderboardPage() {
 
         {/* Domain cards */}
         <div>
-          <h2 className="text-sm font-medium text-slate-700 mb-4">Leaderboards par domaine</h2>
+          <h2 className="text-sm font-medium text-slate-700 mb-4">Leaderboards by domain</h2>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {domains.filter(d => d.key !== "global").map(d => (
               <Link key={d.key} href={`/leaderboard/${d.key}`}
@@ -64,8 +64,8 @@ export default function LeaderboardPage() {
         {/* Global ranking table */}
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="font-medium text-slate-900 text-sm">Classement global</h2>
-            {global && <span className="text-xs text-slate-400">{global.total_runs} runs · mis à jour {new Date(global.last_updated).toLocaleDateString("en-US")}</span>}
+            <h2 className="font-medium text-slate-900 text-sm">Global ranking</h2>
+            {global && <span className="text-xs text-slate-400">{global.total_runs} runs · updated {new Date(global.last_updated).toLocaleDateString("en-US")}</span>}
           </div>
 
           {loading ? (
@@ -73,7 +73,7 @@ export default function LeaderboardPage() {
           ) : !global || global.rows.length === 0 ? (
             <div className="py-16 text-center text-slate-400 text-sm">
               <div className="text-3xl mb-3">📊</div>
-              <p className="font-medium text-slate-600 mb-1">No results disponible</p>
+              <p className="font-medium text-slate-600 mb-1">No results available</p>
               <p className="text-xs">Run evaluation campaigns to populate the leaderboard.</p>
               <Link href="/campaigns" className="mt-4 inline-block text-xs text-blue-600 hover:underline">Create a campaign →</Link>
             </div>
@@ -83,11 +83,11 @@ export default function LeaderboardPage() {
                 <thead>
                   <tr className="border-b border-slate-100">
                     <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide w-10">#</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Modèle</th>
-                    <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Score moyen</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Model</th>
+                    <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Average score</th>
                     <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Benchmarks</th>
-                    <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Coût total</th>
-                    <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Latence moy.</th>
+                    <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Total cost</th>
+                    <th className="text-center px-4 py-3 text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. latency</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -105,7 +105,7 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
-            <h2 className="font-semibold text-slate-900">Catalogue de models</h2>
+            <h2 className="font-semibold text-slate-900">Model catalog</h2>
             <p className="text-xs text-slate-400 mt-0.5">via OpenRouter · {models.length} models</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X size={16} /></button>
@@ -131,7 +131,7 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
           {!addingAll && notAddedCount > 0 && (
             <button onClick={handleAddAll}
               className="flex items-center gap-2 text-xs px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700 transition-colors">
-              <Plus size={12} /> Tout ajouter ({notAddedCount})
+              <Plus size={12} /> Add all ({notAddedCount})
             </button>
           )}
           {addingAll && addAllProgress && (
@@ -148,7 +148,7 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
             <div className="flex justify-center py-16"><Spinner size={24} /></div>
           ) : error ? (
             <div className="text-center py-16 text-red-500 text-sm">
-              Impossible de charger le catalogue.
+              Unable to load the catalog.
               <br /><span className="text-xs text-slate-400">Check that OPENROUTER_API_KEY is configured.</span>
             </div>
           ) : models.length === 0 ? (
@@ -168,7 +168,7 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
                         {m.is_open_source ? <Unlock size={9} className="inline mr-0.5" /> : <Lock size={9} className="inline mr-0.5" />}
                         {access.label}
                       </span>
-                      {m.is_free && <Badge className="bg-emerald-100 text-emerald-700">Gratuit</Badge>}
+                      {m.is_free && <Badge className="bg-emerald-100 text-emerald-700">Free</Badge>}
                       {m.tags.filter(t => t !== "gratuit" && t !== "open-source").slice(0, 2).map(t => (
                         <Badge key={t} className="bg-slate-100 text-slate-600">{t}</Badge>
                       ))}
@@ -184,7 +184,7 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
                   </div>
                   <button onClick={() => handleAdd(m)}
                     disabled={isAdding || isAdded || addingAll}
-                    title={isAdded ? "Déjà dans le catalogue" : "Ajouter au catalogue"}
+                    title={isAdded ? "Already in the catalog" : "Add to catalog"}
                     className={`shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
                       isAdded ? "bg-green-50 text-green-600 border border-green-200 cursor-default"
                       : "bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40"}`}>

@@ -68,7 +68,7 @@ const OllamaPullButton = memo(function OllamaPullButton({ modelId }: { modelId: 
       setSt("done"); setProg("✓");
     } catch(e:any){setSt("error");setProg(String(e).slice(0,60));}
   },[modelId]);
-  if(st==="done") return <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 size={12}/>Installé</span>;
+  if(st==="done") return <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 size={12}/>Installed</span>;
   return <div className="flex items-center gap-2"><button onClick={pull} disabled={st==="pulling"} className="flex items-center gap-1 text-xs px-2.5 py-1.5 border border-purple-200 rounded-lg hover:bg-purple-50 text-purple-700 disabled:opacity-50">{st==="pulling"?<Spinner size={11}/>:<Download size={11}/>}{st==="pulling"?"Pulling…":"⬇ Local"}</button>{st==="pulling"&&<span className="text-[10px] text-slate-400">{prog}</span>}{st==="error"&&<span className="text-[10px] text-red-500">Ollama not running</span>}</div>;
 });
 
@@ -88,7 +88,7 @@ const ModelDetail = memo(function ModelDetail({ m }: { m: LLMModel }) {
         {m.supports_reasoning&&<Badge className="bg-amber-50 text-amber-700 border border-amber-100"><Brain size={10} className="inline mr-1"/>Reasoning</Badge>}
         {m.is_moderated&&<Badge className="bg-red-50 text-red-600 border border-red-100"><Shield size={10} className="inline mr-1"/>Moderated</Badge>}
       </div>
-      {canPull&&<div className="bg-purple-50 border border-purple-100 rounded-lg p-3"><div className="text-slate-600 font-medium mb-2 flex items-center gap-1.5"><HardDrive size={12}/>Télécharger en local</div><OllamaPullButton modelId={m.model_id}/></div>}
+      {canPull&&<div className="bg-purple-50 border border-purple-100 rounded-lg p-3"><div className="text-slate-600 font-medium mb-2 flex items-center gap-1.5"><HardDrive size={12}/>Download locally</div><OllamaPullButton modelId={m.model_id}/></div>}
       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
         {m.tokenizer&&<div><span className="text-slate-400">Tokenizer:</span> <span className="font-mono">{m.tokenizer}</span></div>}
         {m.instruct_type&&<div><span className="text-slate-400">Format:</span> <span className="font-mono">{m.instruct_type}</span></div>}
@@ -197,7 +197,7 @@ export default function ModelsPage(){
   },[refreshModels]);
   const handleImportOllama=useCallback(async()=>{
     setImportingOllama(true);
-    try{const r=await ollamaApi.import();if(r.added>0)refreshModels();alert(r.available?`${r.added} modèle(s) importé(s)`:"Ollama non disponible");}
+    try{const r=await ollamaApi.import();if(r.added>0)refreshModels();alert(r.available?`${r.added} model(s) imported`:"Ollama unavailable");}
     catch(e:any){alert(String(e));}
     finally{setImportingOllama(false);}
   },[refreshModels]);
@@ -240,7 +240,7 @@ export default function ModelsPage(){
           <FilterChip label={`👁 Vision (${visionCount})`} active={filters.onlyVision} onClick={()=>setFilter("onlyVision",!filters.onlyVision)}/>
           <FilterChip label={`🔧 Tools (${toolsCount})`} active={filters.onlyTools} onClick={()=>setFilter("onlyTools",!filters.onlyTools)}/>
           <FilterChip label={`🧠 Reasoning (${reasoningCount})`} active={filters.onlyReasoning} onClick={()=>setFilter("onlyReasoning",!filters.onlyReasoning)}/>
-          {(Object.values(filters).some(v=>v!==''&&v!==false))&&<button onClick={resetFilters} className="text-xs px-3 py-1.5 text-slate-400 hover:text-slate-700">Réinitialiser</button>}
+          {(Object.values(filters).some(v=>v!==''&&v!==false))&&<button onClick={resetFilters} className="text-xs px-3 py-1.5 text-slate-400 hover:text-slate-700">Reset</button>}
           <span className="text-xs text-slate-400 ml-auto">{filtered.length} / {models.length} models</span>
         </div>
       </div>

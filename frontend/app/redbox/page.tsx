@@ -531,7 +531,7 @@ export default function RedboxPage() {
           <div className="space-y-6 max-w-4xl">
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
               <AlertTriangle size={14} className="inline mr-2" />
-              Variantes générées à des fins d'évaluation de sécurité. Usage réservé aux équipes autorisées.
+              Variants generated for security evaluation purposes. Use restricted to authorized teams.
             </div>
 
             <div>
@@ -562,14 +562,14 @@ export default function RedboxPage() {
             <button onClick={generate} disabled={generating || !seed.trim() || !selectedMutations.length}
               className="flex items-center gap-2 bg-red-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-40 transition-colors">
               {generating ? <Spinner size={14} /> : <Zap size={15} />}
-              {generating ? "Génération LLM en cours…" : `Forger ${selectedMutations.length} types de variants`}
+              {generating ? "LLM generation in progress…" : `Forge ${selectedMutations.length} variant types`}
             </button>
 
             {/* Generated variants */}
             {variants.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium text-slate-900">{variants.length} variants forgés</h3>
+                  <h3 className="font-medium text-slate-900">{variants.length} forged variants</h3>
                 </div>
 
                 {/* Model selector */}
@@ -633,7 +633,7 @@ export default function RedboxPage() {
                         </pre>
                         {isResult && item.response && (
                           <div className="mt-2">
-                            <span className="text-[10px] text-slate-400 uppercase font-medium">Réponse model</span>
+                            <span className="text-[10px] text-slate-400 uppercase font-medium">Model response</span>
                             <pre className={`text-xs whitespace-pre-wrap font-mono rounded-lg p-2.5 border mt-0.5 line-clamp-4 ${
                               item.breached ? "bg-red-50 border-red-100 text-red-700" : "bg-green-50 border-green-100 text-green-700"
                             }`}>{item.response}</pre>
@@ -658,7 +658,7 @@ export default function RedboxPage() {
               </button>
               <button onClick={() => setExploitFilter("breached")}
                 className={`text-xs px-3 py-1.5 rounded-lg ${exploitFilter === "breached" ? "bg-red-600 text-white" : "border border-red-200 text-red-600"}`}>
-                🔴 Brèches ({(exploits as any)?.total_breached ?? 0})
+                🔴 Breaches ({(exploits as any)?.total_breached ?? 0})
               </button>
               <button onClick={loadExploits} className="text-xs text-slate-400 hover:text-slate-600 ml-auto">
                 <RotateCcw size={12} />
@@ -693,7 +693,7 @@ export default function RedboxPage() {
                         <div className="bg-slate-50 rounded-xl p-4 mx-2 mb-1 border border-slate-100 text-xs space-y-2">
                           <div><span className="text-slate-400 uppercase text-[10px] font-medium">Prompt adversarial</span>
                             <pre className="mt-0.5 font-mono whitespace-pre-wrap">{e.adversarial_prompt}</pre></div>
-                          <div><span className="text-slate-400 uppercase text-[10px] font-medium">Réponse model</span>
+                          <div><span className="text-slate-400 uppercase text-[10px] font-medium">Model response</span>
                             <pre className={`mt-0.5 font-mono whitespace-pre-wrap ${e.breached ? "text-red-600" : "text-green-600"}`}>{e.model_response}</pre></div>
                           <div className="flex items-center gap-4 text-slate-500 pt-1">
                             <span>Failure: {e.failure_detected || "—"}</span>
@@ -724,7 +724,7 @@ export default function RedboxPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="text-left text-xs text-slate-500 font-medium p-4">Modèle</th>
+                      <th className="text-left text-xs text-slate-500 font-medium p-4">Model</th>
                       {heatmap.mutations.map(mt => {
                         const cfg = MUTATION_TYPES.find(m => m.key === mt);
                         return <th key={mt} className="text-center text-xs text-slate-500 font-medium p-4">{cfg?.icon} {cfg?.label ?? mt}</th>;

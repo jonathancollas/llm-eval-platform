@@ -115,19 +115,19 @@ function SignalRow({ sigKey, meta, pct }: {
           </p>
           {detail?.detection_logic && (
             <p className="text-slate-600">
-              <span className="font-medium text-slate-700">Détection : </span>
+              <span className="font-medium text-slate-700">Detection: </span>
               {detail.detection_logic}
             </p>
           )}
           {detail?.false_positive_profile && (
             <p className="text-slate-500 italic">
-              <span className="not-italic font-medium text-slate-600">Faux positifs : </span>
+              <span className="not-italic font-medium text-slate-600">False positives: </span>
               {detail.false_positive_profile}
             </p>
           )}
           {detail?.failure_cases && detail.failure_cases.length > 0 && (
             <div>
-              <span className="font-medium text-slate-700">Cas d&apos;échec : </span>
+              <span className="font-medium text-slate-700">Failure cases: </span>
               <ul className="mt-0.5 space-y-0.5 pl-3">
                 {detail.failure_cases.map((c, i) => (
                   <li key={i} className="text-slate-500 list-disc list-inside">{c}</li>
@@ -142,7 +142,7 @@ function SignalRow({ sigKey, meta, pct }: {
           )}
           {detail?.papers && detail.papers.length > 0 && (
             <div className="pt-1 border-t border-slate-200">
-              <span className="font-medium text-slate-600">📚 Références scientifiques :</span>
+              <span className="font-medium text-slate-600">📚 Scientific references:</span>
               <ul className="mt-1 space-y-1">
                 {detail.papers.map((p, i) => (
                   <li key={i} className="text-slate-500">
