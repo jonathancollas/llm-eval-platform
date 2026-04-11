@@ -146,7 +146,11 @@ async def upload_dataset(
     # Bounded read — never read more than MAX_UPLOAD_BYTES
     chunks = []
     total = 0
-    async for chunk in file:
+    chunk_size = 1024 * 1024  # 1MB
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
         total += len(chunk)
         if total > MAX_UPLOAD_BYTES:
             raise HTTPException(
@@ -192,6 +196,7 @@ async def upload_dataset(
     dest.write_bytes(content)
 
     bench.dataset_path = f"custom/{filename}"
+    bench.has_dataset = True
     bench.num_samples = bench.num_samples or len(items)
     session.add(bench)
     session.commit()
