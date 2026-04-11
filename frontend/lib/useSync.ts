@@ -55,14 +55,6 @@ export function useSync(): SyncState {
     };
 
     pollRef.current = setInterval(async () => {
-      attempts += 1;
-
-      // Hard timeout — give up after MAX_ATTEMPTS regardless of server state
-      if (attempts >= MAX_ATTEMPTS) {
-        stopPolling();
-        return;
-      }
-
       try {
         const res = await fetch(`${API_BASE}/sync/startup/status`);
         if (!res.ok) {
@@ -78,11 +70,16 @@ export function useSync(): SyncState {
           setModels(data.models_added ?? 0);
           stopPolling();
         }
-      } catch {
-        // Network hiccup
+      } catch (err) {
+        // Network hiccup — log for diagnostics, then count toward error threshold
+        console.warn("[useSync] polling error:", err);
         consecutiveErrors += 1;
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) stopPolling();
       }
+
+      // Hard timeout — give up after MAX_ATTEMPTS regardless of server state
+      attempts += 1;
+      if (attempts >= MAX_ATTEMPTS) stopPolling();
     }, POLL_INTERVAL_MS);
 
     return () => {
