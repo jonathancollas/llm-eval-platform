@@ -123,11 +123,13 @@ def is_running(campaign_id: int) -> bool:
 
 
 def get_queue_status() -> dict:
-    """Return queue status summary for the health endpoint."""
-    in_memory = {cid for cid, t in _running_tasks.items() if not t.done()}
+    """Return a summary dict consumed by the /api/health endpoint."""
+    running = get_all_running()
     return {
-        "mode": "in_memory",
-        "in_memory_tasks": len(in_memory),
+        "mode": "asyncio",
+        "in_memory_tasks": len([s for s in running.values() if s == "running"]),
+        "stale_tasks": len([s for s in running.values() if s == "stale"]),
+        "total_tracked": len(running),
     }
 
 

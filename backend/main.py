@@ -67,10 +67,15 @@ async def lifespan(app: FastAPI):
     await loop.run_in_executor(None, _sync_catalog)
 
     # 4. Async OpenRouter sync in background (non-blocking)
-    asyncio.create_task(_background_openrouter_sync())
+    # Store the task so it can be properly cancelled on shutdown.
+    app.state.bg_sync_task = asyncio.create_task(_background_openrouter_sync())
 
     logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
     yield
+    # Cancel the background task and wait for it to finish cleanly.
+    task = app.state.bg_sync_task
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
     logger.info("Shutdown.")
 
 

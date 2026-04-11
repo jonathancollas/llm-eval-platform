@@ -1,17 +1,30 @@
 """
 Symmetric encryption for stored API keys using Fernet (AES-128-CBC + HMAC-SHA256).
-The master secret_key from settings is used to derive the Fernet key.
+The master secret_key from settings is used to derive the Fernet key via HKDF-SHA256
+so that the encryption key is properly domain-separated from the raw secret.
 """
 import base64
-import hashlib
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from .config import get_settings
+
+# HKDF info label — changing this would invalidate all stored ciphertexts,
+# so treat it as an opaque constant tied to this application.
+_HKDF_INFO = b"llm-eval-platform-fernet-v1"
 
 
 def _get_fernet() -> Fernet:
     settings = get_settings()
-    # Derive a 32-byte key from the secret_key string
-    raw = hashlib.sha256(settings.secret_key.encode()).digest()
+    # Derive a 32-byte key using HKDF-SHA256 (RFC 5869).
+    # This provides proper domain separation and makes future key rotation
+    # possible by bumping the info label alongside a re-encryption migration.
+    raw = HKDF(
+        algorithm=SHA256(),
+        length=32,
+        salt=None,
+        info=_HKDF_INFO,
+    ).derive(settings.secret_key.encode())
     key = base64.urlsafe_b64encode(raw)
     return Fernet(key)
 
