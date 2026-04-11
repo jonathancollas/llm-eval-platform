@@ -22,6 +22,9 @@ from api.routers import tenants
 from api.routers import research
 from api.routers import evidence
 from api.routers import deep_analysis
+from api.routers import multiagent
+from api.routers import events as events_router
+from eval_engine.event_pipeline import register_default_subscribers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +39,10 @@ async def lifespan(app: FastAPI):
     # 1. Create tables + reset stuck campaigns + update has_dataset flags
     logger.info("Startup — initializing DB...")
     create_db_and_tables()
+
+    # 2. Wire event-sourced pipeline subscribers
+    register_default_subscribers()
+    logger.info("Startup — event bus subscribers registered.")
 
     # 2. Sync catalog benchmarks (synchronous — no network, fast)
     logger.info("Startup — syncing benchmark catalog...")
@@ -170,7 +177,9 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
 
 for router in [models.router, benchmarks.router, campaigns.router, results.router,
                reports.router, catalog.router, leaderboard.router, sync.router, genome.router,
-               redbox.router, judge.router, agents.router, policy.router, tenants.router, research.router, evidence.router, deep_analysis.router]:
+               redbox.router, judge.router, agents.router, policy.router, tenants.router,
+               research.router, evidence.router, deep_analysis.router,
+               multiagent.router, events_router.router]:
     app.include_router(router, prefix="/api")
 
 

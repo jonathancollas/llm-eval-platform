@@ -15,9 +15,11 @@ from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobS
 from core.config import get_settings
 from eval_engine.registry import get_runner
 from core.utils import safe_extract_text
+from eval_engine.event_pipeline import get_bus, EventType
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+_bus = get_bus()
 
 
 async def execute_campaign(campaign_id: int) -> None:
@@ -59,6 +61,18 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         logger.info(f"Campaign {campaign_id} executing: '{campaign.name}' "
                     f"({len(model_ids)} models × {len(benchmark_ids)} benchmarks = {len(model_ids)*len(benchmark_ids)} runs)")
         total_runs = len(model_ids) * len(benchmark_ids)
+
+        # Emit campaign started event (non-blocking, fire-and-forget)
+        asyncio.create_task(_bus.emit(
+            EventType.CAMPAIGN_STARTED,
+            campaign_id=campaign_id,
+            payload={
+                "name": campaign.name,
+                "total_runs": total_runs,
+                "model_ids": model_ids,
+                "benchmark_ids": benchmark_ids,
+            },
+        ))
 
         if total_runs == 0:
             campaign.status = JobStatus.COMPLETED
@@ -102,6 +116,19 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                 eval_run_ids.append(eval_run.id)
                 run_coroutines.append(_run_one(model, benchmark, campaign, eval_run.id))
 
+                # Emit RUN_STARTED
+                asyncio.create_task(_bus.emit(
+                    EventType.RUN_STARTED,
+                    campaign_id=campaign_id,
+                    run_id=eval_run.id,
+                    model_id=model_id,
+                    benchmark_id=benchmark_id,
+                    payload={
+                        "model_name": model.name,
+                        "benchmark_name": benchmark.name,
+                    },
+                ))
+
             if not run_coroutines:
                 continue
 
@@ -133,6 +160,13 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     logger.error(f"EvalRun {eval_run_id} failed: {friendly}")
                     eval_run.status = JobStatus.FAILED
                     eval_run.error_message = friendly
+                    # Emit RUN_FAILED
+                    asyncio.create_task(_bus.emit(
+                        EventType.RUN_FAILED,
+                        campaign_id=campaign_id,
+                        run_id=eval_run_id,
+                        payload={"error": friendly[:300]},
+                    ))
                 else:
                     summary, item_results = result
                     eval_run.status = JobStatus.COMPLETED
@@ -182,6 +216,20 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                         f"items={summary.num_items} (streamed={len(already_ids)}, batch={len(missing)}) "
                         f"latency={summary.total_latency_ms}ms"
                     )
+                    # Emit RUN_COMPLETED
+                    asyncio.create_task(_bus.emit(
+                        EventType.RUN_COMPLETED,
+                        campaign_id=campaign_id,
+                        run_id=eval_run_id,
+                        model_id=eval_run.model_id,
+                        benchmark_id=eval_run.benchmark_id,
+                        payload={
+                            "score": summary.score,
+                            "num_items": summary.num_items,
+                            "total_cost_usd": summary.total_cost_usd,
+                            "total_latency_ms": summary.total_latency_ms,
+                        },
+                    ))
 
                 eval_run.completed_at = datetime.utcnow()
                 session.add(eval_run)
@@ -201,6 +249,13 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             else:
                 campaign.error_message = None
 
+            # Emit CAMPAIGN_PROGRESS
+            asyncio.create_task(_bus.emit(
+                EventType.CAMPAIGN_PROGRESS,
+                campaign_id=campaign_id,
+                payload={"progress": campaign.progress, "completed_runs": completed_runs, "total_runs": total_runs},
+            ))
+
             session.add(campaign)
             session.commit()
 
@@ -215,11 +270,23 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         session.commit()
         logger.info(f"Campaign {campaign_id} completed in {_format_eta(int(time.monotonic() - campaign_start))}.")
 
+        # Emit CAMPAIGN_COMPLETED
+        asyncio.create_task(_bus.emit(
+            EventType.CAMPAIGN_COMPLETED,
+            campaign_id=campaign_id,
+            payload={"duration_s": int(time.monotonic() - campaign_start)},
+        ))
+
         # Auto-compute Failure Genome
         try:
             from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
             _compute_genome_for_campaign(campaign_id, session)
             logger.info(f"Campaign {campaign_id}: Failure Genome computed.")
+            asyncio.create_task(_bus.emit(
+                EventType.GENOME_COMPUTED,
+                campaign_id=campaign_id,
+                payload={"status": "computed"},
+            ))
         except Exception as e:
             logger.warning(f"Genome computation failed (non-blocking): {e}")
 
@@ -228,6 +295,11 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             if settings.anthropic_api_key:
                 await _auto_judge_campaign(campaign_id, session)
                 logger.info(f"Campaign {campaign_id}: Auto-judge evaluation completed.")
+                asyncio.create_task(_bus.emit(
+                    EventType.JUDGE_COMPLETED,
+                    campaign_id=campaign_id,
+                    payload={"judge_model": "claude-sonnet-4-20250514"},
+                ))
         except Exception as e:
             logger.warning(f"Auto-judge failed (non-blocking): {e}")
 
@@ -369,6 +441,25 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
                     ))
 
                 s.commit()
+
+            # Emit ITEM_COMPLETED event (non-blocking, best-effort)
+            if item_result is not None:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(_bus.emit(
+                            EventType.ITEM_COMPLETED,
+                            campaign_id=campaign.id,
+                            run_id=eval_run_id,
+                            payload={
+                                "item_index": item_result.item_index,
+                                "score": item_result.score,
+                                "latency_ms": item_result.latency_ms,
+                            },
+                        ))
+                except Exception:
+                    pass  # Never block the eval for telemetry
+
         except Exception as ex:
             logger.debug(f"Progress callback error (non-blocking): {ex}")
 
