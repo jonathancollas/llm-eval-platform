@@ -7,6 +7,45 @@ import { Plus, GitFork, FlaskConical, ScrollText, Users, ChevronRight,
          CheckCircle2, Clock, Copy, ExternalLink, BookOpen, Beaker } from "lucide-react";
 
 const API = API_BASE;
+
+type WorkspaceStatus = "draft" | "active" | "published" | "archived";
+type ConfidenceGrade = "A" | "B" | "C" | "D" | "insufficient";
+
+interface Workspace {
+  id: number;
+  name: string;
+  description?: string | null;
+  hypothesis?: string | null;
+  protocol?: string | null;
+  status: WorkspaceStatus;
+  risk_domain: string;
+  visibility: string;
+  fork_count: number;
+}
+
+interface Replication {
+  lab: string;
+  status: string;
+  successful: boolean;
+  concordance_score?: number;
+  notes?: string;
+}
+
+interface RepSummary {
+  total?: number;
+  successful?: number;
+  avg_concordance?: number;
+  confidence_grade?: ConfidenceGrade;
+}
+
+interface Manifest {
+  seed?: string | number;
+  temperature?: number;
+  judge_version?: string;
+  platform_version?: string;
+  replication_command?: string;
+  [key: string]: unknown;
+}
 const RISK_DOMAINS = [
   { value: "capability",  label: "Dangerous Capability",  icon: "⚡" },
   { value: "propensity",  label: "Propensity / Scheming", icon: "🎭" },

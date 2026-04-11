@@ -13,4 +13,6 @@ anthropic>=0.40.0
 pytest>=8.3.0
 pytest-asyncio>=0.25.0
 lm-eval>=0.4.4
+# NOTE: sqlitedict (transitive dep of lm-eval) has CVE-2024-35515 (insecure deserialization).
+# No fixed version is available yet. Monitor https://github.com/RaRe-Technologies/sqlitedict/issues.
 datasets>=2.18.0

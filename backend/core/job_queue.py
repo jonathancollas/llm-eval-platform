@@ -14,6 +14,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Coroutine, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
+
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_S = 30
@@ -116,6 +118,7 @@ def is_running(campaign_id: int) -> bool:
                 age = (datetime.utcnow() - heartbeat).total_seconds()
                 return age <= STALE_THRESHOLD_S
     except Exception:
+    except (OSError, SQLAlchemyError):
         pass
     return False
 
@@ -126,6 +129,13 @@ def get_queue_status() -> dict:
     return {
         "mode": "in_memory",
         "in_memory_tasks": len(in_memory),
+    """Return a summary dict consumed by the /api/health endpoint."""
+    running = get_all_running()
+    return {
+        "mode": "asyncio",
+        "in_memory_tasks": len([s for s in running.values() if s == "running"]),
+        "stale_tasks": len([s for s in running.values() if s == "stale"]),
+        "total_tracked": len(running),
     }
 
 
