@@ -202,7 +202,6 @@ def list_models(
     Use search/provider/free_only to reduce payload for the UI.
     """
     from sqlmodel import func
-    from sqlalchemy import over
 
     # Use a subquery to pick the row with the lowest id for each model_id so
     # deduplication is done in SQL instead of loading all rows into memory.
