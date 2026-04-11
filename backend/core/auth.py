@@ -11,6 +11,7 @@ Security hardening (#Medium):
 import hashlib
 import re
 import secrets
+import threading
 import time
 import logging
 from collections import defaultdict
@@ -28,18 +29,25 @@ logger = logging.getLogger(__name__)
 _TENANT_KEY_RE = re.compile(r"^mr_[0-9a-f]{48}$")
 
 # ── In-memory rate limiter: {ip: [(timestamp, …)]} ───────────────────────────
+# NOTE: relies on Python 3.7+ dict insertion-order guarantee for LRU eviction.
 _failed_attempts: dict = defaultdict(list)
+_failed_attempts_lock = threading.Lock()
 _MAX_FAILURES = 10          # per window
 _WINDOW_SECONDS = 60        # rolling window
+# Hard cap on tracked IPs — prevents unbounded growth under a scanning attack
+# that cycles through many unique IPs. When full, the oldest IP is evicted.
+_MAX_TRACKED_IPS = 10_000
 
 
 def _check_rate_limit(ip: str) -> None:
     """Raise 429 if this IP has exceeded failed-attempt threshold."""
     now = time.monotonic()
     window_start = now - _WINDOW_SECONDS
-    # Purge old entries
-    _failed_attempts[ip] = [t for t in _failed_attempts[ip] if t > window_start]
-    if len(_failed_attempts[ip]) >= _MAX_FAILURES:
+    with _failed_attempts_lock:
+        # Purge old entries for this IP
+        _failed_attempts[ip] = [t for t in _failed_attempts[ip] if t > window_start]
+        count = len(_failed_attempts[ip])
+    if count >= _MAX_FAILURES:
         raise HTTPException(
             status_code=429,
             detail=f"Too many invalid auth attempts. Try again in {_WINDOW_SECONDS}s.",
@@ -47,7 +55,12 @@ def _check_rate_limit(ip: str) -> None:
 
 
 def _record_failure(ip: str) -> None:
-    _failed_attempts[ip].append(time.monotonic())
+    with _failed_attempts_lock:
+        # Evict the oldest-inserted IP when the table is full to bound memory usage.
+        if ip not in _failed_attempts and len(_failed_attempts) >= _MAX_TRACKED_IPS:
+            oldest_ip = next(iter(_failed_attempts))
+            del _failed_attempts[oldest_ip]
+        _failed_attempts[ip].append(time.monotonic())
 
 
 def hash_api_key(key: str) -> str:
