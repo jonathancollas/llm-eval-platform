@@ -437,3 +437,169 @@ def _count_by(events: list, field: str) -> dict:
         val = getattr(e, field, "unknown") or "unknown"
         counts[val] = counts.get(val, 0) + 1
     return counts
+
+
+# ── #109 Benchmark fork & citation lineage ────────────────────────────────────
+
+@router.get("/benchmarks/{benchmark_id}/forks")
+def get_benchmark_forks(benchmark_id: int, session: Session = Depends(get_session)):
+    """Return fork lineage for a benchmark."""
+    from core.models import Benchmark
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(404)
+    # Children: benchmarks forked FROM this one
+    children = session.exec(
+        select(Benchmark).where(Benchmark.forked_from == benchmark_id)
+    ).all()
+    # Parent
+    parent = session.get(Benchmark, bench.forked_from) if getattr(bench, "forked_from", None) else None
+    return {
+        "benchmark_id": benchmark_id,
+        "benchmark_name": bench.name,
+        "parent": {"id": parent.id, "name": parent.name} if parent else None,
+        "forks": [{"id": c.id, "name": c.name, "source": getattr(c, "source", "public")} for c in children],
+        "fork_count": len(children),
+        "lineage_depth": 1 if parent else 0,
+    }
+
+
+# ── #110 Multi-lab replication workflow ──────────────────────────────────────
+
+class ReplicationRequest(BaseModel):
+    workspace_id: int
+    replicating_lab: str
+    notes: str = ""
+
+
+class ReplicationResult(BaseModel):
+    workspace_id: int
+    replicating_lab: str
+    concordance_score: float   # 0-1: how well results match
+    successful: bool
+    delta_capability: Optional[float] = None
+    delta_propensity: Optional[float] = None
+    notes: str = ""
+
+
+@router.post("/workspaces/{workspace_id}/replications")
+def request_replication(
+    workspace_id: int,
+    payload: ReplicationRequest,
+    session: Session = Depends(get_session),
+):
+    """Request an independent replication of a workspace (#110)."""
+    ws = session.get(Workspace, workspace_id)
+    if not ws:
+        raise HTTPException(404, "Workspace not found.")
+    # Store replication request in workspace tags/metadata
+    import json as _json
+    reps_raw = getattr(ws, "tags", "[]") or "[]"
+    try:
+        reps = _json.loads(reps_raw)
+    except Exception:
+        reps = []
+    reps.append({
+        "type": "replication_request",
+        "lab": payload.replicating_lab,
+        "notes": payload.notes,
+        "requested_at": datetime.utcnow().isoformat(),
+        "status": "pending",
+    })
+    ws.tags = _json.dumps(reps)
+    session.add(ws)
+    session.commit()
+    return {"workspace_id": workspace_id, "status": "replication_requested", "lab": payload.replicating_lab}
+
+
+@router.post("/workspaces/{workspace_id}/replications/submit")
+def submit_replication_result(
+    workspace_id: int,
+    payload: ReplicationResult,
+    session: Session = Depends(get_session),
+):
+    """Submit completed replication results (#110)."""
+    ws = session.get(Workspace, workspace_id)
+    if not ws:
+        raise HTTPException(404, "Workspace not found.")
+    import json as _json
+    reps_raw = getattr(ws, "tags", "[]") or "[]"
+    try:
+        reps = _json.loads(reps_raw)
+    except Exception:
+        reps = []
+    # Find and update matching pending request or add new
+    found = False
+    for rep in reps:
+        if rep.get("type") == "replication_request" and rep.get("lab") == payload.replicating_lab and rep.get("status") == "pending":
+            rep.update({
+                "status": "completed",
+                "concordance_score": payload.concordance_score,
+                "successful": payload.successful,
+                "delta_capability": payload.delta_capability,
+                "delta_propensity": payload.delta_propensity,
+                "notes": payload.notes,
+                "completed_at": datetime.utcnow().isoformat(),
+            })
+            found = True
+            break
+    if not found:
+        reps.append({
+            "type": "replication_result",
+            "lab": payload.replicating_lab,
+            "concordance_score": payload.concordance_score,
+            "successful": payload.successful,
+            "completed_at": datetime.utcnow().isoformat(),
+        })
+    ws.tags = _json.dumps(reps)
+    session.add(ws)
+    session.commit()
+
+    # Compute scientific confidence
+    completed = [r for r in reps if r.get("type") in ("replication_request", "replication_result")
+                 and r.get("status") == "completed" or r.get("type") == "replication_result"]
+    n_success = sum(1 for r in completed if r.get("successful"))
+    n_total = len(completed)
+    avg_concordance = sum(r.get("concordance_score", 0) for r in completed) / max(n_total, 1)
+    grade = "A" if avg_concordance >= 0.9 and n_success >= 3 else \
+            "B" if avg_concordance >= 0.75 and n_success >= 2 else \
+            "C" if n_success >= 1 else "D"
+
+    return {
+        "workspace_id": workspace_id,
+        "n_replications": n_total,
+        "n_successful": n_success,
+        "avg_concordance": round(avg_concordance, 3),
+        "scientific_confidence_grade": grade,
+        "interpretation": f"{n_success}/{n_total} successful replications. Avg concordance: {avg_concordance:.0%}.",
+    }
+
+
+@router.get("/workspaces/{workspace_id}/replications")
+def get_replications(workspace_id: int, session: Session = Depends(get_session)):
+    """Get all replication requests and results for a workspace."""
+    ws = session.get(Workspace, workspace_id)
+    if not ws:
+        raise HTTPException(404)
+    import json as _json
+    try:
+        reps = _json.loads(getattr(ws, "tags", "[]") or "[]")
+    except Exception:
+        reps = []
+    replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
+    completed = [r for r in replications if r.get("status") == "completed" or r.get("type") == "replication_result"]
+    n_success = sum(1 for r in completed if r.get("successful"))
+    avg_concordance = sum(r.get("concordance_score", 0) for r in completed) / max(len(completed), 1) if completed else 0
+    return {
+        "workspace_id": workspace_id,
+        "replications": replications,
+        "summary": {
+            "total": len(replications),
+            "completed": len(completed),
+            "successful": n_success,
+            "avg_concordance": round(avg_concordance, 3),
+            "confidence_grade": "A" if avg_concordance >= 0.9 and n_success >= 3 else
+                               "B" if avg_concordance >= 0.75 and n_success >= 2 else
+                               "C" if n_success >= 1 else "insufficient",
+        }
+    }
