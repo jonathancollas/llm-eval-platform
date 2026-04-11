@@ -26,6 +26,7 @@ from api.routers import multiagent
 from api.routers import events as events_router
 from eval_engine.event_pipeline import register_default_subscribers
 from api.routers import monitoring
+from api.routers import science
 
 logging.basicConfig(
     level=logging.INFO,
@@ -179,9 +180,9 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
 for router in [models.router, benchmarks.router, campaigns.router, results.router,
                reports.router, catalog.router, leaderboard.router, sync.router, genome.router,
                redbox.router, judge.router, agents.router, policy.router, tenants.router,
-               research.router, evidence.router, deep_analysis.router, multiagent.router]:
                research.router, evidence.router, deep_analysis.router,
-               multiagent.router, events_router.router]:
+               multiagent.router, events_router.router,
+               monitoring.router, science.router]:
     app.include_router(router, prefix="/api")
 
 

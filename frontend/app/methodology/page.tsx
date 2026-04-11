@@ -1,10 +1,179 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
-import { ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { Spinner } from "@/components/Spinner";
+import { ExternalLink, ChevronDown, ChevronUp, FlaskConical, Brain, Shield, AlertTriangle } from "lucide-react";
+import { useModels } from "@/lib/useApi";
 import { API_BASE } from "@/lib/config";
 
-// Lazy heuristic graph from backend
+// ── Science Engine Panel ──────────────────────────────────────────────────────
+
+function ScienceEnginePanel() {
+  const [tool, setTool] = useState<"cap_prop" | "mech_interp" | "contamination" | null>(null);
+  const [modelId, setModelId] = useState<number | "">("");
+  const [benchmarkId, setBenchmarkId] = useState<number | "">("");
+  const [benchmarks, setBenchmarks] = useState<any[]>([]);
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { models } = useModels();
+
+  useEffect(() => {
+    fetch(`${API_BASE}/benchmarks/`).then(r => r.json()).then(d => setBenchmarks(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+
+  const run = async (endpoint: string, body: object) => {
+    setLoading(true); setResult(null); setError(null);
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      setResult(await res.json());
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const tools = [
+    { key: "cap_prop", icon: <FlaskConical size={14} />, label: "Capability vs Propensity", desc: "Formal separation — #81" },
+    { key: "mech_interp", icon: <Brain size={14} />, label: "Mech Interp Validator", desc: "CoT consistency · Paraphrase invariance · #85" },
+    { key: "contamination", icon: <Shield size={14} />, label: "Contamination Analysis", desc: "n-gram overlap · Confidence anomaly · #82" },
+  ] as const;
+
+  return (
+    <div className="border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-slate-50 px-5 py-3 border-b border-slate-200">
+        <h3 className="font-semibold text-slate-900 text-sm">⚗️ Science Engine — Live Analysis Tools</h3>
+        <p className="text-xs text-slate-500 mt-0.5">Run evaluation science analyses directly on your models and benchmarks.</p>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Tool selector */}
+        <div className="grid grid-cols-3 gap-2">
+          {tools.map(t => (
+            <button key={t.key} onClick={() => { setTool(t.key as any); setResult(null); setError(null); }}
+              className={`text-left p-3 rounded-xl border transition-colors ${tool === t.key ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:border-slate-300"}`}>
+              <div className="flex items-center gap-2 mb-1 text-slate-700">{t.icon}<span className="text-xs font-medium">{t.label}</span></div>
+              <p className="text-[10px] text-slate-400">{t.desc}</p>
+            </button>
+          ))}
+        </div>
+
+        {tool && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Model</label>
+              <select value={modelId} onChange={e => setModelId(Number(e.target.value))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                <option value="">Select model…</option>
+                {models.slice(0, 30).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Benchmark</label>
+              <select value={benchmarkId} onChange={e => setBenchmarkId(Number(e.target.value))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                <option value="">Select benchmark…</option>
+                {benchmarks.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {tool && (
+          <button
+            disabled={loading || !modelId || !benchmarkId}
+            onClick={() => {
+              const body = { model_id: modelId, benchmark_id: benchmarkId, n_samples: 10 };
+              if (tool === "cap_prop") run("/science/capability-propensity", body);
+              else if (tool === "mech_interp") run("/science/mech-interp/validate", body);
+              else run("/science/contamination/campaign/1", {});  // contamination via GET route
+            }}
+            className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
+            {loading ? <><Spinner size={13} />Running…</> : <>Run Analysis</>}
+          </button>
+        )}
+
+        {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">{error}</div>}
+
+        {result && tool === "cap_prop" && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-slate-900 text-sm">Capability vs Propensity</h4>
+              <span className={`text-[11px] px-2 py-0.5 rounded border font-medium
+                ${result.scores?.gap_significance === "critical" ? "bg-red-50 text-red-700 border-red-200" :
+                  result.scores?.gap_significance === "large" ? "bg-orange-50 text-orange-700 border-orange-200" :
+                  "bg-slate-50 text-slate-600 border-slate-200"}`}>
+                {result.scores?.gap_significance} gap
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              {[
+                { label: "Capability", value: result.scores?.mean_capability },
+                { label: "Propensity", value: result.scores?.mean_propensity },
+                { label: "Gap", value: result.scores?.mean_gap },
+              ].map(({ label, value }) => (
+                <div key={label} className="bg-slate-50 rounded-lg py-3">
+                  <div className="text-[11px] text-slate-500">{label}</div>
+                  <div className={`text-lg font-bold ${label === "Gap" && (value ?? 0) > 0.15 ? "text-orange-600" : "text-slate-900"}`}>
+                    {value != null ? (label === "Gap" ? `${value > 0 ? "+" : ""}${Math.round(value * 100)}%` : `${Math.round(value * 100)}%`) : "—"}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {result.safety?.concern && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-xs text-orange-800 flex gap-2">
+                <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                <span>{result.safety.reason}</span>
+              </div>
+            )}
+            <div className="text-[11px] text-slate-500">P10 tail propensity: {Math.round((result.tail_analysis?.p10_propensity ?? 0) * 100)}% · Worst-case gap: {Math.round((result.tail_analysis?.worst_case_gap ?? 0) * 100)}%</div>
+          </div>
+        )}
+
+        {result && tool === "mech_interp" && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-slate-900 text-sm">Mech Interp Validation</h4>
+              <span className={`text-[11px] px-2 py-0.5 rounded border font-medium
+                ${result.validation?.signal === "supports" ? "bg-green-50 text-green-700 border-green-200" :
+                  result.validation?.signal === "undermines" ? "bg-red-50 text-red-700 border-red-200" :
+                  "bg-slate-50 text-slate-500 border-slate-200"}`}>
+                {result.validation?.signal}
+              </span>
+            </div>
+            <p className="text-xs text-slate-600">{result.validation?.interpretation}</p>
+            <div className="grid grid-cols-3 gap-2 text-xs text-center">
+              {[
+                { label: "CoT Consistency", value: result.cot_analysis?.consistency_rate },
+                { label: "Paraphrase Invariance", value: result.paraphrase_invariance?.invariance_rate },
+                { label: "Calibration Accuracy", value: result.calibration?.stated_confidence_accuracy },
+              ].map(({ label, value }) => (
+                <div key={label} className="bg-slate-50 rounded-lg py-2">
+                  <div className="text-[10px] text-slate-400">{label}</div>
+                  <div className="font-bold text-slate-900">{value != null ? `${Math.round(value * 100)}%` : "—"}</div>
+                </div>
+              ))}
+            </div>
+            <div className={`text-xs px-3 py-2 rounded-lg border font-medium text-center
+              ${(result.validation?.confidence_adjustment ?? 0) > 0 ? "bg-green-50 border-green-200 text-green-700" :
+                (result.validation?.confidence_adjustment ?? 0) < 0 ? "bg-red-50 border-red-200 text-red-700" :
+                "bg-slate-50 border-slate-200 text-slate-600"}`}>
+              Confidence adjustment: {result.validation?.confidence_adjustment > 0 ? "+" : ""}{result.validation?.confidence_adjustment?.toFixed(2) ?? "0.00"}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function HeuristicGraph() {
   const [data, setData] = useState<any | null>(null);
   const [open, setOpen] = useState(false);
@@ -379,6 +548,9 @@ export default function MethodologyPage() {
 
         {/* Live heuristic graph from backend */}
         <HeuristicGraph />
+
+        {/* Science Engine — interactive tools */}
+        <ScienceEnginePanel />
 
         {/* Footer note */}
         <div className="text-xs text-slate-400 pt-4 border-t border-slate-100">
