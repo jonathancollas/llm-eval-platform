@@ -180,11 +180,44 @@ L'utilisateur peut choisir l'une ou l'autre selon sa situation. Voir le fichier 
 
 Mercury Retrograde is not a benchmark dashboard. It is the **scientific infrastructure layer for frontier AI risk discovery, validation, and replication**.
 
+### What Mercury Retrograde is
+
+Mercury Retrograde is the **research operating system for frontier AI evaluation**:
+
+- a platform to design, run, reproduce, and compare evaluations,
+- a system to discover failure modes before they become incidents,
+- a shared scientific layer for independent replication and confidence grading.
+
+### What Mercury Retrograde is not
+
+Mercury Retrograde is **not**:
+
+- a vanity leaderboard optimized for marketing,
+- a static benchmark scorecard detached from deployment context,
+- a black-box compliance checklist without methodological transparency.
+
+Our objective is decision-grade evidence, not score inflation.
+
 ---
 
-## The Evaluation Doctrine
+## Core Primitives
 
-### Priority 1 — Capability before propensity
+Mercury Retrograde is organized around six primitives:
+
+1. **System** — The evaluated object in context: model(s), orchestration, tools, memory, and policies.
+2. **Scenario** — A test situation with explicit assumptions, threat model, and intended capability/risk target.
+3. **Trajectory** — The multi-step execution trace of a system under scenario conditions.
+4. **Risk Signal** — A measurable indicator of concerning behavior (e.g., unsafe assistance, drift, hidden strategy, policy bypass).
+5. **Evidence** — Structured, reproducible artifacts (inputs, outputs, metadata, seeds, versions, logs) supporting claims.
+6. **Confidence** — A quantitative and qualitative estimate of reliability based on replication quality and methodological strength.
+
+These primitives anchor every evaluation artifact in the platform.
+
+---
+
+## Scientific Doctrine
+
+### Doctrine 1 — Capability before propensity
 
 We distinguish two fundamentally different measurements:
 
@@ -194,11 +227,9 @@ We distinguish two fundamentally different measurements:
 
 Conflating them generates both false negatives and false positives in risk assessment. Every evaluation in Mercury exposes both scores separately.
 
-### Priority 2 — The agentic shift changes everything
+### Doctrine 2 — System-in-context over model-only evaluation
 
-We are no longer evaluating static input-output models. We are evaluating **systems that plan, use tools, maintain memory, spawn sub-agents, and take consequential actions in the real world** — often without any human in the loop.
-
-Model-level evaluation is structurally insufficient for agentic systems. Evaluators who certify models without evaluating the **system-in-context** are providing false assurance.
+The right object of evaluation is the deployed system, not only the base model. Agentic behavior, tool wiring, memory policies, and external context can dominate risk outcomes.
 
 New failure modes demand new evaluation methods:
 - Prompt injection via untrusted retrieved content (EchoLeak CVE-2025-32711)
@@ -206,23 +237,19 @@ New failure modes demand new evaluation methods:
 - Inter-agent trust failure in multi-agent pipelines
 - Compounding error amplification across autonomous steps
 
-### Priority 3 — Continuous evaluation, not point-in-time certification
+### Doctrine 3 — Continuous evaluation over one-off certification
 
-Pre-deployment evaluation alone is no longer a defensible posture. AI is embedded in critical workflows — legal, financial, medical, infrastructure. Behaviour changes when systems are connected to new tools, new contexts, new interacting AI systems.
+Point-in-time evaluation is insufficient for changing systems and environments. Mercury prioritizes continuous monitoring and re-evaluation with explicit drift visibility, aligned with **NIST AI 800-4** (March 2026), the first formal standard for deployed AI monitoring.
 
-Mercury implements continuous safety monitoring aligned with **NIST AI 800-4** (March 2026), the first formal standard for deployed AI monitoring.
+### Doctrine 4 — Reproducibility and independent replication
 
-### Priority 4 — Evaluation integrity
+Claims without replication are hypotheses, not robust evidence. Mercury promotes protocol standardization, replayability, and multi-lab replication workflows. Mercury implements anti-sandbagging protocols, blind evaluation modes, and contrastive probing to detect evaluation-aware behaviour.
 
-If a model can infer it is being evaluated and modify its behaviour accordingly, the entire evaluation architecture is compromised. This is not a future risk — it is a present one.
-
-Mercury implements anti-sandbagging protocols, blind evaluation modes, and contrastive probing to detect evaluation-aware behaviour.
-
-### Priority 5 — Benchmark validity
+### Doctrine 5 — Benchmark validity over benchmark popularity
 
 A high score on a public benchmark may measure **memorisation**, not the underlying capability it purports to test. Mercury implements contamination detection, dynamic benchmark generation, and validity grading (A–D) for every benchmark in the catalog.
 
-### Priority 6 — Science, not scores
+### Doctrine 6 — Science, not scores
 
 Every evaluation in Mercury is traceable to a heuristic, which maps to a paper. The platform is a **scientific instrument**, not a leaderboard generator.
 
@@ -245,15 +272,58 @@ Every evaluation in Mercury is traceable to a heuristic, which maps to a paper. 
 
 ---
 
+## Roadmap Philosophy
+
+Mercury's roadmap follows one rule:
+
+**Science quality and safety signal fidelity come before product surface expansion.**
+
+Practical consequences:
+
+- prioritize instrumentation, protocol quality, and reproducibility,
+- prioritize high-risk domains and emergent failure discovery,
+- ship features only when they improve decision-grade evidence,
+- avoid "dashboard theater" that increases UI surface without improving scientific reliability.
+
+---
+
+## Decision Filter for Prioritization
+
+Any roadmap item should pass this filter:
+
+1. Does it improve our ability to discover or characterize frontier failure modes?
+2. Does it improve reproducibility, traceability, or replication confidence?
+3. Does it strengthen system-level (not model-only) evaluation quality?
+4. Does it reduce epistemic risk in high-stakes deployment decisions?
+
+If the answer is mostly no, it is likely not North Star aligned.
+
+---
+
 ## North Star
 
-The moment a published paper says:
+**Mercury Retrograde is the default scientific infrastructure where high-impact AI evaluations are run, independently replicated, and cited.**
 
-> *"All evaluations were conducted and independently replicated on Mercury Retrograde."*
+We succeed when papers, audits, and public safety reports can credibly state:
 
-We will have succeeded.
+> *"This evaluation was executed and independently replicated on Mercury Retrograde."*
 
 Mercury Retrograde is positioned to become the **GitHub + Kaggle + CVE of frontier AI safety evaluation** — the infrastructure where new failure modes are discovered before they reach production.
+
+---
+
+## Operating Commitment
+
+Mercury Retrograde commits to:
+
+- transparent methodology,
+- measurable confidence,
+- reproducible evidence pipelines,
+- open scientific collaboration,
+- and continuous improvement against real-world risk.
+
+The mission is not to prove that systems are safe once.  
+The mission is to make safety evaluation itself reliable, inspectable, and cumulative.
 
 ---
 
