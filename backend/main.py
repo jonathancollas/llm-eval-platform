@@ -25,6 +25,7 @@ from api.routers import deep_analysis
 from api.routers import multiagent
 from api.routers import events as events_router
 from eval_engine.event_pipeline import register_default_subscribers
+from api.routers import monitoring
 
 logging.basicConfig(
     level=logging.INFO,
