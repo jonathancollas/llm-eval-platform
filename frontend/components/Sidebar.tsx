@@ -102,10 +102,10 @@ export function Sidebar() {
           <MercurySymbol />
           <div>
             <div className="font-bold text-slate-900 text-[10px] tracking-widest leading-tight group-hover:text-purple-700 transition-colors">
-              EVAL RESEARCH OS
+              MERCURY RETROGRADE
             </div>
             <div className="text-slate-400 mt-0.5 tracking-wide" style={{ fontSize: "8px" }}>
-              made with love by INESIA
+              an AI evaluation research OS, made with love by INESIA
             </div>
           </div>
         </div>
