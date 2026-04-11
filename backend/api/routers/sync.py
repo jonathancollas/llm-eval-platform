@@ -192,7 +192,26 @@ async def sync_openrouter_models(session: Session) -> tuple[int, bool]:
                 local_ids.add(model.model_id)
                 added += 1
 
-        session.commit()
+        try:
+            session.commit()
+        except Exception as commit_err:
+            # Race condition: another sync ran concurrently — rollback and re-check
+            session.rollback()
+            logger.warning(f"OpenRouter bulk insert conflict (concurrent sync?): {commit_err}")
+            # Re-insert one by one, skipping existing
+            already = {m.model_id for m in session.exec(select(LLMModel)).all()}
+            added = 0
+            for raw in raw_models:
+                model = _build_model(raw)
+                if model and model.model_id not in already:
+                    try:
+                        session.add(model)
+                        session.commit()
+                        already.add(model.model_id)
+                        added += 1
+                    except Exception:
+                        session.rollback()
+
         logger.info(f"OpenRouter sync: +{added} models imported.")
         return added, True
 

@@ -104,7 +104,16 @@ def _to_read(m: LLMModel) -> ModelRead:
 
 @router.get("/", response_model=list[ModelRead])
 def list_models(session: Session = Depends(get_session)):
-    return [_to_read(m) for m in session.exec(select(LLMModel)).all()]
+    # Dedup by model_id at query level — keeps the oldest entry (lowest id)
+    # This handles any existing DB duplicates without requiring a migration (#62)
+    all_models = session.exec(select(LLMModel).order_by(LLMModel.id)).all()
+    seen: set[str] = set()
+    deduped = []
+    for m in all_models:
+        if m.model_id not in seen:
+            seen.add(m.model_id)
+            deduped.append(m)
+    return [_to_read(m) for m in deduped]
 
 
 @router.post("/", response_model=ModelRead, status_code=status.HTTP_201_CREATED)

@@ -323,8 +323,8 @@ function TelemetryContent() {
     <div>
       <PageHeader
         title="Runtime Monitoring"
-        subtitle="NIST AI 800-4 · Post-deployment continuous safety monitoring"
-        actions={
+        description="NIST AI 800-4 · Post-deployment continuous safety monitoring"
+        action={
           <div className="flex items-center gap-2">
             <select value={hours} onChange={e => setHours(Number(e.target.value))}
               className="border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700">

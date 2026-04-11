@@ -88,19 +88,37 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
 
   const handleDownload = async (model: LLMModel, e: React.MouseEvent) => {
     e.stopPropagation();
-    const orId = ((model as any).model_id || "").replace("openrouter/", "");
+    const orId = ((model as any).model_id || "").replace("openrouter/", "").replace(":free", "");
+    const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
     setPulling(model.id);
     setPullStatus(prev => ({ ...prev, [model.id]: "pulling" }));
 
     try {
-      const res = await fetch(`${API_BASE}/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(orId)}`, { method: "POST" });
-      const data = await res.json();
-      if (data.status === "ok" || data.status === "pulled") {
-        setPullStatus(prev => ({ ...prev, [model.id]: "done" }));
-        // Refresh model list to show the new local model
-        setTimeout(() => loadModels(), 1000);
+      if (ollamaName) {
+        // Backend has a known mapping — use pull-and-register
+        const res = await fetch(`${API_BASE}/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(orId)}`, { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok" || data.status === "pulled") {
+          setPullStatus(prev => ({ ...prev, [model.id]: "done" }));
+          setTimeout(() => loadModels(), 1500);
+        } else {
+          setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+        }
       } else {
-        setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+        // No backend mapping — attempt direct Ollama pull using model name heuristic
+        const guessedName = orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "") ?? orId;
+        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model_name: guessedName }),
+        });
+        const data = await ollamaRes.json();
+        if (data.status === "pulled" || data.status === "pulling") {
+          setPullStatus(prev => ({ ...prev, [model.id]: "done" }));
+          setTimeout(() => loadModels(), 1500);
+        } else {
+          setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+        }
       }
     } catch {
       setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
@@ -149,8 +167,11 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
         {filtered.map(m => {
           const sel = isSelected(m);
           const isLocal = (m as any).provider === "ollama";
-          const orId = ((m as any).model_id || "").replace("openrouter/", "");
-          const canDownload = !isLocal && !!ollamaSuggestions[orId];
+          const orId = ((m as any).model_id || "").replace("openrouter/", "").replace(":free", "");
+          // Show Download for all open-weight models — Ollama name from suggestions or derive from model_id
+          const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
+          const canDownload = !isLocal && ((m as any).is_open_weight || !!ollamaName);
+          const downloadTarget = ollamaName || orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "");
           const status = pullStatus[m.id];
 
           return (
@@ -173,12 +194,12 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                 </div>
               </button>
 
-              {/* Download button — THE key feature */}
+              {/* Download button — visible for all open-weight models (#67) */}
               {canDownload && !status && (
                 <button onClick={(e) => handleDownload(m, e)} disabled={pulling === m.id}
-                  title={`Download ${ollamaSuggestions[orId]} via Ollama`}
+                  title={`Run locally via Ollama: ${downloadTarget}`}
                   className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 transition-colors font-medium">
-                  <Download size={11} /> Download
+                  <Download size={11} /> Run locally
                 </button>
               )}
               {status === "pulling" && (

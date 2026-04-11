@@ -367,8 +367,10 @@ JSON only: {{"score": <float>, "reasoning": "<brief>"}}"""
             data = json.loads(text)
             score = float(data.get("score", 0.5))
             reasoning = str(data.get("reasoning", ""))[:300]
-        except Exception:
-            score, reasoning = 0.5, "auto-judge parse error"
+        except Exception as e:
+            logger.debug(f"[auto-judge] parse error for result {result.id}: {e}")
+            # Don't persist fake 0.5 scores — skip this item entirely (#64)
+            continue
 
         judge_evals.append(JudgeEvaluation(
             campaign_id=campaign_id,

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/campaigns/{campaign_id}/compute")
 def compute_campaign_genome(campaign_id: int, session: Session = Depends(get_session)):
-    """Compute and store Failure Genome for all runs in a campaign."""
+    """Compute and store Failure Genome for all runs in a campaign (#63 — robust error handling)."""
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
@@ -31,70 +31,73 @@ def compute_campaign_genome(campaign_id: int, session: Session = Depends(get_ses
 
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     profiles_created = 0
+    errors = 0
 
     for run in runs:
         if run.status != JobStatus.COMPLETED:
             continue
 
-        # Get benchmark type
-        bench = session.get(Benchmark, run.benchmark_id)
-        bench_type = bench.type if bench else "custom"
+        try:
+            bench = session.get(Benchmark, run.benchmark_id)
+            bench_type = bench.type if bench else "custom"
 
-        # Get eval results
-        results = session.exec(
-            select(EvalResult).where(EvalResult.run_id == run.id)
-        ).all()
+            results = session.exec(
+                select(EvalResult).where(EvalResult.run_id == run.id)
+            ).all()
 
-        if not results:
-            # Classify from run-level data only
-            genome = classify_run(
-                prompt="", response="", expected=None,
-                score=run.score or 0.0,
-                benchmark_type=str(bench_type),
-                latency_ms=run.total_latency_ms,
-                num_items=run.num_items,
-            )
-        else:
-            # Classify each item and aggregate
-            item_genomes = []
-            for r in results:
-                g = classify_run(
-                    prompt=r.prompt or "",
-                    response=r.response or "",
-                    expected=r.expected,
-                    score=r.score,
+            if not results:
+                genome = classify_run(
+                    prompt="", response="", expected=None,
+                    score=run.score or 0.0,
                     benchmark_type=str(bench_type),
-                    latency_ms=r.latency_ms,
-                    num_items=len(results),
+                    latency_ms=run.total_latency_ms,
+                    num_items=run.num_items,
                 )
-                item_genomes.append(g)
-            genome = aggregate_genome(item_genomes)
+            else:
+                item_genomes = []
+                for r in results:
+                    try:
+                        g = classify_run(
+                            prompt=r.prompt or "",
+                            response=r.response or "",
+                            expected=r.expected,
+                            score=r.score,
+                            benchmark_type=str(bench_type),
+                            latency_ms=r.latency_ms,
+                            num_items=len(results),
+                        )
+                        item_genomes.append(g)
+                    except Exception as e:
+                        logger.warning(f"[genome/compute] classify_run failed for result {r.id}: {e}")
+                        errors += 1
+                genome = aggregate_genome(item_genomes) if item_genomes else {}
 
-        # Upsert profile
-        existing = session.exec(
-            select(FailureProfile).where(FailureProfile.run_id == run.id)
-        ).first()
-        if existing:
-            existing.genome_json = json.dumps(genome)
-            session.add(existing)
-        else:
-            profile = FailureProfile(
-                run_id=run.id,
-                campaign_id=campaign_id,
-                model_id=run.model_id,
-                benchmark_id=run.benchmark_id,
-                genome_json=json.dumps(genome),
-                genome_version=FAILURE_GENOME_VERSION,
-            )
-            session.add(profile)
-            profiles_created += 1
+            existing = session.exec(
+                select(FailureProfile).where(FailureProfile.run_id == run.id)
+            ).first()
+            if existing:
+                existing.genome_json = json.dumps(genome)
+                session.add(existing)
+            else:
+                session.add(FailureProfile(
+                    run_id=run.id,
+                    campaign_id=campaign_id,
+                    model_id=run.model_id,
+                    benchmark_id=run.benchmark_id,
+                    genome_json=json.dumps(genome),
+                    genome_version=FAILURE_GENOME_VERSION,
+                ))
+                profiles_created += 1
+
+        except Exception as e:
+            logger.error(f"[genome/compute] run {run.id} failed: {e}")
+            errors += 1
+            session.rollback()
+            continue
 
     session.commit()
-
-    # Update model fingerprints
     _update_model_fingerprints(campaign_id, session)
-
-    return {"profiles_created": profiles_created, "total_runs": len(runs)}
+    return {"profiles_created": profiles_created, "total_runs": len(runs), "errors": errors}
 
 
 def _update_model_fingerprints(campaign_id: int, session: Session):
@@ -503,8 +506,10 @@ def get_run_signals(run_id: int, limit: int = 20, session: Session = Depends(get
 async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get_session)):
     """Compute genome with LLM hybrid classification (GENOME-4).
     More accurate than rule-based only, but uses LLM API calls.
+    Falls back to rule-based classification if LLM is unavailable (#63).
     """
-    from eval_engine.failure_genome.classifiers import classify_run_hybrid
+    from core.config import get_settings as _get_settings
+    settings = _get_settings()
 
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
@@ -512,8 +517,18 @@ async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get
     if campaign.status != JobStatus.COMPLETED:
         raise HTTPException(400, detail="Campaign must be completed.")
 
+    # Pre-check: Anthropic key required for hybrid mode
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            422,
+            detail="Hybrid LLM mode requires an Anthropic API key (ANTHROPIC_API_KEY). "
+                   "Use 'Analyze' (rule-based) instead, or set the key in your environment."
+        )
+
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     profiles_created = 0
+    llm_calls = 0
+    fallback_calls = 0
 
     for run in runs:
         if run.status != JobStatus.COMPLETED:
@@ -524,17 +539,28 @@ async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get
         results = session.exec(select(EvalResult).where(EvalResult.run_id == run.id)).all()
 
         if results:
-            # Use hybrid classification (rules + LLM) for each item
             item_genomes = []
             for r in results[:30]:  # Limit LLM calls to 30 items per run
-                g = await classify_run_hybrid(
-                    prompt=r.prompt or "", response=r.response or "",
-                    expected=r.expected, score=r.score,
-                    benchmark_type=bench_type, latency_ms=r.latency_ms,
-                    num_items=len(results),
-                )
+                try:
+                    g = await classify_run_hybrid(
+                        prompt=r.prompt or "", response=r.response or "",
+                        expected=r.expected, score=r.score,
+                        benchmark_type=bench_type, latency_ms=r.latency_ms,
+                        num_items=len(results),
+                    )
+                    llm_calls += 1
+                except Exception as e:
+                    # Fallback to rule-based — never crash (#63)
+                    logger.warning(f"[genome/hybrid] LLM classify failed for result {r.id}, using rules: {e}")
+                    g = classify_run(
+                        prompt=r.prompt or "", response=r.response or "",
+                        expected=r.expected, score=r.score,
+                        benchmark_type=bench_type, latency_ms=r.latency_ms,
+                        num_items=len(results),
+                    )
+                    fallback_calls += 1
                 item_genomes.append(g)
-            # Rule-only for remaining items
+            # Rule-only for remaining items (beyond 30)
             for r in results[30:]:
                 item_genomes.append(classify_run(
                     prompt=r.prompt or "", response=r.response or "",
@@ -563,7 +589,13 @@ async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get
             profiles_created += 1
 
     session.commit()
-    return {"profiles_created": profiles_created, "method": "hybrid_rules_llm", "total_runs": len(runs)}
+    return {
+        "profiles_created": profiles_created,
+        "method": "hybrid_rules_llm",
+        "total_runs": len(runs),
+        "llm_calls": llm_calls,
+        "fallback_to_rules": fallback_calls,
+    }
 
 
 # ── Scientific References ──────────────────────────────────────────────────────

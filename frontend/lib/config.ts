@@ -2,11 +2,13 @@
  * EVAL RESEARCH OS — Central configuration
  * Single source of truth for all runtime constants.
  * Never hardcode API_BASE elsewhere — always import from here.
+ *
+ * Set NEXT_PUBLIC_API_URL in your .env.local or deployment environment.
+ * Example: NEXT_PUBLIC_API_URL=http://localhost:8000/api
  */
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  "https://llm-eval-backend-kqlh.onrender.com/api";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
 export const APP_NAME = "EVAL RESEARCH OS";
 export const APP_TAGLINE = "made with love by INESIA";

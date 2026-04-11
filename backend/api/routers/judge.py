@@ -183,7 +183,8 @@ async def evaluate_with_judges(payload: EvaluateRequest, session: Session = Depe
                 )
             except Exception as e:
                 logger.warning(f"Judge {judge_model} failed on result {result.id}: {e}")
-                score, reasoning = 0.5, f"Judge error: {str(e)[:100]}"
+                # Skip — don't persist fake 0.5 scores (#64)
+                continue
 
             je = JudgeEvaluation(
                 campaign_id=payload.campaign_id,
