@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { campaignsApi, modelsApi, benchmarksApi } from "@/lib/api";
-import type { Campaign, LLMModel, Benchmark } from "@/lib/api";
+import type { Campaign, LLMModel, LLMModelSlim, Benchmark } from "@/lib/api";
 import { useCampaigns, useModels, useBenchmarks } from "@/lib/useApi";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -220,7 +220,7 @@ function LiveFeed({ campaignId }: { campaignId: number }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [models, setModels] = useState<LLMModel[]>([]);
+  const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [benches, setBenches] = useState<Benchmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);

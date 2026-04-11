@@ -72,6 +72,21 @@ export interface LLMModel {
   model_created_at: number; created_at: string; updated_at: string;
 }
 
+/**
+ * Lightweight model — returned by GET /models/slim.
+ * ~10x smaller than LLMModel. Use for selectors, dropdowns, wizards.
+ */
+export interface LLMModelSlim {
+  id: number;
+  name: string;
+  model_id: string;
+  provider: ModelProvider;
+  is_free: boolean;
+  is_open_weight: boolean;
+  is_local: boolean;
+  cost_input_per_1k: number;
+}
+
 export interface Benchmark {
   id: number; name: string; type: BenchmarkType; description: string;
   tags: string[]; metric: string; num_samples: number | null;
@@ -136,7 +151,7 @@ export interface FailedItemsData {
 }
 
 export const modelsApi = {
-  list: () => apiFetch<LLMModel[]>("/models/"),
+  list: () => apiFetch<LLMModelSlim[]>("/models/slim"),  // Lightweight — use for selectors
   get: (id: number) => apiFetch<LLMModel>(`/models/${id}`),
   create: (data: Record<string, unknown>) => apiFetch<LLMModel>("/models/", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: Record<string, unknown>) => apiFetch<LLMModel>(`/models/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

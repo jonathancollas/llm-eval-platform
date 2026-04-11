@@ -9,22 +9,33 @@
  * - Cache across page navigation
  */
 import useSWR from "swr";
-import type { Campaign, LLMModel, Benchmark, DashboardData, GenomeData, FailedItemsData } from "./api";
+import type { Campaign, LLMModel, LLMModelSlim, Benchmark, DashboardData, GenomeData, FailedItemsData } from "./api";
 
 import { API_BASE } from "./config";
 
 async function fetcher<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? `API error ${res.status}`);
+  // 10s timeout — never hang forever on slow backend
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail ?? `API error ${res.status}`);
+    }
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      return null as unknown as T;
+    }
+    return res.json() as Promise<T>;
+  } catch (e: any) {
+    if (e.name === "AbortError") throw new Error("Request timeout");
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  if (res.status === 204 || res.headers.get("content-length") === "0") {
-    return null as unknown as T;
-  }
-  return res.json() as Promise<T>;
 }
 
 /** All campaigns — auto-refresh only when a campaign is running */
@@ -58,8 +69,18 @@ function dedupModels(models: LLMModel[]): LLMModel[] {
   return [...map.values()];
 }
 
-/** All models — cached 30s, deduplicated */
+/** All models — uses /models/slim (lightweight projection, ~10x smaller payload) */
 export function useModels() {
+  const { data, error, isLoading, mutate } = useSWR<LLMModelSlim[]>(
+    "/models/slim",
+    fetcher,
+    { dedupingInterval: 30000, revalidateOnFocus: false }
+  );
+  return { models: data ?? [], isLoading, error, refresh: mutate };
+}
+
+/** Full model list with all metadata — for the Models page only */
+export function useModelsFull() {
   const { data, error, isLoading, mutate } = useSWR<LLMModel[]>(
     "/models/",
     fetcher,

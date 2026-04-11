@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { Badge } from "@/components/Badge";
 import { modelsApi } from "@/lib/api";
-import type { LLMModel } from "@/lib/api";
+import type { LLMModel, LLMModelSlim } from "@/lib/api";
 import { Plus, AlertTriangle, Shield, CheckCircle2, X, Search } from "lucide-react";
 import { API_BASE as API } from "@/lib/config";
 
@@ -22,7 +22,7 @@ function ModelPicker({ selected, onChange }: {
   selected: string[];
   onChange: (models: string[]) => void;
 }) {
-  const [models, setModels] = useState<LLMModel[]>([]);
+  const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 

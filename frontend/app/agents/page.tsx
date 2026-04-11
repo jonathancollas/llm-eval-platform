@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { modelsApi } from "@/lib/api";
-import type { LLMModel } from "@/lib/api";
+import type { LLMModel, LLMModelSlim } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { ChevronDown, ChevronUp, Play, Zap, CheckCircle2, XCircle, ArrowRight,
@@ -100,7 +100,7 @@ export default function AgentsPage() {
   const [tab, setTab] = useState<Tab>("trajectories");
   const [trajectories, setTrajectories] = useState<Trajectory[]>([]);
   const [selectedTraj, setSelectedTraj] = useState<TrajectoryDetail | null>(null);
-  const [models, setModels] = useState<LLMModel[]>([]);
+  const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
@@ -349,7 +349,7 @@ type SimScenario = "pipeline_injection" | "goal_drift" | "trust_propagation";
 type SimResult = any;
 type SandbaggingResult = any;
 
-function MultiAgentLab({ models }: { models: LLMModel[] }) {
+function MultiAgentLab({ models }: { models: LLMModelSlim[] }) {
   const [activeSection, setActiveSection] = useState<"simulation" | "sandbagging">("simulation");
 
   // Simulation state

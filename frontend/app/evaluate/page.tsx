@@ -5,7 +5,7 @@ import { campaignsApi, modelsApi, benchmarksApi } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { Check, ChevronRight, ChevronLeft, Cpu, Wrench, Brain, Globe, Settings, Rocket } from "lucide-react";
-import type { LLMModel, Benchmark } from "@/lib/api";
+import type { LLMModel, LLMModelSlim, Benchmark } from "@/lib/api";
 
 /**
  * System-in-context evaluation wizard.
@@ -53,7 +53,7 @@ function StepDot({ i, current }: { i: number; current: number }) {
 function EvaluateWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [models, setModels] = useState<LLMModel[]>([]);
+  const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
   const [saving, setSaving] = useState(false);
 

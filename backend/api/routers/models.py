@@ -102,17 +102,84 @@ def _to_read(m: LLMModel) -> ModelRead:
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[ModelRead])
-def list_models(session: Session = Depends(get_session)):
-    # Dedup by model_id at query level — keeps the oldest entry (lowest id)
-    # This handles any existing DB duplicates without requiring a migration (#62)
-    all_models = session.exec(select(LLMModel).order_by(LLMModel.id)).all()
+@router.get("/slim")
+def list_models_slim(session: Session = Depends(get_session)):
+    """
+    Lightweight model list — only fields needed for selectors and dropdowns.
+    ~10x smaller payload than GET /models/ — use this in ModelSelector, wizards, etc.
+    Returns: id, name, model_id, provider, is_free, is_open_weight, is_local
+    """
+    # Only fetch the columns we actually need
+    models = session.exec(
+        select(LLMModel.id, LLMModel.name, LLMModel.model_id,
+               LLMModel.provider, LLMModel.is_free, LLMModel.is_open_weight,
+               LLMModel.cost_input_per_1k, LLMModel.tags)
+        .order_by(LLMModel.name)
+    ).all()
+
+    # Dedup by model_id
+    seen: set[str] = set()
+    result = []
+    for row in models:
+        mid = row[2]  # model_id
+        if mid not in seen:
+            seen.add(mid)
+            is_local = row[3] == "ollama"  # provider
+            result.append({
+                "id": row[0],
+                "name": row[1],
+                "model_id": mid,
+                "provider": row[3],
+                "is_free": row[4],
+                "is_open_weight": row[5],
+                "is_local": is_local,
+                "cost_input_per_1k": row[6],
+            })
+    return result
+
+
+def list_models(
+    session: Session = Depends(get_session),
+    limit: int = 500,
+    offset: int = 0,
+    provider: Optional[str] = None,
+    search: Optional[str] = None,
+    free_only: bool = False,
+    open_weight_only: bool = False,
+):
+    """
+    List models with optional filtering and pagination.
+    Default limit=500 covers all models in one call while staying fast.
+    Use search/provider/free_only to reduce payload for the UI.
+    """
+    query = select(LLMModel).order_by(LLMModel.id)
+
+    if provider:
+        query = query.where(LLMModel.provider == provider)
+    if free_only:
+        query = query.where(LLMModel.is_free == True)
+    if open_weight_only:
+        query = query.where(LLMModel.is_open_weight == True)
+
+    all_models = session.exec(query).all()
+
+    # Dedup by model_id in-memory (handles existing DB duplicates)
     seen: set[str] = set()
     deduped = []
     for m in all_models:
         if m.model_id not in seen:
             seen.add(m.model_id)
             deduped.append(m)
+
+    # Client-side search filter (fast — avoids LIKE on SQLite)
+    if search:
+        s = search.lower()
+        deduped = [m for m in deduped if s in m.name.lower() or s in m.model_id.lower()]
+
+    # Pagination
+    total = len(deduped)
+    deduped = deduped[offset: offset + limit]
+
     return [_to_read(m) for m in deduped]
 
 

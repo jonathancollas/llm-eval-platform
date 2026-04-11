@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { modelsApi, ollamaApi } from "@/lib/api";
 import { API_BASE, OLLAMA_BASE_URL } from "@/lib/config";
 import type { LLMModel, ModelProvider } from "@/lib/api";
-import { useModels } from "@/lib/useApi";
+import { useModelsFull } from "@/lib/useApi";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
@@ -258,7 +258,7 @@ export default function ModelsPage() {
   const [importingOllama, setImportingOllama] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
-  const { models: swrModels, isLoading: swrLoading, refresh: refreshModels } = useModels();
+  const { models: swrModels, isLoading: swrLoading, refresh: refreshModels } = useModelsFull();
   useEffect(() => { setModels(swrModels); if (!swrLoading) setLoading(false); }, [swrModels, swrLoading]);
   const load = useCallback(() => { refreshModels(); }, [refreshModels]);
 

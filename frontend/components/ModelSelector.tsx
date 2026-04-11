@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
-import type { LLMModel } from "@/lib/api";
+import type { LLMModelSlim } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { Check, Download, CheckCircle2 } from "lucide-react";
 
@@ -17,7 +17,7 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ mode, selected, onChange, idType = "db_id", label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps) {
-  const [models, setModels] = useState<LLMModel[]>([]);
+  const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "free" | "local" | "open">("all");
   const [search, setSearch] = useState("");
@@ -77,16 +77,16 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     });
   }, [loadModels]);
 
-  const getId = (m: LLMModel) => idType === "model_id" ? ((m as any).model_id || m.name) : m.id;
-  const isSelected = (m: LLMModel) => (selected as any[]).includes(getId(m));
+  const getId = (m: LLMModelSlim) => idType === "model_id" ? ((m as any).model_id || m.name) : m.id;
+  const isSelected = (m: LLMModelSlim) => (selected as any[]).includes(getId(m));
 
-  const toggle = (m: LLMModel) => {
+  const toggle = (m: LLMModelSlim) => {
     const id = getId(m);
     if (mode === "single") onChange([id]);
     else onChange(isSelected(m) ? (selected as any[]).filter(x => x !== id) : [...selected, id]);
   };
 
-  const handleDownload = async (model: LLMModel, e: React.MouseEvent) => {
+  const handleDownload = async (model: LLMModelSlim, e: React.MouseEvent) => {
     e.stopPropagation();
     const orId = ((model as any).model_id || "").replace("openrouter/", "").replace(":free", "");
     const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];

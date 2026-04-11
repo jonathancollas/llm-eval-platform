@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
-import type { LLMModel } from "@/lib/api";
+import type { LLMModel, LLMModelSlim } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ShieldAlert, Zap, Target, AlertTriangle, ChevronDown, ChevronUp, Play, RotateCcw } from "lucide-react";
@@ -110,7 +110,7 @@ export default function RedboxPage() {
   const [activeTab, setActiveTab] = useState<"forge" | "exploits" | "heatmap">("forge");
 
   // Run state
-  const [models, setModels] = useState<LLMModel[]>([]);
+  const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [runResults, setRunResults] = useState<RunResult[] | null>(null);
