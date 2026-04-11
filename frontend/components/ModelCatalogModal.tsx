@@ -47,7 +47,7 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
     fetch(`${API_BASE}/catalog/models?${params}`)
       .then(async (r) => {
         const data = await r.json().catch(() => null);
-        if (!r.ok) throw new Error(data?.detail ?? `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(data?.detail ?? `HTTP ${r.status} ${r.statusText}`);
         if (!Array.isArray(data)) throw new Error("Invalid catalog response");
         setModels(data);
       })

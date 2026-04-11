@@ -39,7 +39,7 @@ class CatalogModel(BaseModel):
 
 class CatalogBenchmark(BaseModel):
     key: str; name: str; type: str; domain: str; description: str
-    metric: str; num_samples: int; dataset_path: str; tags: list[str]
+    metric: str; num_samples: int; dataset_path: str = ""; tags: list[str] = []
     risk_threshold: Optional[float] = None
     is_frontier: bool = False
     methodology_note: Optional[str] = None
@@ -94,7 +94,7 @@ async def get_model_catalog(
         "huggingfaceh4", "stabilityai",
     }
 
-    def _matches_filters(*, provider_name: str, is_free: bool, is_oss: bool, cost_in: float, name: str, model_id: str) -> bool:
+    def matches_filters(*, provider_name: str, is_free: bool, is_oss: bool, cost_in: float, name: str, model_id: str) -> bool:
         if provider and provider.lower() not in provider_name.lower(): return False
         if free_only and not is_free: return False
         if open_source_only and not is_oss: return False
@@ -135,7 +135,7 @@ async def get_model_catalog(
             cost_output_per_1k=round(cost_out, 4), is_free=is_free,
             is_open_source=is_oss, description=description, tags=tags,
         )
-        if not _matches_filters(
+        if not matches_filters(
             provider_name=provider_name,
             is_free=is_free,
             is_oss=is_oss,
@@ -158,7 +158,7 @@ async def get_model_catalog(
             is_oss = "open-source" in tags
             is_free = (m.cost_input_per_1k == 0 and m.cost_output_per_1k == 0)
             provider_name = (m.provider.value if hasattr(m.provider, "value") else str(m.provider or "Unknown")).title()
-            if not _matches_filters(
+            if not matches_filters(
                 provider_name=provider_name,
                 is_free=is_free,
                 is_oss=is_oss,
