@@ -7,6 +7,45 @@ import { Plus, GitFork, FlaskConical, ScrollText, Users, ChevronRight,
          CheckCircle2, Clock, Copy, ExternalLink, BookOpen, Beaker } from "lucide-react";
 
 const API = API_BASE;
+
+type WorkspaceStatus = "draft" | "active" | "published" | "archived";
+type ConfidenceGrade = "A" | "B" | "C" | "D" | "insufficient";
+
+interface Workspace {
+  id: number;
+  name: string;
+  description?: string | null;
+  hypothesis?: string | null;
+  protocol?: string | null;
+  status: WorkspaceStatus;
+  risk_domain: string;
+  visibility: string;
+  fork_count: number;
+}
+
+interface Replication {
+  lab: string;
+  status: string;
+  successful: boolean;
+  concordance_score?: number;
+  notes?: string;
+}
+
+interface RepSummary {
+  total?: number;
+  successful?: number;
+  avg_concordance?: number;
+  confidence_grade?: ConfidenceGrade;
+}
+
+interface Manifest {
+  seed?: string | number;
+  temperature?: number;
+  judge_version?: string;
+  platform_version?: string;
+  replication_command?: string;
+  [key: string]: unknown;
+}
 const RISK_DOMAINS = [
   { value: "capability",  label: "Dangerous Capability",  icon: "⚡" },
   { value: "propensity",  label: "Propensity / Scheming", icon: "🎭" },
@@ -30,10 +69,10 @@ const CONFIDENCE_CFG = {
 };
 
 export default function ResearchPage() {
-  const [workspaces, setWorkspaces] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [replications, setReplications] = useState([]);
-  const [repSummary, setRepSummary] = useState(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selected, setSelected] = useState<Workspace | null>(null);
+  const [replications, setReplications] = useState<Replication[]>([]);
+  const [repSummary, setRepSummary] = useState<RepSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -43,7 +82,7 @@ export default function ResearchPage() {
   const [newWs, setNewWs] = useState({ name: "", description: "", hypothesis: "", protocol: "", risk_domain: "capability", visibility: "private" });
   const [repForm, setRepForm] = useState({ lab: "", notes: "" });
   const [submitForm, setSubmitForm] = useState({ lab: "", concordance: "0.85", successful: true, notes: "" });
-  const [manifest, setManifest] = useState(null);
+  const [manifest, setManifest] = useState<Manifest | null>(null);
   const [manifestLoading, setManifestLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -54,7 +93,7 @@ export default function ResearchPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const selectWorkspace = async (ws) => {
+  const selectWorkspace = async (ws: Workspace) => {
     setSelected(ws); setTab("overview"); setManifest(null);
     const r = await fetch(`${API}/research/workspaces/${ws.id}/replications`);
     if (r.ok) { const d = await r.json(); setReplications(d.replications ?? []); setRepSummary(d.summary); }
@@ -66,8 +105,8 @@ export default function ResearchPage() {
     setShowCreateForm(false); setNewWs({ name: "", description: "", hypothesis: "", protocol: "", risk_domain: "capability", visibility: "private" }); load(); setSaving(false);
   };
 
-  const fork = async (id) => { await fetch(`${API}/research/workspaces/${id}/fork?new_name=Fork`, { method: "POST" }); load(); };
-  const publish = async (id) => {
+  const fork = async (id: number) => { await fetch(`${API}/research/workspaces/${id}/fork?new_name=Fork`, { method: "POST" }); load(); };
+  const publish = async (id: number) => {
     await fetch(`${API}/research/workspaces/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "published", visibility: "public" }) });
     load();
   };
