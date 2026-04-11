@@ -41,23 +41,47 @@ export function useSync(): SyncState {
     fetch(`${API_BASE}/sync/startup`, { method: "POST" }).catch(() => {});
 
     // Step 2 — poll status until done or error
+    let attempts = 0;
+    let consecutiveErrors = 0;
+    const MAX_ATTEMPTS = 30;        // 30 × 2 s = 60 s hard timeout
+    const MAX_CONSECUTIVE_ERRORS = 3; // stop after 3 non-OK/network failures in a row
+
+    const stopPolling = () => {
+      clearInterval(pollRef.current!);
+      pollRef.current = null;
+      localStorage.setItem(SYNC_KEY, String(Date.now()));
+      setSynced(true);
+      setSyncing(false);
+    };
+
     pollRef.current = setInterval(async () => {
+      attempts += 1;
+
+      // Hard timeout — give up after MAX_ATTEMPTS regardless of server state
+      if (attempts >= MAX_ATTEMPTS) {
+        stopPolling();
+        return;
+      }
+
       try {
         const res = await fetch(`${API_BASE}/sync/startup/status`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          consecutiveErrors += 1;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) stopPolling();
+          return;
+        }
+        consecutiveErrors = 0;
         const data = await res.json();
 
         if (data.status === "done" || data.status === "error") {
-          clearInterval(pollRef.current!);
-          pollRef.current = null;
           setBenchmarks(data.benchmarks_added ?? 0);
           setModels(data.models_added ?? 0);
-          localStorage.setItem(SYNC_KEY, String(Date.now()));
-          setSynced(true);
-          setSyncing(false);
+          stopPolling();
         }
       } catch {
-        // Network hiccup — keep polling
+        // Network hiccup
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) stopPolling();
       }
     }, POLL_INTERVAL_MS);
 
