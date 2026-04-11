@@ -196,7 +196,7 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
         # Dev mode — warn operator, allow request
         resp = await call_next(request)
         resp.headers["X-Auth-Warning"] = (
-            "ADMIN_API_KEY not configured — authentication disabled. "
+            "ADMIN_API_KEY not configured - authentication disabled. "
             "Set ADMIN_API_KEY env var before deploying to production."
         )
         return resp

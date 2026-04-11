@@ -39,13 +39,18 @@ export function ModelCatalogModal({ onClose, existingModelIds = [] }: {
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (freeOnly) params.set("free_only", "true");
     if (ossOnly) params.set("open_source_only", "true");
     fetch(`${API_BASE}/catalog/models?${params}`)
-      .then(r => r.json())
-      .then(setModels)
+      .then(async (r) => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(data?.detail ?? `HTTP ${r.status}`);
+        if (!Array.isArray(data)) throw new Error("Invalid catalog response");
+        setModels(data);
+      })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
   }, [search, freeOnly, ossOnly]);
