@@ -2,6 +2,7 @@ import os
 import sys
 import importlib.util
 import uuid
+import secrets
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from sqlmodel import Session, SQLModel, create_engine
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Settings required by app config
-os.environ.setdefault("SECRET_KEY", "a" * 64)
+os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 BENCHMARKS_PATH = BACKEND_DIR / "api" / "routers" / "benchmarks.py"
@@ -81,14 +82,18 @@ def benchmark_id(client):
 
 
 def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
+    custom_dir = test_dirs["bench_library"] / "custom"
+    existing_files = set(custom_dir.glob("*_dataset.json")) if custom_dir.exists() else set()
     files = {"file": ("dataset.json", b'[{"prompt":"p","answer":"a"}]', "application/json")}
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["id"] == benchmark_id
     assert body["has_dataset"] is True
-    custom_files = list((test_dirs["bench_library"] / "custom").glob("*_dataset.json"))
-    assert any(f.read_bytes() == b'[{"prompt":"p","answer":"a"}]' for f in custom_files)
+    created_files = set(custom_dir.glob("*_dataset.json")) - existing_files
+    assert len(created_files) == 1
+    created_file = next(iter(created_files))
+    assert created_file.read_bytes() == b'[{"prompt":"p","answer":"a"}]'
 
 
 def test_upload_dataset_empty_json_rejected(client, benchmark_id):
