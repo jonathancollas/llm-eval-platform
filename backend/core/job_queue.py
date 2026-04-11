@@ -14,6 +14,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Coroutine, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
+
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_S = 30
@@ -115,7 +117,7 @@ def is_running(campaign_id: int) -> bool:
                     return False  # Pre-heartbeat campaign
                 age = (datetime.utcnow() - heartbeat).total_seconds()
                 return age <= STALE_THRESHOLD_S
-    except OSError:
+    except (OSError, SQLAlchemyError):
         pass
     return False
 
