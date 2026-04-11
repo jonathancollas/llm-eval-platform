@@ -1,5 +1,6 @@
 import os
 import sys
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Settings required by app config
 os.environ.setdefault("SECRET_KEY", "a" * 64)
 
-from api.routers import benchmarks
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+BENCHMARKS_PATH = BACKEND_DIR / "api" / "routers" / "benchmarks.py"
+_spec = importlib.util.spec_from_file_location("benchmarks_router_module", BENCHMARKS_PATH)
+benchmarks = importlib.util.module_from_spec(_spec)
+assert _spec is not None and _spec.loader is not None
+_spec.loader.exec_module(benchmarks)
 
 
 @pytest.fixture(scope="module")
