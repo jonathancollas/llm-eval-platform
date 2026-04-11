@@ -74,7 +74,7 @@ async def generate_text(
             )
             return (resp.choices[0].message.content or "").strip()
         except Exception as e:
-            raise RuntimeError(f"Ollama model '{ollama_model}' failed: {e}")
+            raise RuntimeError(f"Ollama model '{ollama_model}' failed: {e}") from e
 
     # Option 1: explicit model override (litellm format)
     if model_override:
@@ -108,8 +108,8 @@ async def generate_text(
                         timeout=timeout,
                     )
                     return (resp.choices[0].message.content or "").strip()
-    except Exception:
-        pass  # Ollama not available, fall through
+    except (OSError, TimeoutError, ImportError, KeyError, IndexError, RuntimeError) as _ollama_err:
+        logger.debug(f"Ollama auto-detect unavailable: {_ollama_err}")  # Expected — not an error
 
     # Option 3: Anthropic API
     if settings.anthropic_api_key:
