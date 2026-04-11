@@ -532,3 +532,311 @@ def check_benchmark_validity(
             "INESIA PDF Priority 5 — dynamically generated, expert-validated, adversarially designed benchmarks",
         ],
     }
+
+
+# ── #113 Compositional Risk Modeling ─────────────────────────────────────────
+
+class CompositionalRiskRequest(BaseModel):
+    model_name: str
+    domain_scores: dict = {}       # capability scores per domain
+    propensity_scores: dict = {}   # propensity scores per domain
+    autonomy_level: str = "L2"
+    tools: list[str] = []
+    memory_type: str = "session"
+
+
+@router.post("/compositional-risk")
+def compute_compositional_risk(payload: CompositionalRiskRequest):
+    """
+    Compute system-level threat profile from individual capability/propensity scores.
+
+    Risks compose multiplicatively — moderate capabilities across multiple
+    dangerous domains can produce critical system-level risk.
+
+    Reference: INESIA PDF Priority 3 — compositional and emergent risk.
+    """
+    from eval_engine.compositional_risk import CompositionalRiskEngine
+    engine = CompositionalRiskEngine()
+    profile = engine.compute(
+        model_name=payload.model_name,
+        domain_scores=payload.domain_scores,
+        propensity_scores=payload.propensity_scores,
+        autonomy_level=payload.autonomy_level,
+        tools=payload.tools,
+        memory_type=payload.memory_type,
+    )
+    return {
+        "model_name": profile.model_name,
+        "autonomy_level": profile.autonomy_level,
+        "tools": profile.tools,
+        "memory_type": profile.memory_type,
+        "scores": {
+            "baseline_risk": profile.baseline_risk,
+            "autonomy_multiplier": profile.autonomy_multiplier,
+            "tool_multiplier": profile.tool_multiplier,
+            "memory_multiplier": profile.memory_multiplier,
+            "combo_multiplier": profile.combo_multiplier,
+            "composite_risk_score": profile.composite_risk_score,
+        },
+        "verdict": {
+            "risk_level": profile.risk_level,
+            "dominant_threat_vector": profile.dominant_threat_vector,
+            "autonomy_recommendation": profile.autonomy_recommendation,
+        },
+        "domain_breakdown": [
+            {"domain": r.domain, "raw_score": r.raw_score,
+             "severity_weight": r.severity_weight, "weighted_risk": r.weighted_risk,
+             "interpretation": r.interpretation}
+            for r in profile.domain_risks
+        ],
+        "dangerous_combinations": [
+            {"domains": c.domains, "multiplier": c.multiplier, "reason": c.reason}
+            for c in profile.dangerous_combos_triggered
+        ],
+        "key_concerns": profile.key_concerns,
+        "mitigation_priorities": profile.mitigation_priorities,
+        "caveat": profile.caveat,
+        "references": [
+            "INESIA PDF Priority 3 — Compositional and emergent risk",
+            "AgentDojo (Debenedetti et al., 2024) — compositional agentic risk",
+            "NIST AI 800-4 — system-level risk assessment",
+        ],
+    }
+
+
+@router.get("/compositional-risk/domains")
+def get_risk_domains():
+    """List all supported risk domains and their severity weights."""
+    from eval_engine.compositional_risk import DOMAIN_SEVERITY, AUTONOMY_MULTIPLIER, TOOL_MULTIPLIER, MEMORY_MULTIPLIER
+    return {
+        "domains": DOMAIN_SEVERITY,
+        "autonomy_multipliers": AUTONOMY_MULTIPLIER,
+        "tool_multipliers": TOOL_MULTIPLIER,
+        "memory_multipliers": MEMORY_MULTIPLIER,
+    }
+
+
+# ── #114 Failure Clustering ───────────────────────────────────────────────────
+
+@router.get("/failure-clusters/campaign/{campaign_id}")
+def get_failure_clusters(
+    campaign_id: int,
+    min_cluster_size: int = 2,
+    similarity_threshold: float = 0.3,
+    session: Session = Depends(get_session),
+):
+    """
+    Cluster failure traces from a campaign and detect novel failure patterns.
+
+    Uses TF-IDF + cosine similarity (no LLM required).
+    Novel clusters = patterns not in existing failure taxonomy.
+
+    Reference: INESIA Research OS — failure clustering for scientific discovery.
+    """
+    from eval_engine.failure_clustering import FailureClusteringEngine
+    from core.models import EvalResult
+
+    # Load failures (scored items below 0.5)
+    results = session.exec(
+        select(EvalResult).join(
+            EvalRun, EvalResult.run_id == EvalRun.id
+        ).where(
+            EvalRun.campaign_id == campaign_id,
+            EvalResult.score < 0.5,
+        ).limit(500)
+    ).all()
+
+    if not results:
+        raise HTTPException(422, "No failure results found for this campaign.")
+
+    # Enrich with model names
+    model_cache = {}
+    failures = []
+    for r in results:
+        run = session.get(EvalRun, r.run_id)
+        if run and run.model_id not in model_cache:
+            m = session.get(LLMModel, run.model_id)
+            model_cache[run.model_id] = m.name if m else str(run.model_id)
+        failures.append({
+            "prompt": r.prompt or "",
+            "response": r.response or "",
+            "score": r.score,
+            "model_name": model_cache.get(run.model_id if run else 0, "unknown"),
+            "category": "",
+        })
+
+    engine = FailureClusteringEngine(
+        similarity_threshold=similarity_threshold,
+        min_cluster_size=min_cluster_size,
+    )
+    report = engine.discover(failures, campaign_id=campaign_id)
+
+    return {
+        "campaign_id": report.campaign_id,
+        "n_failures_analysed": report.n_failures,
+        "n_clusters": report.n_clusters,
+        "summary": report.summary,
+        "novel_clusters": [
+            {
+                "cluster_id": c.cluster_id,
+                "size": c.size,
+                "failure_family": c.failure_family,
+                "is_novel": c.is_novel,
+                "reproducibility_score": c.reproducibility_score,
+                "cross_model": c.cross_model,
+                "affected_models": c.affected_models,
+                "common_keywords": c.common_keywords,
+                "causal_hypothesis": c.causal_hypothesis,
+                "recommended_benchmark": c.recommended_benchmark,
+                "representative_prompts": c.representative_prompts,
+            }
+            for c in report.novel_clusters
+        ],
+        "known_clusters": [
+            {
+                "cluster_id": c.cluster_id,
+                "size": c.size,
+                "failure_family": c.failure_family,
+                "common_keywords": c.common_keywords,
+                "causal_hypothesis": c.causal_hypothesis,
+            }
+            for c in report.known_clusters
+        ],
+        "cross_model_patterns": report.cross_model_patterns,
+        "top_emerging_risk": report.top_emerging_risk,
+    }
+
+
+# ── #113 Compositional Risk Modeling ─────────────────────────────────────────
+
+class CompositionalRiskRequest(BaseModel):
+    model_name: str
+    domain_scores: dict = {}
+    propensity_scores: dict = {}
+    autonomy_level: str = "L2"
+    tools: list = []
+    memory_type: str = "session"
+
+
+@router.post("/compositional-risk")
+def compute_compositional_risk(payload: CompositionalRiskRequest):
+    """Compute system-level threat profile (#113). Reference: INESIA Priority 3."""
+    from eval_engine.compositional_risk import CompositionalRiskEngine
+    engine = CompositionalRiskEngine()
+    profile = engine.compute(
+        model_name=payload.model_name,
+        domain_scores=payload.domain_scores,
+        propensity_scores=payload.propensity_scores,
+        autonomy_level=payload.autonomy_level,
+        tools=payload.tools,
+        memory_type=payload.memory_type,
+    )
+    return {
+        "model_name": profile.model_name,
+        "autonomy_level": profile.autonomy_level,
+        "scores": {
+            "baseline_risk": profile.baseline_risk,
+            "autonomy_multiplier": profile.autonomy_multiplier,
+            "tool_multiplier": profile.tool_multiplier,
+            "memory_multiplier": profile.memory_multiplier,
+            "combo_multiplier": profile.combo_multiplier,
+            "composite_risk_score": profile.composite_risk_score,
+        },
+        "verdict": {
+            "risk_level": profile.risk_level,
+            "dominant_threat_vector": profile.dominant_threat_vector,
+            "autonomy_recommendation": profile.autonomy_recommendation,
+        },
+        "domain_breakdown": [
+            {"domain": r.domain, "raw_score": r.raw_score,
+             "severity_weight": r.severity_weight, "weighted_risk": r.weighted_risk}
+            for r in profile.domain_risks
+        ],
+        "dangerous_combinations": [
+            {"domains": c.domains, "multiplier": c.multiplier, "reason": c.reason}
+            for c in profile.dangerous_combos_triggered
+        ],
+        "key_concerns": profile.key_concerns,
+        "mitigation_priorities": profile.mitigation_priorities,
+        "caveat": profile.caveat,
+    }
+
+
+@router.get("/compositional-risk/domains")
+def get_risk_domains():
+    """List supported risk domains and multipliers."""
+    from eval_engine.compositional_risk import DOMAIN_SEVERITY, AUTONOMY_MULTIPLIER, TOOL_MULTIPLIER, MEMORY_MULTIPLIER
+    return {
+        "domains": DOMAIN_SEVERITY,
+        "autonomy_multipliers": AUTONOMY_MULTIPLIER,
+        "tool_multipliers": TOOL_MULTIPLIER,
+        "memory_multipliers": MEMORY_MULTIPLIER,
+    }
+
+
+# ── #114 Failure Clustering ───────────────────────────────────────────────────
+
+@router.get("/failure-clusters/campaign/{campaign_id}")
+def get_failure_clusters(
+    campaign_id: int,
+    min_cluster_size: int = 2,
+    similarity_threshold: float = 0.3,
+    session: Session = Depends(get_session),
+):
+    """Cluster failure traces and detect novel patterns (#114)."""
+    from eval_engine.failure_clustering import FailureClusteringEngine
+    from core.models import EvalResult as EvalResultModel
+
+    results = session.exec(
+        select(EvalResult).join(
+            EvalRun, EvalResult.run_id == EvalRun.id
+        ).where(
+            EvalRun.campaign_id == campaign_id,
+            EvalResult.score < 0.5,
+        ).limit(500)
+    ).all()
+
+    if not results:
+        raise HTTPException(422, "No failure results found for this campaign.")
+
+    model_cache: dict = {}
+    failures = []
+    for r in results:
+        run = session.get(EvalRun, r.run_id)
+        if run and run.model_id not in model_cache:
+            m = session.get(LLMModel, run.model_id)
+            model_cache[run.model_id] = m.name if m else str(run.model_id)
+        failures.append({
+            "prompt": r.prompt or "",
+            "response": r.response or "",
+            "score": r.score,
+            "model_name": model_cache.get(run.model_id if run else 0, "unknown"),
+        })
+
+    engine = FailureClusteringEngine(
+        similarity_threshold=similarity_threshold,
+        min_cluster_size=min_cluster_size,
+    )
+    report = engine.discover(failures, campaign_id=campaign_id)
+
+    return {
+        "campaign_id": report.campaign_id,
+        "n_failures_analysed": report.n_failures,
+        "n_clusters": report.n_clusters,
+        "summary": report.summary,
+        "novel_clusters": [
+            {"cluster_id": c.cluster_id, "size": c.size, "failure_family": c.failure_family,
+             "is_novel": c.is_novel, "cross_model": c.cross_model,
+             "affected_models": c.affected_models, "common_keywords": c.common_keywords,
+             "causal_hypothesis": c.causal_hypothesis,
+             "recommended_benchmark": c.recommended_benchmark}
+            for c in report.novel_clusters
+        ],
+        "known_clusters": [
+            {"cluster_id": c.cluster_id, "size": c.size, "failure_family": c.failure_family,
+             "common_keywords": c.common_keywords}
+            for c in report.known_clusters
+        ],
+        "cross_model_patterns": report.cross_model_patterns,
+        "top_emerging_risk": report.top_emerging_risk,
+    }
