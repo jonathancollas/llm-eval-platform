@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback, useMemo, memo, useRef, useEffect } from "react";
-import { FixedSizeList, type ListChildComponentProps } from "react-window";
+import { List, type ListImperativeAPI, type RowComponentProps } from "react-window";
 import { modelsApi, ollamaApi } from "@/lib/api";
 import { API_BASE, OLLAMA_BASE_URL } from "@/lib/config";
 import type { LLMModel, ModelProvider } from "@/lib/api";
@@ -147,8 +147,7 @@ const FilterChip = memo(function FilterChip({label,active,onClick}:{label:string
 
 // ── Virtual row (react-window) ────────────────────────────────────────────────
 interface RowData { items:LLMModel[];expandedId:number|null;testResults:Record<number,any>;testingId:number|null;onToggle:(id:number)=>void;onTest:(id:number)=>void;onDelete:(id:number)=>void; }
-function VirtualRow({index,style,data}:ListChildComponentProps<RowData>){
-  const{items,expandedId,testResults,testingId,onToggle,onTest,onDelete}=data;
+function VirtualRow({index,style,items,expandedId,testResults,testingId,onToggle,onTest,onDelete}:RowComponentProps<RowData>){
   const m=items[index];
   return <div style={{...style,paddingBottom:8}}><ModelCard model={m} expanded={expandedId===m.id} testResult={testResults[m.id]} testing={testingId===m.id} onToggle={onToggle} onTest={onTest} onDelete={onDelete}/></div>;
 }
@@ -218,7 +217,7 @@ export default function ModelsPage(){
   },[form,models,refreshModels]);
 
   const listData=useMemo<RowData>(()=>({items:filtered,expandedId,testResults,testingId,onToggle:handleToggle,onTest:handleTest,onDelete:handleDelete}),[filtered,expandedId,testResults,testingId,handleToggle,handleTest,handleDelete]);
-  const listRef=useRef<FixedSizeList>(null);
+  const listRef=useRef<ListImperativeAPI>(null);
 
   return(
     <AppErrorBoundary>
@@ -276,9 +275,7 @@ export default function ModelsPage(){
           </div>
         ):(
           /* Large list — virtualized, collapsed cards only */
-          <FixedSizeList ref={listRef} height={Math.min(700,typeof window!=="undefined"?window.innerHeight-300:600)} width="100%" itemCount={filtered.length} itemSize={CARD_H+8} itemData={listData} overscanCount={5}>
-            {VirtualRow}
-          </FixedSizeList>
+          <List listRef={listRef} style={{height:Math.min(700,typeof window!=="undefined"?window.innerHeight-300:600),width:"100%"}} rowCount={filtered.length} rowHeight={CARD_H+8} rowProps={listData} rowComponent={VirtualRow} overscanCount={5}/>
         )}
       </div>
 
