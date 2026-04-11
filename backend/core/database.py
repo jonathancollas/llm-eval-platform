@@ -110,8 +110,10 @@ def _migrate_add_columns() -> None:
             try:
                 cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} DEFAULT {default}")
                 logger.info(f"Migration: added {table}.{col}")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+            except sqlite3.OperationalError as e:
+                # Only suppress "column already exists" errors; propagate real errors.
+                if "duplicate column" not in str(e).lower() and "already exists" not in str(e).lower():
+                    raise
         conn.commit()
         conn.close()
     except Exception as e:

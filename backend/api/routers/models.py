@@ -29,7 +29,12 @@ def _validate_endpoint(url: Optional[str]) -> Optional[str]:
     import ipaddress
     try:
         import socket
-        numeric = socket.getaddrinfo(host, None)[0][4][0]
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(5)
+        try:
+            numeric = socket.getaddrinfo(host, None)[0][4][0]
+        finally:
+            socket.setdefaulttimeout(old_timeout)
         addr = ipaddress.ip_address(numeric)
         if (
             addr.is_loopback
@@ -196,7 +201,17 @@ def list_models(
     Default limit=500 covers all models in one call while staying fast.
     Use search/provider/free_only to reduce payload for the UI.
     """
-    query = select(LLMModel).order_by(LLMModel.id)
+    from sqlmodel import func
+    from sqlalchemy import over
+
+    # Use a subquery to pick the row with the lowest id for each model_id so
+    # deduplication is done in SQL instead of loading all rows into memory.
+    min_id_subq = (
+        select(func.min(LLMModel.id).label("min_id"))
+        .group_by(LLMModel.model_id)
+        .subquery()
+    )
+    query = select(LLMModel).where(LLMModel.id.in_(select(min_id_subq.c.min_id)))
 
     if provider:
         query = query.where(LLMModel.provider == provider)
@@ -204,27 +219,15 @@ def list_models(
         query = query.where(LLMModel.is_free == True)
     if open_weight_only:
         query = query.where(LLMModel.is_open_weight == True)
-
-    all_models = session.exec(query).all()
-
-    # Dedup by model_id in-memory (handles existing DB duplicates)
-    seen: set[str] = set()
-    deduped = []
-    for m in all_models:
-        if m.model_id not in seen:
-            seen.add(m.model_id)
-            deduped.append(m)
-
-    # Client-side search filter (fast — avoids LIKE on SQLite)
     if search:
-        s = search.lower()
-        deduped = [m for m in deduped if s in m.name.lower() or s in m.model_id.lower()]
+        s = f"%{search}%"
+        query = query.where(
+            LLMModel.name.ilike(s) | LLMModel.model_id.ilike(s)
+        )
 
-    # Pagination
-    total = len(deduped)
-    deduped = deduped[offset: offset + limit]
-
-    return [_to_read(m) for m in deduped]
+    query = query.order_by(LLMModel.id).offset(offset).limit(limit)
+    models_page = session.exec(query).all()
+    return [_to_read(m) for m in models_page]
 
 
 @router.post("/", response_model=ModelRead, status_code=status.HTTP_201_CREATED)
