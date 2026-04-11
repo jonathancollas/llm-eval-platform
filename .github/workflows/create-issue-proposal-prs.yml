@@ -1,0 +1,125 @@
+name: Create proposal branches and draft PRs for open issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_branch:
+        description: Base branch to branch from
+        required: false
+        default: main
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  create-proposal-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.base_branch || 'main' }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create proposal branches and draft PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          BASE="${{ github.event.inputs.base_branch || 'main' }}"
+          BASE_SHA=$(git rev-parse HEAD)
+
+          echo "Base branch: $BASE ($BASE_SHA)"
+
+          # Fetch all open issues
+          issues=$(gh issue list \
+            --repo "$OWNER/$REPO" \
+            --state open \
+            --limit 200 \
+            --json number,title \
+            --jq '.[]')
+
+          echo "$issues" | while IFS= read -r issue; do
+            num=$(echo "$issue" | jq -r '.number')
+            title=$(echo "$issue" | jq -r '.title')
+            branch="issue/${num}-proposal"
+            proposal_file="proposals/issue-${num}.md"
+
+            echo "---"
+            echo "Processing issue #$num: $title"
+
+            # Skip if branch already exists remotely
+            if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              echo "Branch $branch already exists remotely, skipping creation"
+            else
+              git checkout -b "$branch" "$BASE_SHA"
+
+              mkdir -p proposals
+
+              # Use existing proposal file if available, otherwise generate a basic one
+              if [ -f "$proposal_file" ]; then
+                echo "Using existing proposal file: $proposal_file"
+              else
+                cat > "$proposal_file" << PROPOSAL
+          # Issue #${num}: ${title}
+
+          ## Faisabilité
+
+          - [ ] Clarifier le scope fonctionnel
+          - [ ] Identifier les composants impactés
+          - [ ] Définir la stratégie de tests
+
+          ## Proposition de mise en œuvre
+
+          - [ ] Implémentation minimale
+          - [ ] Tests unitaires/intégration
+          - [ ] Documentation
+
+          ## Critères d'acceptance
+
+          - [ ] Toutes les fonctionnalités décrites dans l'issue sont implémentées
+          - [ ] Tests passent en CI
+          - [ ] Documentation mise à jour
+          PROPOSAL
+              fi
+
+              git add "$proposal_file"
+              git commit -m "chore(issue #${num}): add implementation proposal"
+              git push origin "$branch"
+              git checkout "$BASE"
+            fi
+
+            # Check if a PR already exists for this branch
+            existing_pr=$(gh pr list \
+              --repo "$OWNER/$REPO" \
+              --head "$branch" \
+              --json number \
+              --jq '.[0].number // empty')
+
+            if [ -n "$existing_pr" ]; then
+              echo "PR #$existing_pr already exists for branch $branch, skipping"
+            else
+              echo "Creating draft PR for issue #$num..."
+              gh pr create \
+                --repo "$OWNER/$REPO" \
+                --base "$BASE" \
+                --head "$branch" \
+                --draft \
+                --title "WIP #${num} — ${title}" \
+                --body "$(printf 'Closes #%s\n\nPR générée automatiquement pour analyser la faisabilité et proposer une implémentation.\n\nCe brouillon sera enrichi avec le code dans les commits suivants.\n\n## Analyse de faisabilité\n\nVoir `proposals/issue-%s.md` pour l'"'"'analyse détaillée.' "$num" "$num")"
+              echo "Draft PR created for issue #$num"
+            fi
+          done
+
+          echo "---"
+          echo "Done! All proposal PRs processed."
