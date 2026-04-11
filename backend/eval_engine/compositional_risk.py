@@ -174,12 +174,13 @@ class CompositionalRiskEngine:
         self,
         model_name: str,
         domain_scores: dict[str, float],     # capability scores per domain
-        propensity_scores: dict[str, float],  # propensity scores per domain
+        propensity_scores: dict[str, float] = None,  # propensity scores per domain
         autonomy_level: str = "L2",
         tools: list[str] | None = None,
         memory_type: str = "session",
     ) -> SystemThreatProfile:
         tools = tools or []
+        propensity_scores = propensity_scores or {}
 
         # Merge capability and propensity — take max (worst case)
         all_domains: dict[str, float] = {}

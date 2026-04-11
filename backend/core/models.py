@@ -115,6 +115,8 @@ class Campaign(SQLModel, table=True):
     current_item_index: Optional[int] = Field(default=None)
     current_item_total: Optional[int] = Field(default=None)
     current_item_label: Optional[str] = Field(default=None)
+    # Heartbeat for durable job queue (#S3) — updated every 30s by running campaign
+    last_heartbeat_at: Optional[datetime] = Field(default=None, sa_column_kwargs={"nullable": True})
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)

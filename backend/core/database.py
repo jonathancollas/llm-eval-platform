@@ -119,19 +119,46 @@ def _migrate_add_columns() -> None:
 
 
 def _reset_stuck_campaigns() -> None:
-    """Reset campaigns stuck in RUNNING state (from crashed process)."""
+    """
+    Recover campaigns stuck in RUNNING state (#S3 — durable job queue).
+    Uses heartbeat timestamp to distinguish crashed vs legitimately running campaigns.
+    Stale = no heartbeat for >2 minutes = process crashed.
+    """
+    from datetime import timedelta
     from core.models import Campaign, JobStatus
+    STALE_THRESHOLD = timedelta(seconds=120)
+
     with Session(engine) as session:
         stuck = session.exec(
             select(Campaign).where(Campaign.status == JobStatus.RUNNING)
         ).all()
-        if stuck:
-            for c in stuck:
+        if not stuck:
+            return
+        now = __import__("datetime").datetime.utcnow()
+        reset_count = 0
+        for c in stuck:
+            heartbeat = getattr(c, "last_heartbeat_at", None)
+            if heartbeat is None:
+                # Pre-heartbeat campaign (before #S3) — reset it
+                stale = True
+            else:
+                stale = (now - heartbeat) > STALE_THRESHOLD
+
+            if stale:
                 c.status = JobStatus.FAILED
-                c.error_message = "Process restarted while campaign was running. Please re-run."
+                c.error_message = (
+                    "Campaign failed: process restarted or heartbeat lost. "
+                    f"Last heartbeat: {heartbeat or 'never'}. Please re-run."
+                )
                 session.add(c)
+                reset_count += 1
+                logger.warning(f"[startup] Campaign {c.id} marked FAILED (stale heartbeat: {heartbeat})")
+            else:
+                logger.info(f"[startup] Campaign {c.id} has fresh heartbeat ({heartbeat}) — leaving as RUNNING.")
+
+        if reset_count:
             session.commit()
-            logger.warning(f"Reset {len(stuck)} stuck RUNNING campaign(s) to FAILED.")
+            logger.warning(f"[startup] Reset {reset_count}/{len(stuck)} stuck campaign(s) to FAILED.")
 
 
 def get_session() -> Generator[Session, None, None]:

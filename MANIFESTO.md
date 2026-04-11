@@ -166,3 +166,96 @@ L'utilisateur peut choisir l'une ou l'autre selon sa situation. Voir le fichier 
 *INESIA — Institut national pour l'évaluation et la sécurité de l'intelligence artificielle*
 *Sous pilotage SGDSN / DGE — Partenaires : ANSSI, Inria, LNE, PEReN*
 *https://www.sgdsn.gouv.fr/nos-missions/anticiper-et-prevenir/evaluer-et-securiser-lia*
+
+---
+
+## Mercury Retrograde — The Research Operating System
+
+> *"The evaluation paradigm has broken. Model scores are no longer enough. Systems must be evaluated in context and in production."*
+
+**Mercury Retrograde** is the technical codename for INESIA's evaluation platform. The name is deliberately chosen:
+
+- **Mercury** — the Roman messenger god, patron of communication and intelligence
+- **Retrograde** — the apparent backward motion that reveals hidden forces; in our context, the anomalies, regressions, and unexpected behaviours that standard evaluation misses
+
+Mercury Retrograde is not a benchmark dashboard. It is the **scientific infrastructure layer for frontier AI risk discovery, validation, and replication**.
+
+---
+
+## The Evaluation Doctrine
+
+### Priority 1 — Capability before propensity
+
+We distinguish two fundamentally different measurements:
+
+**Capability** — what a model *can* do under optimal elicitation (expert scaffolding, adversarial prompts, few-shot examples). Default prompting systematically underestimates the performance ceiling.
+
+**Propensity** — what a model *spontaneously does* in operational context (zero-shot, default temperature, realistic distribution). High capability does not imply safe propensity.
+
+Conflating them generates both false negatives and false positives in risk assessment. Every evaluation in Mercury exposes both scores separately.
+
+### Priority 2 — The agentic shift changes everything
+
+We are no longer evaluating static input-output models. We are evaluating **systems that plan, use tools, maintain memory, spawn sub-agents, and take consequential actions in the real world** — often without any human in the loop.
+
+Model-level evaluation is structurally insufficient for agentic systems. Evaluators who certify models without evaluating the **system-in-context** are providing false assurance.
+
+New failure modes demand new evaluation methods:
+- Prompt injection via untrusted retrieved content (EchoLeak CVE-2025-32711)
+- Goal misgeneralisation under long-horizon task decomposition
+- Inter-agent trust failure in multi-agent pipelines
+- Compounding error amplification across autonomous steps
+
+### Priority 3 — Continuous evaluation, not point-in-time certification
+
+Pre-deployment evaluation alone is no longer a defensible posture. AI is embedded in critical workflows — legal, financial, medical, infrastructure. Behaviour changes when systems are connected to new tools, new contexts, new interacting AI systems.
+
+Mercury implements continuous safety monitoring aligned with **NIST AI 800-4** (March 2026), the first formal standard for deployed AI monitoring.
+
+### Priority 4 — Evaluation integrity
+
+If a model can infer it is being evaluated and modify its behaviour accordingly, the entire evaluation architecture is compromised. This is not a future risk — it is a present one.
+
+Mercury implements anti-sandbagging protocols, blind evaluation modes, and contrastive probing to detect evaluation-aware behaviour.
+
+### Priority 5 — Benchmark validity
+
+A high score on a public benchmark may measure **memorisation**, not the underlying capability it purports to test. Mercury implements contamination detection, dynamic benchmark generation, and validity grading (A–D) for every benchmark in the catalog.
+
+### Priority 6 — Science, not scores
+
+Every evaluation in Mercury is traceable to a heuristic, which maps to a paper. The platform is a **scientific instrument**, not a leaderboard generator.
+
+---
+
+## What Mercury Retrograde Provides
+
+| Layer | What it does |
+|---|---|
+| **Capability/Propensity Engine** | Separates elicited maximum from operational behaviour; tail-risk sampling (P5/P10) |
+| **Agentic Failure Suite** | 35 scenarios across 6 failure modes (injection, drift, trust, compounding, scope, error) |
+| **Scheming Evaluation** | 50 scenarios measuring strategic misrepresentation, evaluation-awareness, self-preservation |
+| **Compositional Risk Engine** | System-level threat profiles from composed capability scores; non-linear risk composition |
+| **Failure Clustering** | TF-IDF-based novel failure discovery; causal hypothesis generation; cross-model patterns |
+| **Mech Interp Validator** | CoT consistency, paraphrase invariance, confidence calibration as interpretability proxies |
+| **Red Room** | Adversarial simulation lab: 6 structured attack scenarios with scientific grounding |
+| **Continuous Monitoring** | NIST AI 800-4 compliant; Langfuse/OTEL integration; drift detection |
+| **Research Workspace OS** | Hypothesis → protocol → experiment → replication → publication workflow |
+| **Multi-lab Replication** | Scientific confidence grades (A–D) from independent replication network |
+
+---
+
+## North Star
+
+The moment a published paper says:
+
+> *"All evaluations were conducted and independently replicated on Mercury Retrograde."*
+
+We will have succeeded.
+
+Mercury Retrograde is positioned to become the **GitHub + Kaggle + CVE of frontier AI safety evaluation** — the infrastructure where new failure modes are discovered before they reach production.
+
+---
+
+*Mercury Retrograde — the Research Operating System for frontier AI evaluation and safety science*
+*INESIA — Institut national pour l'évaluation et la sécurité de l'intelligence artificielle*
