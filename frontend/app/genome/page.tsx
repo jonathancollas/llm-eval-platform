@@ -56,6 +56,116 @@ function RiskBadge({ level }: { level: string }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.bg}`}>{cfg.label}</span>;
 }
 
+// ── Signal row — expandable with heuristic explanation + papers (#83/#90) ──────
+interface HeuristicDetail {
+  label: string; description: string; detection_logic: string;
+  severity_weight: number; false_positive_profile: string;
+  failure_cases: string[]; eval_dimension: string;
+  papers: { title: string; authors: string; year: number; url?: string }[];
+}
+
+function SignalRow({ sigKey, meta, pct }: {
+  sigKey: string;
+  meta: { label: string; color: string; description: string; severity: number };
+  pct: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<HeuristicDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadDetail = async () => {
+    if (detail || loading) { setOpen(o => !o); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/genome/heuristics/signal/${sigKey}`);
+      if (res.ok) setDetail(await res.json());
+    } catch {}
+    setLoading(false);
+    setOpen(true);
+  };
+
+  return (
+    <div className="rounded-lg border border-transparent hover:border-slate-100 transition-colors">
+      {/* Main row */}
+      <button
+        className="w-full flex items-center gap-3 py-1 text-left"
+        onClick={loadDetail}
+        title="Click to see heuristic explanation and papers"
+      >
+        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
+        <span className="text-xs text-slate-600 w-36 shrink-0">{meta.label}</span>
+        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: meta.color }} />
+        </div>
+        <span className="text-xs font-mono text-slate-500 w-8 text-right">{pct}%</span>
+        {meta.severity >= 4 && <RiskBadge level="red" />}
+        {meta.severity === 3 && <RiskBadge level="yellow" />}
+        {loading
+          ? <span className="text-[10px] text-slate-300">…</span>
+          : <span className="text-[10px] text-slate-300">{open ? "▲" : "▼"}</span>
+        }
+      </button>
+
+      {/* Expandable heuristic detail */}
+      {open && (
+        <div className="ml-5 mb-2 px-3 py-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-2">
+          <p className="text-slate-600 leading-relaxed">
+            <span className="font-medium text-slate-700">Description : </span>
+            {detail?.description ?? meta.description}
+          </p>
+          {detail?.detection_logic && (
+            <p className="text-slate-600">
+              <span className="font-medium text-slate-700">Détection : </span>
+              {detail.detection_logic}
+            </p>
+          )}
+          {detail?.false_positive_profile && (
+            <p className="text-slate-500 italic">
+              <span className="not-italic font-medium text-slate-600">Faux positifs : </span>
+              {detail.false_positive_profile}
+            </p>
+          )}
+          {detail?.failure_cases && detail.failure_cases.length > 0 && (
+            <div>
+              <span className="font-medium text-slate-700">Cas d&apos;échec : </span>
+              <ul className="mt-0.5 space-y-0.5 pl-3">
+                {detail.failure_cases.map((c, i) => (
+                  <li key={i} className="text-slate-500 list-disc list-inside">{c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {detail?.eval_dimension && (
+            <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 font-medium capitalize">
+              {detail.eval_dimension}
+            </span>
+          )}
+          {detail?.papers && detail.papers.length > 0 && (
+            <div className="pt-1 border-t border-slate-200">
+              <span className="font-medium text-slate-600">📚 Références scientifiques :</span>
+              <ul className="mt-1 space-y-1">
+                {detail.papers.map((p, i) => (
+                  <li key={i} className="text-slate-500">
+                    {p.url
+                      ? <a href={p.url} target="_blank" rel="noopener noreferrer"
+                           className="text-blue-500 hover:underline font-medium">{p.title}</a>
+                      : <span className="font-medium">{p.title}</span>
+                    }
+                    {" "}— {p.authors} ({p.year})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!detail && !loading && (
+            <p className="text-slate-400 italic">No detailed heuristic found for this signal.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 function GenomePage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -205,16 +315,12 @@ function GenomePage() {
                                 if (!meta) return null;
                                 const pct = Math.round(val * 100);
                                 return (
-                                  <div key={key} className="flex items-center gap-3">
-                                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: meta.color }} />
-                                    <span className="text-xs text-slate-600 w-36 shrink-0">{meta.label}</span>
-                                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: meta.color }} />
-                                    </div>
-                                    <span className="text-xs font-mono text-slate-500 w-8 text-right">{pct}%</span>
-                                    {meta.severity >= 4 && <RiskBadge level="red" />}
-                                    {meta.severity === 3 && <RiskBadge level="yellow" />}
-                                  </div>
+                                  <SignalRow
+                                    key={key}
+                                    sigKey={key}
+                                    meta={meta}
+                                    pct={pct}
+                                  />
                                 );
                               })}
                           </div>

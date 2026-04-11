@@ -630,6 +630,37 @@ def get_heuristic_graph():
     }
 
 
+@router.get("/heuristics/signal/{signal_key}")
+def get_heuristic_by_key(signal_key: str):
+    """
+    Detail for one heuristic signal — used by the Genomia SignalRow expand UI (#83/#90).
+    Returns: description, detection_logic, false_positive_profile, failure_cases,
+             eval_dimension, papers with links.
+    """
+    from eval_engine.heuristic_graph import get_heuristic
+    h = get_heuristic(signal_key)
+    if not h:
+        raise HTTPException(404, detail=f"Heuristic '{signal_key}' not found.")
+    return {
+        "key": h.key,
+        "label": h.label,
+        "description": h.description,
+        "detection_logic": h.detection_logic,
+        "severity_weight": h.severity_weight,
+        "false_positive_profile": h.false_positive_profile,
+        "failure_cases": h.failure_cases,
+        "eval_dimension": h.eval_dimension,
+        "threshold_pass": h.threshold_pass,
+        "threshold_fail": h.threshold_fail,
+        "related_heuristics": h.related_heuristics,
+        "papers": [
+            {"title": p["title"], "authors": p["authors"],
+             "year": p["year"], "url": p.get("url")}
+            for p in h.papers
+        ],
+    }
+
+
 @router.get("/heuristics/{benchmark_name}")
 def get_benchmark_heuristics(benchmark_name: str):
     """Returns heuristics applicable to a specific benchmark."""

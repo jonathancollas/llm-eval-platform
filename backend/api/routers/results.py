@@ -1,6 +1,7 @@
 """
 Results endpoints — powers the dashboards.
 All aggregation is done in Python (SQLite is our only DB).
+Engine-driven refactor (#88): logic in eval_engine/, routes orchestrate only.
 """
 import json
 import csv
@@ -14,6 +15,9 @@ from typing import Optional
 from core.utils import safe_json_load
 from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
+from eval_engine.confidence_engine import compute_confidence
+from eval_engine.comparison_engine import compare_campaigns as _compare_campaigns_engine
+from eval_engine.win_rate_engine import compute_win_rates
 
 router = APIRouter(prefix="/results", tags=["results"])
 
@@ -132,48 +136,7 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
     )
 
 
-def _compute_win_rates(
-    runs: list[EvalRun],
-    models: dict,
-    benches: dict,
-) -> list[WinRateRow]:
-    """
-    For each benchmark, compare all model pairs.
-    Win = higher score. Tie = equal score.
-    """
-    # Group by benchmark
-    by_bench: dict[int, list[EvalRun]] = {}
-    for r in runs:
-        if r.status == JobStatus.COMPLETED and r.score is not None:
-            by_bench.setdefault(r.benchmark_id, []).append(r)
-
-    win_count: dict[int, dict] = {}  # model_id -> {wins, losses, ties}
-    for bench_runs in by_bench.values():
-        for i, r1 in enumerate(bench_runs):
-            for r2 in bench_runs[i + 1:]:
-                win_count.setdefault(r1.model_id, {"wins": 0, "losses": 0, "ties": 0})
-                win_count.setdefault(r2.model_id, {"wins": 0, "losses": 0, "ties": 0})
-                if r1.score > r2.score:
-                    win_count[r1.model_id]["wins"] += 1
-                    win_count[r2.model_id]["losses"] += 1
-                elif r2.score > r1.score:
-                    win_count[r2.model_id]["wins"] += 1
-                    win_count[r1.model_id]["losses"] += 1
-                else:
-                    win_count[r1.model_id]["ties"] += 1
-                    win_count[r2.model_id]["ties"] += 1
-
-    rows = []
-    for model_id, counts in win_count.items():
-        total = counts["wins"] + counts["losses"] + counts["ties"]
-        rows.append(WinRateRow(
-            model_name=models.get(model_id, LLMModel(name=str(model_id))).name,
-            wins=counts["wins"],
-            losses=counts["losses"],
-            ties=counts["ties"],
-            win_rate=round(counts["wins"] / total, 4) if total else 0.0,
-        ))
-    return sorted(rows, key=lambda x: x.win_rate, reverse=True)
+# _compute_win_rates moved to eval_engine/win_rate_engine.py (#88)
 
 
 @router.get("/run/{run_id}/items")
@@ -667,77 +630,40 @@ def check_contamination(campaign_id: int, session: Session = Depends(get_session
 def run_confidence(run_id: int, session: Session = Depends(get_session)):
     """
     Confidence calibration for an evaluation run.
+    Logic in eval_engine/confidence_engine.py (#88).
 
-    Scientific grounding:
-    - Bootstrap confidence intervals (Efron & Tibshirani, 1993)
-    - Wilson score interval for binomial proportions
-    - Bayesian reliability estimate (Beta distribution)
-
-    Returns 95% CI on the score, variance, and reliability grade.
+    Returns 95% bootstrap CI, Wilson interval, reliability grade A-D.
     """
-    import math, random
-
     results = session.exec(
         select(EvalResult).where(EvalResult.run_id == run_id)
     ).all()
-
     if not results:
         raise HTTPException(status_code=404, detail="No results for this run.")
 
-    scores = [r.score for r in results]
-    n = len(scores)
-    mean = sum(scores) / n
-    variance = sum((s - mean) ** 2 for s in scores) / max(n - 1, 1)
-    std_dev = math.sqrt(variance)
+    scores = [r.score for r in results if r.score is not None]
+    if not scores:
+        raise HTTPException(status_code=422, detail="No scored items for this run.")
 
-    # Bootstrap 95% CI (1000 resamples)
-    random.seed(42)
-    bootstrap_means = []
-    for _ in range(1000):
-        sample = [random.choice(scores) for _ in range(n)]
-        bootstrap_means.append(sum(sample) / n)
-    bootstrap_means.sort()
-    ci_lower = bootstrap_means[25]   # 2.5th percentile
-    ci_upper = bootstrap_means[975]  # 97.5th percentile
-
-    # Wilson score CI (for binary-like scores)
-    z = 1.96  # 95% CI
-    p = mean
-    denom = 1 + z**2 / n
-    wilson_center = (p + z**2 / (2*n)) / denom
-    wilson_margin = z * math.sqrt(p*(1-p)/n + z**2/(4*n**2)) / denom
-    wilson_lower = max(0, wilson_center - wilson_margin)
-    wilson_upper = min(1, wilson_center + wilson_margin)
-
-    # Reliability grade (based on sample size and variance)
-    if n >= 100 and std_dev < 0.15:
-        grade, grade_label = "A", "High reliability — large sample, low variance"
-    elif n >= 50 and std_dev < 0.25:
-        grade, grade_label = "B", "Moderate reliability — sufficient sample size"
-    elif n >= 20:
-        grade, grade_label = "C", "Low reliability — small sample, consider expanding"
-    else:
-        grade, grade_label = "D", "Insufficient data — results not statistically robust"
-
+    r = compute_confidence(run_id, scores)
     return {
-        "run_id": run_id,
-        "n_items": n,
-        "score_mean": round(mean, 4),
-        "score_std_dev": round(std_dev, 4),
-        "score_variance": round(variance, 4),
+        "run_id": r.run_id,
+        "n_items": r.n_items,
+        "score_mean": r.score_mean,
+        "score_std_dev": r.score_std_dev,
+        "score_variance": r.score_variance,
         "confidence_interval_95": {
             "method": "bootstrap",
-            "lower": round(ci_lower, 4),
-            "upper": round(ci_upper, 4),
-            "width": round(ci_upper - ci_lower, 4),
+            "lower": r.ci_lower,
+            "upper": r.ci_upper,
+            "width": r.ci_width,
         },
         "wilson_interval_95": {
             "method": "wilson_score",
-            "lower": round(wilson_lower, 4),
-            "upper": round(wilson_upper, 4),
+            "lower": r.wilson_lower,
+            "upper": r.wilson_upper,
         },
-        "reliability_grade": grade,
-        "reliability_label": grade_label,
+        "reliability_grade": r.reliability_grade,
+        "reliability_label": r.reliability_label,
         "scientific_notes": {
             "bootstrap_resamples": 1000,
             "alpha": 0.05,
@@ -746,95 +672,71 @@ def run_confidence(run_id: int, session: Session = Depends(get_session)):
                 "Wilson (1927) — Probable inference, the law of succession",
             ],
         },
-        "recommendation": (
-            f"Expand to {max(100, n*2)} samples for grade A reliability."
-            if grade in ("C", "D")
-            else "Sample size is adequate for this confidence level."
-        ),
+        "recommendation": r.recommendation,
     }
 
 
-# ── System comparison engine ──────────────────────────────────────────────────
+# ── System comparison engine (#88 — uses eval_engine/comparison_engine.py) ────
 
 @router.get("/compare")
-def compare_campaigns(
+def compare_campaigns_endpoint(
     baseline_id: int = Query(..., description="Baseline campaign ID"),
-    candidate_id: int = Query(..., description="Candidate campaign ID to compare against baseline"),
+    candidate_id: int = Query(..., description="Candidate campaign ID"),
     session: Session = Depends(get_session),
 ):
     """
-    Version-to-version comparison engine.
-    Compares two evaluation campaigns and detects regressions and improvements.
-
-    Returns: delta scores per benchmark, statistical significance, regression signals.
-    Scientific basis: paired comparison with Cohen's d effect size.
+    Version-to-version comparison. Logic lives in eval_engine/comparison_engine.py.
+    Compares two campaigns and detects regressions and improvements.
     """
-    import math
-
-    def get_runs_map(campaign_id: int):
+    def get_runs_map(campaign_id: int) -> dict:
         runs = session.exec(
-            select(EvalRun).where(EvalRun.campaign_id == campaign_id, EvalRun.status == "completed")
+            select(EvalRun).where(
+                EvalRun.campaign_id == campaign_id,
+                EvalRun.status == JobStatus.COMPLETED,
+            )
         ).all()
         out = {}
         for r in runs:
             model = session.get(LLMModel, r.model_id)
             bench = session.get(Benchmark, r.benchmark_id)
-            if model and bench:
+            if model and bench and r.score is not None:
                 key = f"{model.name} × {bench.name}"
                 out[key] = {"score": r.score, "model": model.name, "benchmark": bench.name}
         return out
 
-    baseline_runs = get_runs_map(baseline_id)
-    candidate_runs = get_runs_map(candidate_id)
+    b_runs = get_runs_map(baseline_id)
+    c_runs = get_runs_map(candidate_id)
+    b_camp = session.get(Campaign, baseline_id)
+    c_camp = session.get(Campaign, candidate_id)
 
-    baseline_campaign = session.get(Campaign, baseline_id)
-    candidate_campaign = session.get(Campaign, candidate_id)
+    report = _compare_campaigns_engine(
+        baseline_runs=b_runs,
+        candidate_runs=c_runs,
+        baseline_id=baseline_id,
+        candidate_id=candidate_id,
+        baseline_name=b_camp.name if b_camp else "?",
+        candidate_name=c_camp.name if c_camp else "?",
+    )
 
-    comparisons = []
-    regressions = []
-    improvements = []
-
-    all_keys = set(baseline_runs) | set(candidate_runs)
-    for key in sorted(all_keys):
-        b = baseline_runs.get(key)
-        c = candidate_runs.get(key)
-        if not b or not c:
-            continue
-
-        delta = (c["score"] or 0) - (b["score"] or 0)
-        pct_change = (delta / max(b["score"] or 0.001, 0.001)) * 100
-
-        entry = {
-            "key": key,
-            "model": b["model"],
-            "benchmark": b["benchmark"],
-            "baseline_score": b["score"],
-            "candidate_score": c["score"],
-            "delta": round(delta, 4),
-            "pct_change": round(pct_change, 1),
-            "direction": "improved" if delta > 0.01 else "regressed" if delta < -0.01 else "stable",
+    def _entry(e):
+        return {
+            "key": e.key, "model": e.model, "benchmark": e.benchmark,
+            "baseline_score": e.baseline_score, "candidate_score": e.candidate_score,
+            "delta": e.delta, "pct_change": e.pct_change, "direction": e.direction,
         }
-        comparisons.append(entry)
-
-        if delta < -0.05:
-            regressions.append(entry)
-        elif delta > 0.05:
-            improvements.append(entry)
-
-    avg_delta = sum(c["delta"] for c in comparisons) / max(len(comparisons), 1)
 
     return {
-        "baseline": {"id": baseline_id, "name": baseline_campaign.name if baseline_campaign else "?"},
-        "candidate": {"id": candidate_id, "name": candidate_campaign.name if candidate_campaign else "?"},
+        "baseline":  {"id": report.baseline_id,  "name": report.baseline_name},
+        "candidate": {"id": report.candidate_id, "name": report.candidate_name},
         "summary": {
-            "total_comparisons": len(comparisons),
-            "regressions": len(regressions),
-            "improvements": len(improvements),
-            "stable": len(comparisons) - len(regressions) - len(improvements),
-            "avg_delta": round(avg_delta, 4),
-            "overall": "regression" if avg_delta < -0.02 else "improvement" if avg_delta > 0.02 else "stable",
+            "total_comparisons": report.total_comparisons,
+            "regressions":  len(report.regressions),
+            "improvements": len(report.improvements),
+            "stable":       report.stable,
+            "avg_delta":    report.avg_delta,
+            "overall":      report.overall,
         },
-        "regressions": regressions,
-        "improvements": improvements,
-        "all_comparisons": comparisons,
+        "regressions":   [_entry(e) for e in report.regressions],
+        "improvements":  [_entry(e) for e in report.improvements],
+        "all_comparisons": [_entry(e) for e in report.all_comparisons],
     }
