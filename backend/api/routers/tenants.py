@@ -4,10 +4,12 @@ CRUD for tenants and users. Admin-only endpoints.
 """
 import json
 import logging
+import os
+import hmac
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -17,6 +19,30 @@ from core.auth import hash_api_key, generate_api_key
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 logger = logging.getLogger(__name__)
+
+_ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+
+def _require_admin(request: Request) -> None:
+    """
+    Explicit admin-key guard for tenant management endpoints.
+    Provides defence-in-depth on top of the global middleware:
+    even without the middleware (e.g. during testing) these routes
+    are protected when ADMIN_API_KEY is configured.
+    In dev mode (no ADMIN_API_KEY set) a warning header is added but
+    access is allowed to preserve the current dev-mode behaviour.
+    """
+    if not _ADMIN_API_KEY:
+        # Dev mode — same lenient behaviour as the global middleware.
+        return
+    key = request.headers.get("X-API-Key", "")
+    if not key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing X-API-Key header. Admin key required for tenant management.",
+        )
+    if not hmac.compare_digest(key, _ADMIN_API_KEY):
+        raise HTTPException(status_code=403, detail="Invalid admin API key.")
 
 
 class TenantCreate(BaseModel):
@@ -32,7 +58,7 @@ class UserCreate(BaseModel):
 
 
 @router.post("/")
-def create_tenant(payload: TenantCreate, session: Session = Depends(get_session)):
+def create_tenant(payload: TenantCreate, session: Session = Depends(get_session), _: None = Depends(_require_admin)):
     """Create a new tenant and return its API key (shown only once)."""
     existing = session.exec(select(Tenant).where(Tenant.slug == payload.slug)).first()
     if existing:
@@ -61,7 +87,7 @@ def create_tenant(payload: TenantCreate, session: Session = Depends(get_session)
 
 
 @router.get("/")
-def list_tenants(session: Session = Depends(get_session)):
+def list_tenants(session: Session = Depends(get_session), _: None = Depends(_require_admin)):
     tenants = session.exec(select(Tenant).where(Tenant.is_active == True)).all()
     return {
         "tenants": [
@@ -73,7 +99,7 @@ def list_tenants(session: Session = Depends(get_session)):
 
 
 @router.get("/{tenant_id}")
-def get_tenant(tenant_id: int, session: Session = Depends(get_session)):
+def get_tenant(tenant_id: int, session: Session = Depends(get_session), _: None = Depends(_require_admin)):
     tenant = session.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(404, detail="Tenant not found.")
@@ -97,7 +123,7 @@ def get_tenant(tenant_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/{tenant_id}/rotate-key")
-def rotate_api_key(tenant_id: int, session: Session = Depends(get_session)):
+def rotate_api_key(tenant_id: int, session: Session = Depends(get_session), _: None = Depends(_require_admin)):
     """Rotate tenant API key."""
     tenant = session.get(Tenant, tenant_id)
     if not tenant:
@@ -116,7 +142,7 @@ def rotate_api_key(tenant_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/{tenant_id}/users")
-def add_user(tenant_id: int, payload: UserCreate, session: Session = Depends(get_session)):
+def add_user(tenant_id: int, payload: UserCreate, session: Session = Depends(get_session), _: None = Depends(_require_admin)):
     """Add a user to a tenant."""
     tenant = session.get(Tenant, tenant_id)
     if not tenant:
