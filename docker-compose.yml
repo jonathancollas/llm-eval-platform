@@ -1,5 +1,10 @@
 version: "3.9"
 
+# ── SECURITY: never commit .env to git ───────────────────────────────────────
+# Copy .env.example to .env and fill in your values before running.
+# All secrets are loaded from .env — not hardcoded here.
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
   backend:
     build: ./backend
@@ -9,9 +14,12 @@ services:
       - ./backend:/app
       - ./bench_library:/bench_library
       - backend_data:/app/data
+    env_file:
+      - .env          # Load all secrets from .env (not committed to git)
     environment:
       - DATABASE_URL=sqlite:///./data/eval_platform.db
-      - SECRET_KEY=${SECRET_KEY}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}

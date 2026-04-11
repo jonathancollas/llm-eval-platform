@@ -37,7 +37,7 @@ async def generate_text(
     prompt: str,
     system_prompt: str = "",
     max_tokens: int = 2048,
-    timeout: float = 120,
+    timeout: float = None,
     model_override: str | None = None,
     ollama_model: str | None = None,
 ) -> str:
@@ -48,6 +48,10 @@ async def generate_text(
     import asyncio
     from core.config import get_settings
     settings = get_settings()
+
+    # Use configured timeout if not explicitly overridden
+    if timeout is None:
+        timeout = settings.report_timeout_seconds
 
     messages = []
     if system_prompt:
@@ -84,7 +88,7 @@ async def generate_text(
     # Option 2: try Ollama local first (free, fast, no dependency)
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=settings.http_timeout_seconds) as client:
             tags = await client.get(f"{settings.ollama_base_url}/api/tags")
             if tags.status_code == 200:
                 models = tags.json().get("models", [])

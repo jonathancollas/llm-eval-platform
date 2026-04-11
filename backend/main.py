@@ -39,31 +39,34 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
     # 1. Create tables + reset stuck campaigns + update has_dataset flags
     logger.info("Startup — initializing DB...")
-    create_db_and_tables()
+    # Run sync DB init in executor to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, create_db_and_tables)
 
     # 2. Wire event-sourced pipeline subscribers
     register_default_subscribers()
     logger.info("Startup — event bus subscribers registered.")
 
-    # 2. Sync catalog benchmarks (synchronous — no network, fast)
+    # 3. Sync catalog benchmarks in executor (CPU-bound, no network)
     logger.info("Startup — syncing benchmark catalog...")
-    from api.routers.sync import sync_benchmarks_from_catalog, sync_starter_models
-    with Session(engine) as session:
-        benches_added = sync_benchmarks_from_catalog(session)
-        logger.info(f"Startup — {benches_added} benchmarks added from catalog.")
-
-        # 3. Ensure at least starter models exist (sync — no network)
-        from sqlmodel import select
+    def _sync_catalog():
+        from api.routers.sync import sync_benchmarks_from_catalog, sync_starter_models
+        from sqlmodel import select as sqlsel
         from core.models import LLMModel
-        model_count = len(session.exec(select(LLMModel)).all())
-        if model_count == 0:
-            models_added = sync_starter_models(session)
-            logger.info(f"Startup — {models_added} starter models imported.")
+        with Session(engine) as session:
+            benches_added = sync_benchmarks_from_catalog(session)
+            logger.info(f"Startup — {benches_added} benchmarks added from catalog.")
+            model_count = len(session.exec(sqlsel(LLMModel)).all())
+            if model_count == 0:
+                models_added = sync_starter_models(session)
+                logger.info(f"Startup — {models_added} starter models imported.")
+    await loop.run_in_executor(None, _sync_catalog)
 
     # 4. Async OpenRouter sync in background (non-blocking)
-    import asyncio
     asyncio.create_task(_background_openrouter_sync())
 
     logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
