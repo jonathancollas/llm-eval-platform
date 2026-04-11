@@ -2,6 +2,7 @@
 Mercury Retrograde — INESIA AI Evaluation Platform
 FastAPI application entry point.
 """
+import hmac as _hmac
 import logging
 from contextlib import asynccontextmanager
 from typing import Callable
@@ -118,6 +119,9 @@ from collections import defaultdict as _defaultdict
 _rate_limit_store: dict[str, list[float]] = _defaultdict(list)
 _RATE_LIMIT_RPM = int(_os.getenv("RATE_LIMIT_RPM", "120"))  # requests per minute
 _RATE_LIMIT_ENABLED = _os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+# Hard cap on timestamps kept per IP to prevent unbounded memory growth.
+# We never need to store more than RPM entries for any single IP.
+_RATE_LIMIT_MAX_STORE = _RATE_LIMIT_RPM
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
@@ -128,8 +132,10 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
         return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
     now = _time.time()
+    # Prune timestamps outside the 60-second window
     window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
-    _rate_limit_store[client_ip] = window
+    # Cap stored entries to prevent memory growth from burst IPs
+    _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:]
     if len(window) >= _RATE_LIMIT_RPM:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
@@ -187,7 +193,7 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
         )
         return resp
 
-    # Production mode — enforce key
+    # Production mode — enforce key using constant-time comparison to prevent timing attacks
     key = request.headers.get("X-API-Key", "")
     if not key:
         from fastapi.responses import JSONResponse
@@ -195,7 +201,7 @@ async def api_key_auth(request: Request, call_next: Callable) -> Response:
             status_code=401,
             content={"detail": "Missing X-API-Key header. Set ADMIN_API_KEY and pass it as X-API-Key."},
         )
-    if key != _ADMIN_API_KEY:
+    if not _hmac.compare_digest(key, _ADMIN_API_KEY):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=403, content={"detail": "Invalid API key."})
     return await call_next(request)

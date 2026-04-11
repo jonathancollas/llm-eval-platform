@@ -157,13 +157,26 @@ async def upload_dataset(
     content = b"".join(chunks)
     # ─────────────────────────────────────────────────────────────────────────
 
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
+    # Parse content — JSON or CSV depending on extension
+    if safe_name.endswith(".csv"):
+        import csv as _csv
+        import io as _io
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise HTTPException(status_code=422, detail=f"CSV file is not valid UTF-8: {e}")
+        try:
+            reader = _csv.DictReader(_io.StringIO(text))
+            items = [dict(row) for row in reader]
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Invalid CSV: {e}")
+    else:
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
+        items = data if isinstance(data, list) else data.get("items", [])
 
-    # Validate structure
-    items = data if isinstance(data, list) else data.get("items", [])
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
 
