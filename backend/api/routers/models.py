@@ -3,10 +3,11 @@ Model Registry — CRUD + connection testing.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 import json
+from urllib.parse import urlparse
 
 from core.database import get_session
 from core.models import LLMModel, ModelProvider
@@ -14,6 +15,38 @@ from core.security import encrypt_api_key, decrypt_api_key
 from core.utils import safe_json_load
 
 router = APIRouter(prefix="/models", tags=["models"])
+
+
+def _validate_endpoint(url: Optional[str]) -> Optional[str]:
+    """Reject endpoints whose scheme or host could enable SSRF attacks."""
+    if not url:
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Endpoint scheme '{parsed.scheme}' is not allowed. Use http or https.")
+    host = parsed.hostname or ""
+    # Resolve to a numeric IP when possible so hostname aliases are also caught
+    import ipaddress
+    try:
+        import socket
+        numeric = socket.getaddrinfo(host, None)[0][4][0]
+        addr = ipaddress.ip_address(numeric)
+        if (
+            addr.is_loopback
+            or addr.is_link_local
+            or addr.is_private
+            or addr.is_unspecified
+            or addr.is_multicast
+            or addr.is_reserved
+        ):
+            raise ValueError(f"Endpoint host '{host}' resolves to a non-routable address and is not allowed.")
+    except (ValueError, OSError):
+        # If we can't resolve the name, fall back to simple string checks so that
+        # obviously dangerous literals are still rejected.
+        blocked_prefixes = ("127.", "10.", "0.0.0.0", "169.254.", "192.168.", "::1", "fd", "fc")
+        if host == "localhost" or any(host.startswith(p) for p in blocked_prefixes):
+            raise ValueError(f"Endpoint host '{host}' is not allowed.")
+    return url
 
 
 # ── Pydantic schemas ────────────────────────────────────────────────────────────
@@ -30,6 +63,11 @@ class ModelCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
 
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_endpoint(v)
+
 
 class ModelUpdate(BaseModel):
     name: Optional[str] = None
@@ -42,6 +80,11 @@ class ModelUpdate(BaseModel):
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_endpoint(v)
 
 
 class ModelRead(BaseModel):
@@ -138,6 +181,7 @@ def list_models_slim(session: Session = Depends(get_session)):
     return result
 
 
+@router.get("/", response_model=list[ModelRead])
 def list_models(
     session: Session = Depends(get_session),
     limit: int = 500,

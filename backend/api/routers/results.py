@@ -172,7 +172,7 @@ def get_run_items(
                 "score": r.score,
                 "latency_ms": r.latency_ms,
                 "cost_usd": r.cost_usd,
-                "metadata": json.loads(r.metadata_json),
+                "metadata": safe_json_load(r.metadata_json, {}),
             }
             for r in results
         ],
@@ -194,8 +194,14 @@ def export_csv(campaign_id: int, session: Session = Depends(get_session)):
     ).all()
 
     run_map = {r.id: r for r in runs}
-    models = {m.id: m for m in session.exec(select(LLMModel)).all()}
-    benches = {b.id: b for b in session.exec(select(Benchmark)).all()}
+    model_ids = list({r.model_id for r in runs})
+    bench_ids = list({r.benchmark_id for r in runs})
+    models = {m.id: m for m in session.exec(
+        select(LLMModel).where(LLMModel.id.in_(model_ids))
+    ).all()}
+    benches = {b.id: b for b in session.exec(
+        select(Benchmark).where(Benchmark.id.in_(bench_ids))
+    ).all()}
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=[
