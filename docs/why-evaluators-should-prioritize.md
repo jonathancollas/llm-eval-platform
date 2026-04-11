@@ -1,4 +1,4 @@
-# Why Should Evaluators Prioritise?
+# What Should Evaluators Prioritise?
 
 > A scientific perspective from INESIA — *What should evaluators prioritise? Evaluators do not have unlimited finances, people and time. Prioritisation is essential.*
 
