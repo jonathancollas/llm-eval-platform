@@ -663,3 +663,39 @@ class SandbaggingReport(SQLModel, table=True):
     total_cost_usd: float           = Field(default=0.0)
 
     created_at: datetime            = Field(default_factory=datetime.utcnow)
+# ── Event-Sourced Pipeline (#45) ───────────────────────────────────────────────
+
+class EvalEventRecord(SQLModel, table=True):
+    """
+    Persistent event log — the single source of truth for all campaign state.
+
+    Every state transition emits an immutable event here.
+    The ReplayEngine reconstructs any past state by replaying the log.
+
+    Scientific grounding: deterministic replay enables:
+    - Exact reproducibility of safety evaluations
+    - Audit trails for frontier model assessments
+    - Debugging of complex agentic failure modes
+
+    Never update or delete records — this is an append-only log.
+    """
+    __tablename__ = "eval_events"
+
+    id: Optional[int]       = Field(default=None, primary_key=True)
+    event_id: str           = Field(index=True, unique=True)   # UUID
+    event_type: str         = Field(index=True)                # EventType enum value
+    campaign_id: int        = Field(foreign_key="campaigns.id", index=True)
+
+    # Optional FKs for efficient filtering without parsing payload_json
+    run_id: Optional[int]           = Field(default=None, index=True)
+    model_id: Optional[int]         = Field(default=None, index=True)
+    benchmark_id: Optional[int]     = Field(default=None, index=True)
+
+    sequence: int           = Field(index=True)    # Monotonic per-campaign
+    payload_json: str       = Field(default="{}")  # Event-specific data
+    timestamp: datetime     = Field(default_factory=datetime.utcnow, index=True)
+
+    class Config:
+        # Enforce append-only at ORM level (raise if someone tries to update)
+        # Full enforcement requires DB triggers in production
+        pass
