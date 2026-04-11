@@ -165,13 +165,39 @@ _ADMIN_API_KEY = _os.getenv("ADMIN_API_KEY", "")
 
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next: Callable) -> Response:
-    if (not _ADMIN_API_KEY
+    """
+    API key authentication (#S1).
+    - ADMIN_API_KEY set: all non-public routes require X-API-Key header.
+    - ADMIN_API_KEY unset: dev mode — requests pass but response carries warning header.
+    Public: /api/health, /docs, /redoc, /openapi.json, OPTIONS preflight.
+    """
+    public = (
+        request.method == "OPTIONS"
         or request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json")
-        or request.method == "OPTIONS"):
+    )
+    if public:
         return await call_next(request)
-    if request.headers.get("X-API-Key", "") != _ADMIN_API_KEY:
+
+    if not _ADMIN_API_KEY:
+        # Dev mode — warn operator, allow request
+        resp = await call_next(request)
+        resp.headers["X-Auth-Warning"] = (
+            "ADMIN_API_KEY not configured — authentication disabled. "
+            "Set ADMIN_API_KEY env var before deploying to production."
+        )
+        return resp
+
+    # Production mode — enforce key
+    key = request.headers.get("X-API-Key", "")
+    if not key:
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Invalid or missing X-API-Key"})
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing X-API-Key header. Set ADMIN_API_KEY and pass it as X-API-Key."},
+        )
+    if key != _ADMIN_API_KEY:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={"detail": "Invalid API key."})
     return await call_next(request)
 
 

@@ -123,7 +123,40 @@ async def upload_dataset(
     if bench.is_builtin:
         raise HTTPException(status_code=400, detail="Cannot override built-in benchmark datasets.")
 
-    content = await file.read()
+    # ── Security hardening (#S2) ──────────────────────────────────────────────
+    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB hard limit
+
+    # MIME type whitelist — only JSON and CSV
+    allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
+    ct = file.content_type or ""
+    if ct and ct.split(";")[0].strip() not in allowed_content_types:
+        raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
+
+    # Filename sanitization — strip all directory components (path traversal prevention)
+    safe_name = Path(file.filename or "dataset.json").name
+    # Remove any remaining path separators and dangerous characters
+    safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
+    if not safe_name:
+        safe_name = "dataset.json"
+
+    # Extension whitelist
+    if not (safe_name.endswith(".json") or safe_name.endswith(".csv")):
+        raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
+
+    # Bounded read — never read more than MAX_UPLOAD_BYTES
+    chunks = []
+    total = 0
+    async for chunk in file:
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is 50MB.",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    # ─────────────────────────────────────────────────────────────────────────
+
     try:
         data = json.loads(content)
     except json.JSONDecodeError as e:
@@ -134,11 +167,15 @@ async def upload_dataset(
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
 
-    # Save to bench_library/custom/
+    # Save to bench_library/custom/ with sanitized filename
     custom_dir = Path(settings.bench_library_path) / "custom"
     custom_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid.uuid4().hex[:8]}_{file.filename}"
+    filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
     dest = custom_dir / filename
+    # Final safety check — ensure dest is inside custom_dir (no symlink escape)
+    dest = dest.resolve()
+    if not str(dest).startswith(str(custom_dir.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid file path.")
     dest.write_bytes(content)
 
     bench.dataset_path = f"custom/{filename}"
