@@ -16,6 +16,7 @@ from core.config import get_settings
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
+UPLOAD_CHUNK_BYTES = 1024 * 1024  # 1MB
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -146,9 +147,8 @@ async def upload_dataset(
     # Bounded read — never read more than MAX_UPLOAD_BYTES
     chunks = []
     total = 0
-    chunk_size = 1024 * 1024  # 1MB
     while True:
-        chunk = await file.read(chunk_size)
+        chunk = await file.read(UPLOAD_CHUNK_BYTES)
         if not chunk:
             break
         total += len(chunk)

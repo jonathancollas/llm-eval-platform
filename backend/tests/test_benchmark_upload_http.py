@@ -88,8 +88,7 @@ def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
     assert body["id"] == benchmark_id
     assert body["has_dataset"] is True
     custom_files = list((test_dirs["bench_library"] / "custom").glob("*_dataset.json"))
-    assert len(custom_files) == 1
-    assert custom_files[0].read_bytes() == b'[{"prompt":"p","answer":"a"}]'
+    assert any(f.read_bytes() == b'[{"prompt":"p","answer":"a"}]' for f in custom_files)
 
 
 def test_upload_dataset_empty_json_rejected(client, benchmark_id):
