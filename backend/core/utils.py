@@ -73,7 +73,7 @@ async def generate_text(
                 timeout=timeout,
             )
             return (resp.choices[0].message.content or "").strip()
-        except Exception as e:
+        except (OSError, TimeoutError, asyncio.TimeoutError, ImportError, RuntimeError) as e:
             raise RuntimeError(f"Ollama model '{ollama_model}' failed: {e}") from e
 
     # Option 1: explicit model override (litellm format)
