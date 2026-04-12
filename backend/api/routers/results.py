@@ -25,8 +25,12 @@ _CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _csv_escape(value: str) -> str:
-    """Prevent CSV formula injection by prefixing formula-triggering characters."""
-    if value and value[0] in _CSV_FORMULA_CHARS:
+    """Prevent CSV formula injection by prefixing formula-triggering characters.
+
+    Leading whitespace is stripped before the check so that values like
+    ' =cmd' (space then formula) are also caught.
+    """
+    if value and value.lstrip()[0:1] in _CSV_FORMULA_CHARS:
         return "'" + value
     return value
 

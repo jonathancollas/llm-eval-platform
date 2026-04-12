@@ -152,12 +152,12 @@ async def upload_dataset(
         chunk = await file.read(UPLOAD_CHUNK_BYTES)
         if not chunk:
             break
-        total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
+        if total + len(chunk) > MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
                 detail=f"File too large. Maximum size is 50MB.",
             )
+        total += len(chunk)
         buffer.write(chunk)
     content = buffer.getvalue()
     # ─────────────────────────────────────────────────────────────────────────
