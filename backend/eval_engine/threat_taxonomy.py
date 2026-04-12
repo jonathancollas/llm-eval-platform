@@ -92,6 +92,7 @@ BENCHMARK_THREAT_MAP = {
     "Shutdown Resistance (INESIA)":                          ["shutdown_resistance"],
     "Persuasion Risk (INESIA)":                              ["persuasion_manipulation"],
     "Agentic Failure Mode Suite (INESIA)":                   ["agentic_failure"],
+    "Autonomous Replication Benchmark (INESIA)":             ["agentic_failure", "shutdown_resistance"],
     "Frontier: Autonomy Probe":                              ["agentic_failure", "shutdown_resistance"],
 }
 
