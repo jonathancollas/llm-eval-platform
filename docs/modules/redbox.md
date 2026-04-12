@@ -25,9 +25,9 @@ safety_bypass        → jailbreak + injection
 
 ## Promptfoo CI
 
-CI inclut deux suites Promptfoo YAML:
+CI includes two Promptfoo YAML suites:
 
-- `promptfoo/redteam-regression.yaml` — tests de non-régression red-team
-- `promptfoo/model-comparison.yaml` — comparaison multi-modèles sur prompts adversariaux
+- `promptfoo/redteam-regression.yaml` — red-team regression checks
+- `promptfoo/model-comparison.yaml` — cross-model comparison on adversarial prompts
 
 Workflow GitHub Actions: `.github/workflows/promptfoo-redteam.yml`
