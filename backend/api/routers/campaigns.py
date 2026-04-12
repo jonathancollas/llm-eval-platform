@@ -230,10 +230,18 @@ def cancel_campaign(
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
 
-    cancelled = job_queue.cancel_campaign(campaign_id)
+    cancelled = await job_queue.cancel(campaign_id)
 
-    if not cancelled:
-        # Task not in queue — force status update if DB still shows running
+    if cancelled:
+        # Task was actively running in this process and has now been cancelled.
+        campaign.status = JobStatus.CANCELLED
+        campaign.error_message = "Cancelled by user."
+        campaign.completed_at = datetime.utcnow()
+        session.add(campaign)
+        session.commit()
+    else:
+        # Task was not found in the in-memory queue — force status update
+        # only when DB still shows RUNNING.
         if campaign.status == JobStatus.RUNNING:
             campaign.status = JobStatus.CANCELLED
             campaign.error_message = "Cancelled by user."
