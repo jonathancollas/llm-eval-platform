@@ -2,19 +2,11 @@
 
 <svg width="96" height="96" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
   <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
-    stroke="#FF00FF" stroke-width="12" stroke-linejoin="round" fill="none" opacity="0.08">☿</text>
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
-    stroke="#00EEFF" stroke-width="5" stroke-linejoin="round" fill="none" opacity="0.45">☿</text>
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
-    stroke="#FF22AA" stroke-width="1.5" stroke-linejoin="round" fill="none" opacity="0.85">☿</text>
-  <text x="40" y="68" text-anchor="middle" font-family="system-ui" font-size="72" font-weight="900"
     fill="#1A0035">☿</text>
 </svg>
 
 # MERCURY RETROGRADE
-
 **Research Operating System for Frontier AI Evaluation**  
-**INESIA — AI Evaluation Platform**
 
 [Architecture](Architecture.md) · [Manifesto](Manifesto.md) · [License](License.md)
 
