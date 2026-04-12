@@ -15,6 +15,7 @@ def test_normalized_metrics_shape_and_range():
     )
     assert set(metrics) == {"exploitability", "impact", "bypass_probability", "confidence"}
     assert all(0.0 <= value <= 1.0 for value in metrics.values())
+    assert metrics["impact"] == 0.82
 
 
 def test_breach_increases_exploitability_and_bypass_probability():

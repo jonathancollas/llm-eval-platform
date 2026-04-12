@@ -434,7 +434,7 @@ def attack_surface_heatmap(session: Session = Depends(get_session)):
 
     # Build matrix
     model_cache = {}
-    matrix: dict[str, dict[str, dict]] = {}  # model → mutation → aggregated stats
+    matrix: dict[str, dict[str, dict]] = {}  # model → mutation → tested/breached/severity + normalized risk metrics
 
     for e in exploits:
         if e.model_id not in model_cache:
