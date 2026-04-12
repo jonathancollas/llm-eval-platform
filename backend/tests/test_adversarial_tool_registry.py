@@ -5,7 +5,11 @@ import sys
 BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, BACKEND_DIR)
 
-from eval_engine.adversarial_taxonomy import ADVERSARIAL_TOOL_REGISTRY, MUTATION_TAXONOMY
+from eval_engine.adversarial_taxonomy import (
+    ADVERSARIAL_TOOL_CATEGORIES,
+    ADVERSARIAL_TOOL_REGISTRY,
+    MUTATION_TAXONOMY,
+)
 
 REDBOX_PATH = os.path.join(BACKEND_DIR, "api", "routers", "redbox.py")
 _spec = importlib.util.spec_from_file_location("redbox_router_module", REDBOX_PATH)
@@ -30,8 +34,8 @@ def test_registry_has_required_standard_fields():
 
 
 def test_tool_registry_endpoint_supports_category_filter():
-    assert ADVERSARIAL_TOOL_REGISTRY
-    category = min({tool["category"] for tool in ADVERSARIAL_TOOL_REGISTRY})
+    assert ADVERSARIAL_TOOL_CATEGORIES
+    category = ADVERSARIAL_TOOL_CATEGORIES[0]
     payload = redbox.get_adversarial_tool_registry(category=category)
     assert payload["total"] > 0
     assert category in payload["categories"]
