@@ -89,8 +89,8 @@ class InferenceAdapter(ABC):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(model_id={self.model_id!r})"
 
-    async def _screen_prompt(self, prompt: str, system_prompt: str = "") -> None:
-        await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt or None)
+    async def _screen_prompt(self, prompt: str, system_prompt: Optional[str] = None) -> None:
+        await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt)
 
 
 # ── LiteLLM adapter (OpenAI-compatible: OpenRouter, Groq, Mistral…) ──────────

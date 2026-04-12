@@ -40,7 +40,8 @@ async def test_lakera_guard_skips_when_not_configured(monkeypatch):
 
     monkeypatch.setattr("core.lakera_guard.httpx.AsyncClient", FakeAsyncClient)
 
-    await screen_prompt_with_lakera("hello")
+    result = await screen_prompt_with_lakera("hello")
+    assert result is None
     assert called["post"] is False
 
 
@@ -122,7 +123,7 @@ async def test_lakera_guard_fail_closed_on_request_error(monkeypatch):
 
     monkeypatch.setattr("core.lakera_guard.httpx.AsyncClient", FakeAsyncClient)
 
-    with pytest.raises(RuntimeError, match="fail-closed"):
+    with pytest.raises(RuntimeError, match="Lakera Guard request failed in fail-closed mode"):
         await screen_prompt_with_lakera("normal prompt")
 
 

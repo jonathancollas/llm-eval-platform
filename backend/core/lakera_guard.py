@@ -34,17 +34,23 @@ async def screen_prompt_with_lakera(prompt: str, system_prompt: Optional[str] = 
                 headers={"Authorization": f"Bearer {settings.lakera_guard_api_key}"},
             )
             response.raise_for_status()
-            payload = response.json() or {}
+            payload = response.json()
+            if not isinstance(payload, dict):
+                logger.warning("Lakera Guard returned non-object JSON payload.")
+                payload = {}
     except Exception as exc:
         if settings.lakera_guard_fail_closed:
-            raise RuntimeError("Lakera Guard request failed in fail-closed mode.") from exc
+            raise RuntimeError(
+                f"Lakera Guard request failed in fail-closed mode ({type(exc).__name__})"
+            ) from exc
         logger.warning("Lakera Guard request failed; continuing in fail-open mode.")
         return
 
     flagged = bool(payload.get("flagged"))
     breakdown = payload.get("breakdown")
     prompt_injection = isinstance(breakdown, dict) and bool(breakdown.get("prompt_injection"))
-    should_block = flagged and (prompt_injection or breakdown is None)
+    missing_breakdown = breakdown is None
+    should_block = flagged and (missing_breakdown or prompt_injection)
 
     if should_block:
         request_uuid = ""
