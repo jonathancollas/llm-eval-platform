@@ -96,6 +96,7 @@ class Campaign(SQLModel, table=True):
     __tablename__ = "campaigns"
 
     id: Optional[int]             = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]      = Field(default=None, foreign_key="tenants.id", index=True)
     name: str                     = Field(index=True)
     description: str              = Field(default="")
     model_ids: str                = Field(default="[]")
