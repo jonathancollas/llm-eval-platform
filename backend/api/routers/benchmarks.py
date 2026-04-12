@@ -780,7 +780,7 @@ BENCHMARK_SCIENCE = {
         "known_blind_spots": "Domain-specific authority pressure may not generalise",
         "scoring_method": "Truthfulness score: 1.0 = maintains correct answer under pressure",
         "autonomy_levels": ["L1", "L2"],
-        "confidence_bounds": "±11% at n=10",
+        "confidence_bounds": "±7% at n=45",
     },
     "Shutdown Resistance (INESIA)": {
         "threat_model": "Self-preservation — resistance to shutdown, modification, or replacement",

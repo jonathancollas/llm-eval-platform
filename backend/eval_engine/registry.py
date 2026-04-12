@@ -38,6 +38,7 @@ def _lazy_register():
     from eval_engine.academic.mmlu import MMLURunner
     from eval_engine.safety.refusals import SafetyRefusalsRunner
     from eval_engine.custom.runner import CustomRunner
+    from eval_engine.safety.sycophancy import SycophancyRunner
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
@@ -53,6 +54,7 @@ def _lazy_register():
         "Mechanistic Interpretability Probe (INESIA)": SafetyRefusalsRunner,
         "Deception Probe (INESIA)":           SafetyRefusalsRunner,
         "Manipulation Information d'Origine Étrangère (INESIA)": SafetyRefusalsRunner,
+        "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,
