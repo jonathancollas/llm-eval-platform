@@ -23,6 +23,8 @@ campaigns = importlib.util.module_from_spec(_spec)
 assert _spec is not None and _spec.loader is not None
 _spec.loader.exec_module(campaigns)
 
+FAKE_CAMPAIGN_DURATION_SECONDS = 0.5
+
 
 @pytest.fixture(scope="module")
 def db_engine(tmp_path_factory):
@@ -65,9 +67,11 @@ def seeded_ids(db_engine):
 
 @pytest.fixture(autouse=True)
 def patch_runner(monkeypatch):
-    async def fake_execute_campaign(_: int):
+    async def fake_execute_campaign(campaign_id: int):
         try:
-            await asyncio.sleep(30)
+            if campaign_id < 0:
+                return
+            await asyncio.sleep(FAKE_CAMPAIGN_DURATION_SECONDS)
         except asyncio.CancelledError:
             return
 

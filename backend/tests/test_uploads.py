@@ -20,6 +20,8 @@ benchmarks = importlib.util.module_from_spec(_spec)
 assert _spec is not None and _spec.loader is not None
 _spec.loader.exec_module(benchmarks)
 
+MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
+
 
 @pytest.fixture(scope="module")
 def test_dirs(tmp_path_factory):
@@ -73,7 +75,7 @@ def benchmark_id(client):
 
 
 def test_oversized_upload_returns_413(client, benchmark_id):
-    content = b"x" * (50 * 1024 * 1024 + 1)
+    content = b"x" * (MAX_UPLOAD_SIZE_BYTES + 1)
     files = {"file": ("dataset.json", content, "application/json")}
     response = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert response.status_code == 413

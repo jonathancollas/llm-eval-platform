@@ -182,13 +182,15 @@ async def cancel_campaign(campaign_id: int, session: Session = Depends(get_sessi
     cancelled = await job_queue.cancel(campaign_id)
 
     if cancelled:
+        # Task was actively running in this process and has now been cancelled.
         campaign.status = JobStatus.CANCELLED
         campaign.error_message = "Cancelled by user."
         campaign.completed_at = datetime.utcnow()
         session.add(campaign)
         session.commit()
     else:
-        # Task not in queue — force status update if DB still shows running
+        # Task was not found in the in-memory queue — force status update
+        # only when DB still shows RUNNING.
         if campaign.status == JobStatus.RUNNING:
             campaign.status = JobStatus.CANCELLED
             campaign.error_message = "Cancelled by user."
