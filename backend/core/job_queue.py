@@ -86,7 +86,7 @@ celery_app.conf.update(
 @celery_app.task(
     name="campaign.execute",
     bind=True,
-    autoretry_for=(Exception,),
+    autoretry_for=(OSError, SQLAlchemyError, RuntimeError),
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 3},
@@ -115,7 +115,7 @@ def _run_async_blocking(coro) -> None:
         except BaseException as exc:
             errors.append(exc)
 
-    worker = threading.Thread(target=_runner, daemon=True)
+    worker = threading.Thread(target=_runner)
     worker.start()
     worker.join()
     if errors:
@@ -134,8 +134,10 @@ def submit_campaign(campaign_id: int) -> str:
                 c.last_heartbeat_at = datetime.utcnow()
                 session.add(c)
                 session.commit()
-    except (OSError, SQLAlchemyError):
+    except (OSError, SQLAlchemyError) as e:
+        celery_app.control.revoke(task.id, terminate=True)
         logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}")
+        raise RuntimeError("Failed to persist worker task metadata.") from e
     return task.id
 
 

@@ -116,7 +116,7 @@ async def _background_queue_recovery():
                 logger.warning(f"Recovered stale campaigns: {recovered}")
         except Exception as e:
             logger.warning(f"Background queue recovery failed: {e}")
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 
 app = FastAPI(

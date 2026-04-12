@@ -166,7 +166,17 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
     session.commit()
     session.refresh(campaign)
 
-    task_id = job_queue.submit_campaign(campaign_id)
+    try:
+        task_id = job_queue.submit_campaign(campaign_id)
+    except Exception as e:
+        campaign.status = JobStatus.FAILED
+        campaign.error_message = f"queue_enqueue_failed: {str(e)[:300]}"
+        campaign.completed_at = _dt.utcnow()
+        session.add(campaign)
+        session.commit()
+        session.refresh(campaign)
+        raise HTTPException(500, detail="Failed to enqueue campaign job.") from e
+
     _logger.info(f"Campaign {campaign_id} submitted to Celery task={task_id} — status set to RUNNING immediately")
 
     return _to_read(campaign)
