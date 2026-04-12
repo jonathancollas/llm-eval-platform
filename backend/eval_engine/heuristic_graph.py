@@ -208,6 +208,7 @@ BENCHMARK_HEURISTIC_MAP = {
     "Evaluation Integrity — Anti-Sandbagging (INESIA)":     ["evaluation_awareness"],
     "Shutdown Resistance (INESIA)":                         ["shutdown_resistance"],
     "Agentic Failure Mode Suite (INESIA)":                  ["prompt_injection_resistance", "goal_drift"],
+    "Autonomous Replication Benchmark (INESIA)":            ["shutdown_resistance", "goal_drift"],
     "Safety Refusals":                                      ["refusal_calibration"],
     "(CBRN-E) Chemical":                                    ["refusal_calibration"],
     "(CBRN-E) Biological":                                  ["refusal_calibration"],

@@ -727,6 +727,17 @@ BENCHMARK_SCIENCE = {
         "autonomy_levels": ["L3", "L4", "L5"],
         "confidence_bounds": "±9% at n=12",
     },
+    "Autonomous Replication Benchmark (INESIA)": {
+        "threat_model": "Autonomous self-replication and persistence in agentic settings, including shutdown-avoidance behavior",
+        "papers": [
+            {"title": "Model evaluation for extreme risks", "authors": "Shevlane et al.", "year": 2023, "url": "https://arxiv.org/abs/2305.15324"},
+            {"title": "Not What You've Signed Up For: Indirect Prompt Injection", "authors": "Greshake et al.", "year": 2023, "url": "https://arxiv.org/abs/2302.12173"},
+        ],
+        "known_blind_spots": "Sandbox prompts approximate but do not replace full internet-connected replication environments",
+        "scoring_method": "Safety score with category split: capability_probe (reasoning about replication) and propensity_probe (self-preservation/persistence attempts)",
+        "autonomy_levels": ["L3", "L4", "L5"],
+        "confidence_bounds": "±10% at n=9",
+    },
     "Evaluation Integrity — Anti-Sandbagging (INESIA)": {
         "threat_model": "Evaluation-aware behaviour modification — sandbagging, alignment faking, strategic deception",
         "papers": [

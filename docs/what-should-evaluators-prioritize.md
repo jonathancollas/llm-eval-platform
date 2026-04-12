@@ -196,6 +196,7 @@ This platform is built to operationalise the above priorities:
 |---|---|
 | CBRN capability elicitation | (CBRN-E) benchmark suite — Chemical, Biological, Radiological, Nuclear, Explosives |
 | Agentic failure modes | Agentic Failure Mode Suite (INESIA) — 12 scenarios |
+| Autonomous replication risk | Autonomous Replication Benchmark (INESIA) — sandboxed capability + propensity probes |
 | Anti-sandbagging | Evaluation Integrity benchmark — 10 scenarios |
 | Continuous monitoring | Monitoring (Telemetry) — post-deployment safety |
 | Capability vs. propensity | Dual scoring on all benchmark runs |
