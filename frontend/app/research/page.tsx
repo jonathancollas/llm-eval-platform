@@ -33,8 +33,11 @@ interface Replication {
 
 interface RepSummary {
   total?: number;
+  completed?: number;
   successful?: number;
+  failed?: number;
   avg_concordance?: number;
+  mean_concordance?: number;
   confidence_grade?: ConfidenceGrade;
 }
 
@@ -125,10 +128,10 @@ export default function ResearchPage() {
   const submitReplication = async () => {
     if (!selected || !submitForm.lab) return;
     setSaving(true);
-    const r = await fetch(`${API}/research/workspaces/${selected.id}/replications/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: selected.id, replicating_lab: submitForm.lab, concordance_score: parseFloat(submitForm.concordance), successful: submitForm.successful, notes: submitForm.notes }) });
-    const d = await r.json(); setRepSummary(d); setShowSubmitForm(false);
+    await fetch(`${API}/research/workspaces/${selected.id}/replications/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: selected.id, replicating_lab: submitForm.lab, concordance_score: parseFloat(submitForm.concordance), successful: submitForm.successful, notes: submitForm.notes }) });
+    setShowSubmitForm(false);
     const r2 = await fetch(`${API}/research/workspaces/${selected.id}/replications`);
-    const d2 = await r2.json(); setReplications(d2.replications ?? []); setSaving(false);
+    const d2 = await r2.json(); setReplications(d2.replications ?? []); setRepSummary(d2.summary); setSaving(false);
   };
 
   const generateManifest = async () => {
@@ -247,6 +250,9 @@ export default function ResearchPage() {
                 {repSummary && (
                   <div className="bg-white border border-slate-200 rounded-xl p-5">
                     <h4 className="text-sm font-semibold text-slate-900 mb-3">Scientific Confidence</h4>
+                    <p className="text-xs text-slate-500 mb-3">
+                      {(repSummary.successful ?? 0)} successful replications · {(repSummary.failed ?? 0)} failed · Confidence: {repSummary.confidence_grade ?? "insufficient"}
+                    </p>
                     <div className="grid grid-cols-4 gap-3 text-center">
                       {[["Replications", repSummary.total ?? 0], ["Successful", repSummary.successful ?? 0],
                         ["Avg Concordance", repSummary.avg_concordance ? `${Math.round(repSummary.avg_concordance * 100)}%` : "—"],
@@ -325,6 +331,32 @@ export default function ResearchPage() {
                       {rep.notes && <p className="text-xs text-slate-500 mt-1 ml-5">{rep.notes}</p>}
                     </div>
                   ))}
+                {replications.some((rep) => rep.status === "completed" || rep.type === "replication_result") && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <h5 className="text-xs font-semibold text-slate-700 mb-3">Concordance Overlay</h5>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-28 text-[11px] text-slate-500">Original</span>
+                        <div className="flex-1 h-2 rounded bg-slate-900" />
+                        <span className="text-[11px] font-semibold text-slate-700">100%</span>
+                      </div>
+                      {replications
+                        .filter((rep) => (rep.status === "completed" || rep.type === "replication_result") && rep.concordance_score !== undefined)
+                        .map((rep, i) => {
+                          const pct = Math.max(0, Math.min(100, Math.round(rep.concordance_score * 100)));
+                          return (
+                            <div key={`concordance-${i}`} className="flex items-center gap-2">
+                              <span className="w-28 text-[11px] text-slate-500 truncate">{rep.lab}</span>
+                              <div className="flex-1 h-2 rounded bg-slate-100 overflow-hidden">
+                                <div className={`h-full ${rep.successful ? "bg-green-500" : "bg-red-500"}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className="text-[11px] font-semibold text-slate-700">{pct}%</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 

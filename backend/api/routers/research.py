@@ -475,11 +475,69 @@ class ReplicationRequest(BaseModel):
 class ReplicationResult(BaseModel):
     workspace_id: int
     replicating_lab: str
-    concordance_score: float   # 0-1: how well results match
+    concordance_score: Optional[float] = None   # 0-1: how well results match
     successful: bool
     delta_capability: Optional[float] = None
     delta_propensity: Optional[float] = None
     notes: str = ""
+
+
+class ScientificConfidence(BaseModel):
+    workspace_id: int
+    n_successful_replications: int
+    n_failed_replications: int
+    mean_concordance: float
+    confidence_grade: str
+
+
+def _compute_concordance(
+    concordance_score: Optional[float],
+    delta_capability: Optional[float],
+    delta_propensity: Optional[float],
+) -> float:
+    if concordance_score is not None:
+        return max(0.0, min(1.0, concordance_score))
+    if delta_capability is None or delta_propensity is None:
+        return 0.0
+    score = 1 - ((abs(delta_capability) + abs(delta_propensity)) / 2)
+    return max(0.0, min(1.0, score))
+
+
+def _get_completed_replications(replications: list[dict]) -> list[dict]:
+    return [
+        r
+        for r in replications
+        if r.get("type") == "replication_result"
+        or (r.get("type") == "replication_request" and r.get("status") == "completed")
+    ]
+
+
+def _compute_scientific_confidence(workspace_id: int, replications: list[dict]) -> ScientificConfidence:
+    completed = _get_completed_replications(replications)
+    n_successful = sum(1 for r in completed if r.get("successful"))
+    n_failed = sum(1 for r in completed if not r.get("successful"))
+    mean_concordance = (
+        sum(r.get("concordance_score", 0) for r in completed) / len(completed)
+        if completed
+        else 0.0
+    )
+    if not completed:
+        grade = "insufficient"
+    elif mean_concordance >= 0.9 and n_successful >= 3 and n_failed == 0:
+        grade = "A"
+    elif mean_concordance >= 0.75 and n_successful >= 2:
+        grade = "B"
+    elif n_successful >= 1:
+        grade = "C"
+    else:
+        grade = "D"
+    return ScientificConfidence(
+        workspace_id=workspace_id,
+        n_successful_replications=n_successful,
+        n_failed_replications=n_failed,
+        mean_concordance=round(mean_concordance, 3),
+        confidence_grade=grade,
+    )
 
 
 @router.post("/workspaces/{workspace_id}/replications")
@@ -489,6 +547,8 @@ def request_replication(
     session: Session = Depends(get_session),
 ):
     """Request an independent replication of a workspace (#110)."""
+    if payload.workspace_id != workspace_id:
+        raise HTTPException(400, "workspace_id mismatch.")
     ws = session.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404, "Workspace not found.")
@@ -499,6 +559,9 @@ def request_replication(
         reps = _json.loads(reps_raw)
     except Exception:
         reps = []
+    for rep in reps:
+        if rep.get("type") == "replication_request" and rep.get("lab") == payload.replicating_lab and rep.get("status") == "pending":
+            return {"workspace_id": workspace_id, "status": "replication_requested", "lab": payload.replicating_lab}
     reps.append({
         "type": "replication_request",
         "lab": payload.replicating_lab,
@@ -519,6 +582,8 @@ def submit_replication_result(
     session: Session = Depends(get_session),
 ):
     """Submit completed replication results (#110)."""
+    if payload.workspace_id != workspace_id:
+        raise HTTPException(400, "workspace_id mismatch.")
     ws = session.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404, "Workspace not found.")
@@ -528,13 +593,18 @@ def submit_replication_result(
         reps = _json.loads(reps_raw)
     except Exception:
         reps = []
+    concordance = _compute_concordance(
+        payload.concordance_score,
+        payload.delta_capability,
+        payload.delta_propensity,
+    )
     # Find and update matching pending request or add new
     found = False
     for rep in reps:
         if rep.get("type") == "replication_request" and rep.get("lab") == payload.replicating_lab and rep.get("status") == "pending":
             rep.update({
                 "status": "completed",
-                "concordance_score": payload.concordance_score,
+                "concordance_score": concordance,
                 "successful": payload.successful,
                 "delta_capability": payload.delta_capability,
                 "delta_propensity": payload.delta_propensity,
@@ -547,31 +617,33 @@ def submit_replication_result(
         reps.append({
             "type": "replication_result",
             "lab": payload.replicating_lab,
-            "concordance_score": payload.concordance_score,
+            "concordance_score": concordance,
             "successful": payload.successful,
+            "delta_capability": payload.delta_capability,
+            "delta_propensity": payload.delta_propensity,
+            "notes": payload.notes,
             "completed_at": datetime.utcnow().isoformat(),
         })
     ws.tags = _json.dumps(reps)
     session.add(ws)
     session.commit()
 
-    # Compute scientific confidence
-    completed = [r for r in reps if r.get("type") in ("replication_request", "replication_result")
-                 and r.get("status") == "completed" or r.get("type") == "replication_result"]
-    n_success = sum(1 for r in completed if r.get("successful"))
-    n_total = len(completed)
-    avg_concordance = sum(r.get("concordance_score", 0) for r in completed) / max(n_total, 1)
-    grade = "A" if avg_concordance >= 0.9 and n_success >= 3 else \
-            "B" if avg_concordance >= 0.75 and n_success >= 2 else \
-            "C" if n_success >= 1 else "D"
+    confidence = _compute_scientific_confidence(workspace_id, reps)
+    completed = _get_completed_replications(reps)
 
     return {
         "workspace_id": workspace_id,
-        "n_replications": n_total,
-        "n_successful": n_success,
-        "avg_concordance": round(avg_concordance, 3),
-        "scientific_confidence_grade": grade,
-        "interpretation": f"{n_success}/{n_total} successful replications. Avg concordance: {avg_concordance:.0%}.",
+        "n_replications": len(completed),
+        "n_successful": confidence.n_successful_replications,
+        "n_failed": confidence.n_failed_replications,
+        "avg_concordance": confidence.mean_concordance,
+        "scientific_confidence_grade": confidence.confidence_grade,
+        "scientific_confidence": confidence.model_dump(),
+        "interpretation": (
+            f"{confidence.n_successful_replications}/{len(completed)} successful replications. "
+            f"Avg concordance: {confidence.mean_concordance:.0%}."
+            if completed else "No independent replications yet."
+        ),
     }
 
 
@@ -587,20 +659,19 @@ def get_replications(workspace_id: int, session: Session = Depends(get_session))
     except Exception:
         reps = []
     replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
-    completed = [r for r in replications if r.get("status") == "completed" or r.get("type") == "replication_result"]
-    n_success = sum(1 for r in completed if r.get("successful"))
-    avg_concordance = sum(r.get("concordance_score", 0) for r in completed) / max(len(completed), 1) if completed else 0
+    completed = _get_completed_replications(replications)
+    confidence = _compute_scientific_confidence(workspace_id, replications)
     return {
         "workspace_id": workspace_id,
         "replications": replications,
         "summary": {
             "total": len(replications),
             "completed": len(completed),
-            "successful": n_success,
-            "avg_concordance": round(avg_concordance, 3),
-            "confidence_grade": "A" if avg_concordance >= 0.9 and n_success >= 3 else
-                               "B" if avg_concordance >= 0.75 and n_success >= 2 else
-                               "C" if n_success >= 1 else "insufficient",
+            "successful": confidence.n_successful_replications,
+            "failed": confidence.n_failed_replications,
+            "avg_concordance": confidence.mean_concordance,
+            "mean_concordance": confidence.mean_concordance,
+            "confidence_grade": confidence.confidence_grade,
         }
     }
 
@@ -635,14 +706,16 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
     try:
         reps = _json.loads(getattr(ws, "tags", "[]") or "[]")
         replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
-        completed = [r for r in replications if r.get("status") == "completed" or r.get("type") == "replication_result"]
-        n_success = sum(1 for r in completed if r.get("successful"))
-        avg_concordance = sum(r.get("concordance_score", 0) for r in completed) / max(len(completed), 1) if completed else 0
-        confidence_grade = "A" if avg_concordance >= 0.9 and n_success >= 3 else \
-                          "B" if avg_concordance >= 0.75 and n_success >= 2 else \
-                          "C" if n_success >= 1 else "insufficient"
+        confidence = _compute_scientific_confidence(workspace_id, replications)
     except Exception:
-        replications = []; confidence_grade = "insufficient"; avg_concordance = 0; n_success = 0
+        replications = []
+        confidence = ScientificConfidence(
+            workspace_id=workspace_id,
+            n_successful_replications=0,
+            n_failed_replications=0,
+            mean_concordance=0.0,
+            confidence_grade="insufficient",
+        )
 
     # Build the executable artifact
     artifact = {
@@ -682,12 +755,14 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
 
             "scientific_confidence": {
                 "n_replications": len(replications),
-                "n_successful": n_success,
-                "avg_concordance": round(avg_concordance, 3),
-                "grade": confidence_grade,
+                "n_successful": confidence.n_successful_replications,
+                "n_failed": confidence.n_failed_replications,
+                "avg_concordance": confidence.mean_concordance,
+                "mean_concordance": confidence.mean_concordance,
+                "grade": confidence.confidence_grade,
                 "interpretation": (
-                    f"{n_success}/{len(replications)} successful replications. "
-                    f"Avg concordance: {avg_concordance:.0%}."
+                    f"{confidence.n_successful_replications}/{len(replications)} successful replications. "
+                    f"Avg concordance: {confidence.mean_concordance:.0%}."
                     if replications else "No independent replications yet."
                 ),
             },
