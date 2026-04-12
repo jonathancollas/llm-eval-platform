@@ -375,11 +375,14 @@ _KILLCHAIN_CATEGORY = {
 def _build_tool_registry() -> list[dict[str, str]]:
     tools = []
     for tool_name, mutation in sorted(MUTATION_TAXONOMY.items()):
-        phase = int(mutation.get("killchain_phase", 0))
+        phase = int(mutation["killchain_phase"])
+        category = _KILLCHAIN_CATEGORY.get(phase)
+        if not category:
+            raise ValueError(f"Unknown killchain phase '{phase}' for tool '{tool_name}'")
         tools.append(
             {
                 "tool_name": tool_name,
-                "category": _KILLCHAIN_CATEGORY.get(phase, "unknown"),
+                "category": category,
                 "input_adapter": "redbox.seed_prompt.v1",
                 "output_schema": "redbox.forge_variant.v1",
                 "severity_model": "redbox.cvss_like.v1",
@@ -389,3 +392,4 @@ def _build_tool_registry() -> list[dict[str, str]]:
 
 
 ADVERSARIAL_TOOL_REGISTRY = _build_tool_registry()
+ADVERSARIAL_TOOL_CATEGORIES = sorted({tool["category"] for tool in ADVERSARIAL_TOOL_REGISTRY})

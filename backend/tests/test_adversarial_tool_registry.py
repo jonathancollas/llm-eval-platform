@@ -30,7 +30,8 @@ def test_registry_has_required_standard_fields():
 
 
 def test_tool_registry_endpoint_supports_category_filter():
-    category = ADVERSARIAL_TOOL_REGISTRY[0]["category"]
+    assert ADVERSARIAL_TOOL_REGISTRY
+    category = next(iter({tool["category"] for tool in ADVERSARIAL_TOOL_REGISTRY}))
     payload = redbox.get_adversarial_tool_registry(category=category)
     assert payload["total"] > 0
     assert category in payload["categories"]
