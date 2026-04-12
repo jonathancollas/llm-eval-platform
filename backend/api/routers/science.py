@@ -621,7 +621,7 @@ def get_risk_domains():
 @router.get("/failure-clusters/campaign/{campaign_id}")
 def get_failure_clusters(
     campaign_id: int,
-    min_cluster_size: int = 2,
+    min_cluster_size: int = 3,
     similarity_threshold: float = 0.3,
     session: Session = Depends(get_session),
 ):
@@ -675,19 +675,28 @@ def get_failure_clusters(
         "campaign_id": report.campaign_id,
         "n_failures_analysed": report.n_failures,
         "n_clusters": report.n_clusters,
+        "failure_genome_version": report.failure_genome_version,
         "summary": report.summary,
+        "alerts": report.alerts,
         "novel_clusters": [
             {
                 "cluster_id": c.cluster_id,
-                "size": c.size,
-                "failure_family": c.failure_family,
+                "name": c.name,
+                "failure_type": c.failure_type,
+                "n_instances": c.n_instances,
                 "is_novel": c.is_novel,
                 "reproducibility_score": c.reproducibility_score,
                 "cross_model": c.cross_model,
                 "affected_models": c.affected_models,
                 "common_keywords": c.common_keywords,
-                "causal_hypothesis": c.causal_hypothesis,
+                "hypothesis": c.hypothesis,
+                "severity": c.severity,
                 "recommended_benchmark": c.recommended_benchmark,
+                "representative_traces": c.representative_traces,
+                # legacy aliases
+                "size": c.size,
+                "failure_family": c.failure_family,
+                "causal_hypothesis": c.causal_hypothesis,
                 "representative_prompts": c.representative_prompts,
             }
             for c in report.novel_clusters
@@ -695,9 +704,15 @@ def get_failure_clusters(
         "known_clusters": [
             {
                 "cluster_id": c.cluster_id,
+                "name": c.name,
+                "failure_type": c.failure_type,
+                "n_instances": c.n_instances,
+                "severity": c.severity,
+                "common_keywords": c.common_keywords,
+                "hypothesis": c.hypothesis,
+                # legacy aliases
                 "size": c.size,
                 "failure_family": c.failure_family,
-                "common_keywords": c.common_keywords,
                 "causal_hypothesis": c.causal_hypothesis,
             }
             for c in report.known_clusters
