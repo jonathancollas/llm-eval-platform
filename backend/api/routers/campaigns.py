@@ -1,16 +1,28 @@
 """
 Campaigns — CRUD + run/cancel + live tracking.
 """
+import hashlib
+import json
+import platform
+import sys
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
-import json
 
 from core.utils import safe_json_load
 from core.database import get_session
-from core.models import Campaign, EvalRun, LLMModel, Benchmark, JobStatus
+from core.auth import require_tenant
+from core.models import (
+    Benchmark,
+    Campaign,
+    EvalRun,
+    JobStatus,
+    LLMModel,
+    Tenant,
+)
 from core import job_queue
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -87,13 +99,24 @@ def _to_read(c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
 
 
 @router.get("/", response_model=list[CampaignRead])
-def list_campaigns(session: Session = Depends(get_session)):
-    campaigns = session.exec(select(Campaign).order_by(Campaign.created_at.desc())).all()
+def list_campaigns(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    campaigns = session.exec(
+        select(Campaign)
+        .where(Campaign.tenant_id == tenant.id)
+        .order_by(Campaign.created_at.desc())
+    ).all()
     return [_to_read(c) for c in campaigns]
 
 
 @router.post("/", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
-def create_campaign(payload: CampaignCreate, session: Session = Depends(get_session)):
+def create_campaign(
+    payload: CampaignCreate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     for mid in payload.model_ids:
         if not session.get(LLMModel, mid):
             raise HTTPException(404, detail=f"Model {mid} not found.")
@@ -102,6 +125,7 @@ def create_campaign(payload: CampaignCreate, session: Session = Depends(get_sess
             raise HTTPException(404, detail=f"Benchmark {bid} not found.")
 
     campaign = Campaign(
+        tenant_id=tenant.id,
         name=payload.name,
         description=payload.description,
         model_ids=json.dumps(payload.model_ids),
@@ -118,8 +142,14 @@ def create_campaign(payload: CampaignCreate, session: Session = Depends(get_sess
 
 
 @router.get("/{campaign_id}", response_model=CampaignRead)
-def get_campaign(campaign_id: int, session: Session = Depends(get_session)):
-    campaign = session.get(Campaign, campaign_id)
+def get_campaign(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    campaign = session.exec(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    ).first()
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
@@ -127,9 +157,15 @@ def get_campaign(campaign_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/{campaign_id}/run", response_model=CampaignRead)
-async def run_campaign(campaign_id: int, session: Session = Depends(get_session)):
+async def run_campaign(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Start or re-run a campaign."""
-    campaign = session.get(Campaign, campaign_id)
+    campaign = session.exec(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    ).first()
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
     if campaign.status == JobStatus.RUNNING:
@@ -174,8 +210,14 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
 
 
 @router.post("/{campaign_id}/cancel", response_model=CampaignRead)
-def cancel_campaign(campaign_id: int, session: Session = Depends(get_session)):
-    campaign = session.get(Campaign, campaign_id)
+def cancel_campaign(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    campaign = session.exec(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    ).first()
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
 
@@ -197,8 +239,14 @@ def cancel_campaign(campaign_id: int, session: Session = Depends(get_session)):
 
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_campaign(campaign_id: int, session: Session = Depends(get_session)):
-    campaign = session.get(Campaign, campaign_id)
+def delete_campaign(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    campaign = session.exec(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    ).first()
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
     if campaign.status == JobStatus.RUNNING:
@@ -211,14 +259,19 @@ def delete_campaign(campaign_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{campaign_id}/manifest")
-def get_reproducibility_manifest(campaign_id: int, session: Session = Depends(get_session)):
+def get_reproducibility_manifest(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Reproducibility manifest — everything needed to replay this experiment exactly.
     Returns a JSON object capturing the full configuration snapshot at run time.
     Aligned with INESIA research doctrine: every evaluation must be reproducible.
     """
-    import hashlib, platform, sys
-    campaign = session.get(Campaign, campaign_id)
+    campaign = session.exec(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.tenant_id == tenant.id)
+    ).first()
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
 
