@@ -83,7 +83,14 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(name="campaign.execute", bind=True, max_retries=3)
+@celery_app.task(
+    name="campaign.execute",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 3},
+)
 def execute_campaign_task(self, campaign_id: int) -> None:
     _run_async_blocking(_run_with_heartbeat(campaign_id))
 
@@ -100,19 +107,19 @@ def _run_async_blocking(coro) -> None:
         asyncio.run(coro)
         return
 
-    error: list[BaseException] = []
+    errors: list[BaseException] = []
 
     def _runner() -> None:
         try:
             asyncio.run(coro)
         except BaseException as exc:
-            error.append(exc)
+            errors.append(exc)
 
     worker = threading.Thread(target=_runner, daemon=True)
     worker.start()
     worker.join()
-    if error:
-        raise error[0]
+    if errors:
+        raise errors[0]
 
 
 def submit_campaign(campaign_id: int) -> str:

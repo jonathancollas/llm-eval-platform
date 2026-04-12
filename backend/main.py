@@ -3,6 +3,7 @@ Mercury Retrograde — INESIA AI Evaluation Platform
 FastAPI application entry point.
 """
 import hmac as _hmac
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Callable
@@ -39,8 +40,6 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import asyncio
-
     # 1. Create tables + reset stuck campaigns + update has_dataset flags
     logger.info("Startup — initializing DB...")
     # Run sync DB init in executor to avoid blocking event loop
@@ -83,7 +82,6 @@ async def lifespan(app: FastAPI):
 
 async def _background_openrouter_sync():
     """Sync OpenRouter + Ollama models after startup — runs in background."""
-    import asyncio
     await asyncio.sleep(2)  # Let server fully start first
 
     # OpenRouter
@@ -109,7 +107,6 @@ async def _background_openrouter_sync():
 
 
 async def _background_queue_recovery():
-    import asyncio
     from core import job_queue
 
     while True:
