@@ -1,29 +1,24 @@
 """
-Durable Job Queue (#S3)
-========================
-DB-backed heartbeat state + asyncio.Lock for thread-safe task dict.
-
-Security/reliability fixes:
-  - asyncio.Lock() for _running_tasks (#Medium race condition)
-  - Specific exception types instead of broad except Exception (#Medium)
-  - Heartbeat: running campaigns ping DB every 30s
-  - Stale campaigns (no ping >2min) recovered on startup
+Durable campaign job queue via Celery + Redis.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Coroutine, Optional
+import threading
+from queue import SimpleQueue
+from datetime import datetime
+from typing import Optional
 
+from celery import Celery
 from sqlalchemy.exc import SQLAlchemyError
 
+from core.config import get_settings
+
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 HEARTBEAT_INTERVAL_S = 30
 STALE_THRESHOLD_S    = 120
-
-# ── Thread-safe task registry ─────────────────────────────────────────────────
-_running_tasks: dict[int, asyncio.Task] = {}
-_tasks_lock = asyncio.Lock()
+DEFAULT_REDIS_URL = "redis://redis:6379/0"
 
 
 def _get_session():
@@ -32,32 +27,43 @@ def _get_session():
     return Session(engine)
 
 
+def _mark_heartbeat(campaign_id: int) -> None:
+    from core.models import Campaign
+    with _get_session() as session:
+        c = session.get(Campaign, campaign_id)
+        if c:
+            c.last_heartbeat_at = datetime.utcnow()
+            session.add(c)
+            session.commit()
+        else:
+            logger.warning(f"[heartbeat] Campaign {campaign_id} not found while updating heartbeat")
+
+
 async def _heartbeat_loop(campaign_id: int, stop_event: asyncio.Event) -> None:
     """Ping Campaign.last_heartbeat_at every 30s while campaign runs."""
-    from core.models import Campaign
     while not stop_event.is_set():
         try:
-            with _get_session() as session:
-                c = session.get(Campaign, campaign_id)
-                if c:
-                    c.last_heartbeat_at = datetime.utcnow()
-                    session.add(c)
-                    session.commit()
+            _mark_heartbeat(campaign_id)
         except OSError as e:
             logger.warning(f"[heartbeat] DB IO error for campaign {campaign_id}: {e}")
+        except SQLAlchemyError as e:
+            logger.warning(f"[heartbeat] SQLAlchemy error for campaign {campaign_id}: {e}")
         except RuntimeError as e:
             logger.warning(f"[heartbeat] Runtime error for campaign {campaign_id}: {e}")
         await asyncio.sleep(HEARTBEAT_INTERVAL_S)
 
 
-async def _run_with_heartbeat(campaign_id: int, coro: Coroutine) -> None:
+async def _run_with_heartbeat(campaign_id: int) -> None:
+    from eval_engine.runner import execute_campaign
+
     stop_event = asyncio.Event()
     heartbeat = asyncio.create_task(
         _heartbeat_loop(campaign_id, stop_event),
         name=f"heartbeat-{campaign_id}"
     )
     try:
-        await coro
+        _mark_heartbeat(campaign_id)
+        await execute_campaign(campaign_id)
     finally:
         stop_event.set()
         heartbeat.cancel()
@@ -67,46 +73,104 @@ async def _run_with_heartbeat(campaign_id: int, coro: Coroutine) -> None:
             pass
 
 
-async def submit(campaign_id: int, coro: Coroutine) -> asyncio.Task:
-    """Submit a campaign coroutine for execution. Thread-safe via asyncio.Lock."""
-    async with _tasks_lock:
-        existing = _running_tasks.get(campaign_id)
-        if existing and not existing.done():
-            raise RuntimeError(f"Campaign {campaign_id} is already running.")
-
-        task = asyncio.create_task(
-            _run_with_heartbeat(campaign_id, coro),
-            name=f"campaign-{campaign_id}"
-        )
-        _running_tasks[campaign_id] = task
-
-    async def _cleanup(t: asyncio.Task):
-        async with _tasks_lock:
-            _running_tasks.pop(campaign_id, None)
-
-    task.add_done_callback(lambda t: asyncio.ensure_future(_cleanup(t)))
-    return task
+redis_url = settings.redis_url or DEFAULT_REDIS_URL
+celery_app = Celery("llm_eval_platform", broker=redis_url, backend=redis_url)
+celery_app.conf.update(
+    task_track_started=True,
+    broker_connection_retry_on_startup=True,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+)
 
 
-async def cancel(campaign_id: int) -> bool:
-    """Cancel a running campaign. Thread-safe."""
-    async with _tasks_lock:
-        task = _running_tasks.get(campaign_id)
-        if task and not task.done():
-            task.cancel()
-            return True
-    return False
+@celery_app.task(
+    name="campaign.execute",
+    bind=True,
+    autoretry_for=(OSError, SQLAlchemyError),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 3},
+)
+def execute_campaign_task(self, campaign_id: int) -> None:
+    _run_async_blocking(_run_with_heartbeat(campaign_id))
+
+
+def _run_async_blocking(coro) -> None:
+    """Run async coroutine safely from sync worker context."""
+    try:
+        asyncio.get_running_loop()
+        has_running_loop = True
+    except RuntimeError:
+        has_running_loop = False
+
+    if not has_running_loop:
+        asyncio.run(coro)
+        return
+
+    errors: SimpleQueue[BaseException] = SimpleQueue()
+
+    def _runner() -> None:
+        try:
+            asyncio.run(coro)
+        except BaseException as exc:
+            errors.put(exc)
+
+    worker = threading.Thread(target=_runner)
+    worker.start()
+    worker.join()
+    if not errors.empty():
+        raise errors.get()
+
+
+def submit_campaign(campaign_id: int) -> str:
+    """Submit a campaign for durable execution on Celery workers."""
+    task = execute_campaign_task.delay(campaign_id)
+    try:
+        from core.models import Campaign
+        with _get_session() as session:
+            c = session.get(Campaign, campaign_id)
+            if c:
+                c.worker_task_id = task.id
+                c.last_heartbeat_at = datetime.utcnow()
+                session.add(c)
+                session.commit()
+    except (OSError, SQLAlchemyError) as e:
+        try:
+            celery_app.control.revoke(task.id, terminate=True)
+        except Exception as revoke_error:
+            logger.warning(f"[job_queue] Failed to revoke orphan task {task.id}: {revoke_error}")
+        logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}: {e}")
+        raise RuntimeError("Failed to persist worker task metadata.") from e
+    return task.id
+
+
+def cancel_campaign(campaign_id: int) -> bool:
+    """Revoke a queued/running campaign task by stored worker task id."""
+    task_id: Optional[str] = None
+    try:
+        from core.models import Campaign
+        with _get_session() as session:
+            c = session.get(Campaign, campaign_id)
+            if c:
+                task_id = c.worker_task_id
+    except (OSError, SQLAlchemyError):
+        logger.warning(f"[job_queue] Could not load task ID for campaign {campaign_id}")
+        return False
+
+    if not task_id:
+        return False
+
+    celery_app.control.revoke(task_id, terminate=True)
+    return True
 
 
 def is_running(campaign_id: int) -> bool:
     """
-    Check if campaign is running.
-    Checks process-local dict first, then DB heartbeat freshness.
-    Not async — safe to call from sync context (reads only).
+    Check if campaign is running based on durable DB state + heartbeat freshness.
     """
-    task = _running_tasks.get(campaign_id)
-    if task and not task.done():
-        return True
     try:
         from core.models import Campaign, JobStatus
         with _get_session() as session:
@@ -126,7 +190,7 @@ def get_queue_status() -> dict:
     """Return a summary dict consumed by the /api/health endpoint."""
     running = get_all_running()
     return {
-        "mode": "asyncio",
+        "mode": "celery",
         "in_memory_tasks": len([s for s in running.values() if s == "running"]),
         "stale_tasks": len([s for s in running.values() if s == "stale"]),
         "total_tracked": len(running),
@@ -135,7 +199,7 @@ def get_queue_status() -> dict:
 
 def get_all_running() -> dict[int, str]:
     """Get all running campaigns {campaign_id: status}. Non-async read."""
-    in_memory = {cid: "running" for cid, t in _running_tasks.items() if not t.done()}
+    states: dict[int, str] = {}
     try:
         from core.models import Campaign, JobStatus
         with _get_session() as session:
@@ -144,19 +208,17 @@ def get_all_running() -> dict[int, str]:
                 select(Campaign).where(Campaign.status == JobStatus.RUNNING)
             ).all()
             for c in running:
-                if c.id in in_memory:
-                    continue
                 heartbeat = getattr(c, "last_heartbeat_at", None)
                 stale = (heartbeat is None or
                          (datetime.utcnow() - heartbeat).total_seconds() > STALE_THRESHOLD_S)
-                in_memory[c.id] = "stale" if stale else "running_elsewhere"
-    except OSError as e:
+                states[c.id] = "stale" if stale else "running"
+    except (OSError, SQLAlchemyError) as e:
         logger.warning(f"[job_queue] DB read error in get_all_running: {e}")
-    return in_memory
+    return states
 
 
-async def recover_stale_campaigns() -> list[int]:
-    """Mark stale campaigns FAILED. Call on application startup."""
+def recover_stale_campaigns() -> list[int]:
+    """Mark stale RUNNING campaigns FAILED when heartbeat is older than threshold."""
     recovered = []
     try:
         from core.models import Campaign, JobStatus
@@ -169,18 +231,17 @@ async def recover_stale_campaigns() -> list[int]:
                 heartbeat = getattr(c, "last_heartbeat_at", None)
                 stale = (heartbeat is None or
                          (datetime.utcnow() - heartbeat).total_seconds() > STALE_THRESHOLD_S)
-                if stale and c.id not in _running_tasks:
+                if stale:
                     c.status = JobStatus.FAILED
                     c.error_message = (
-                        f"Campaign failed: heartbeat lost (last: {heartbeat or 'never'}). "
-                        "Process restarted. Please re-run."
+                        f"heartbeat_timeout: campaign heartbeat stale (last: {heartbeat or 'never'})."
                     )
                     session.add(c)
                     recovered.append(c.id)
                     logger.warning(f"[recovery] Campaign {c.id} marked FAILED")
             if recovered:
                 session.commit()
-    except OSError as e:
+    except (OSError, SQLAlchemyError) as e:
         logger.error(f"[recovery] DB error: {e}")
     except RuntimeError as e:
         logger.error(f"[recovery] Runtime error: {e}")

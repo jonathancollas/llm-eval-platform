@@ -61,6 +61,7 @@ class Settings(BaseSettings):
 
     # ── Benchmark library ────────────────────────────────────────────────────────
     bench_library_path: str = "/app/bench_library"
+    benchmark_upload_max_bytes: int = 50 * 1024 * 1024
 
     # ── API providers ────────────────────────────────────────────────────────────
     openai_api_key: str = ""

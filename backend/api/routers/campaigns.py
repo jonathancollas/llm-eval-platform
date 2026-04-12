@@ -5,22 +5,17 @@ import hashlib
 import json
 import platform
 import sys
+
 from datetime import datetime
 from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from core.auth import require_tenant
 from core.database import get_session
 from core.models import Benchmark, Campaign, EvalRun, JobStatus, LLMModel, Tenant
-from core.relations import (
-    get_campaign_benchmark_ids,
-    get_campaign_model_ids,
-    get_eval_run_metrics,
-    replace_campaign_links,
-)
+from core.relations import get_campaign_benchmark_ids, get_campaign_model_ids, get_eval_run_metrics, replace_campaign_links
+from core.auth import require_tenant
 from core import job_queue
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -109,7 +104,6 @@ def list_campaigns(
         .order_by(Campaign.created_at.desc())
     ).all()
     return [_to_read(session, c) for c in campaigns]
-
 
 @router.post("/", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
 def create_campaign(
@@ -219,7 +213,7 @@ async def run_campaign(
         session.refresh(campaign)
         raise HTTPException(500, detail="Failed to enqueue campaign job.") from e
 
-    _logger.info(f"Campaign {campaign_id} submitted — status set to RUNNING immediately")
+    _logger.info(f"Campaign {campaign_id} submitted to Celery task={task_id} — status set to RUNNING immediately")
 
     return _to_read(session, campaign)
 

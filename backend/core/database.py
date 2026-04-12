@@ -73,6 +73,39 @@ def create_db_and_tables() -> None:
 
 def _run_alembic_migrations() -> None:
     """Run Alembic schema migrations."""
+def _migrate_add_columns() -> None:
+    """Add new columns to existing tables (idempotent). SQLite only — PostgreSQL uses create_all."""
+    if not _is_sqlite:
+        return  # PostgreSQL handles schema via SQLModel.metadata.create_all
+
+    new_columns = [
+        # (table, column, type, default)
+        ("campaigns", "system_prompt_hash", "TEXT", "NULL"),
+        ("campaigns", "dataset_version", "TEXT", "NULL"),
+        ("campaigns", "judge_model", "TEXT", "NULL"),
+        ("campaigns", "run_context_json", "TEXT", "NULL"),
+        ("llm_models", "is_free", "INTEGER", "0"),
+        ("llm_models", "max_output_tokens", "INTEGER", "0"),
+        ("llm_models", "is_moderated", "INTEGER", "0"),
+        ("llm_models", "tokenizer", "TEXT", "''"),
+        ("llm_models", "instruct_type", "TEXT", "''"),
+        ("llm_models", "hugging_face_id", "TEXT", "''"),
+        ("llm_models", "model_created_at", "INTEGER", "0"),
+        # Live tracking columns (Sprint 1+2)
+        ("campaigns", "current_item_index", "INTEGER", "NULL"),
+        ("campaigns", "current_item_total", "INTEGER", "NULL"),
+        ("campaigns", "current_item_label", "TEXT", "NULL"),
+        ("campaigns", "worker_task_id", "TEXT", "NULL"),
+        # Capability/Propensity dual scores (v0.5+)
+        ("eval_runs", "capability_score", "REAL", "NULL"),
+        ("eval_runs", "propensity_score", "REAL", "NULL"),
+        ("benchmarks", "eval_dimension", "TEXT", "'capability'"),
+        ("llm_models", "is_open_weight", "INTEGER", "0"),
+    ]
+    import sqlite3
+    db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")
+    if not db_path or db_path == ":memory:":
+        return
     try:
         from alembic import command
         from alembic.config import Config

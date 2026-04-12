@@ -24,6 +24,7 @@ from core.database import get_session
 from core.models import Tenant, User
 
 logger = logging.getLogger(__name__)
+VALID_ROLES = {"admin", "evaluator", "viewer"}
 
 # ── Tenant key format ─────────────────────────────────────────────────────────
 _TENANT_KEY_RE = re.compile(r"^mr_[0-9a-f]{48}$")
@@ -125,3 +126,26 @@ def require_tenant(
     if not tenant:
         raise HTTPException(status_code=401, detail="X-Tenant-Key header required.")
     return tenant
+
+
+def normalize_role(role: str) -> str:
+    """Normalize legacy role aliases and casing."""
+    r = (role or "").strip().lower()
+    # Backward compatibility: older clients used "runner" for write-capable users.
+    if r == "runner":
+        return "evaluator"
+    return r
+
+
+def get_request_role(request: Request) -> str:
+    """
+    Extract role from request headers.
+    Supported headers:
+      - X-Role
+      - X-User-Role
+    """
+    return normalize_role(
+        request.headers.get("X-Role", "")
+        or request.headers.get("X-User-Role", "")
+        or "viewer"
+    )
