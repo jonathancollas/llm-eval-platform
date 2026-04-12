@@ -84,7 +84,7 @@ export default function DomainLeaderboardPage({ params }: { params: Promise<{ do
         }
       />
 
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-8 space-y-6">
 
         {/* Stats bar */}
         <div className="grid grid-cols-3 gap-4">

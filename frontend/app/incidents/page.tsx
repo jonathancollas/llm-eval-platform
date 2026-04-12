@@ -184,7 +184,7 @@ export default function IncidentsPage() {
         }
       />
 
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-8 space-y-6">
         {showForm && (
           <div className="bg-white border border-red-200 rounded-xl p-6 space-y-4">
             <h3 className="font-medium text-red-700">Report a Safety Incident</h3>

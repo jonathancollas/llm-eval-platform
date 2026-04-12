@@ -360,7 +360,7 @@ export default function MethodologyPage() {
         description="The scientific foundation behind every evaluation in EVAL RESEARCH OS."
       />
 
-      <div className="px-8 py-6 space-y-4 max-w-4xl">
+      <div className="px-4 sm:px-8 py-6 space-y-4 max-w-4xl">
 
         {/* Intro */}
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-sm text-purple-800">

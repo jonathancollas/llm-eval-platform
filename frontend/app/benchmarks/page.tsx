@@ -469,14 +469,14 @@ export default function BenchmarksPage() {
       />
 
       {importMsg && (
-        <div className="mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
+        <div className="mx-4 sm:mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
           ✅ {importMsg}
         </div>
       )}
 
       {/* HuggingFace Explorer */}
       {showHfImport && (
-        <div className="mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
+        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
           <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 HuggingFace Dataset Explorer</h3>
 
           {/* Search */}
@@ -585,9 +585,9 @@ export default function BenchmarksPage() {
       )}
 
       {showCustomForm && (
-        <div className="mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
+        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
           <h3 className="font-medium text-slate-900 mb-4">New custom benchmark</h3>
-          <form onSubmit={handleCreateCustom} className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleCreateCustom} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Nom</label>
               <input required value={customForm.name}
@@ -631,7 +631,7 @@ export default function BenchmarksPage() {
       )}
 
       {uploadId && (
-        <div className="mx-8 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
+        <div className="mx-4 sm:mx-8 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
           <Upload size={16} className="text-blue-600 shrink-0" />
           <p className="text-sm text-blue-700">Benchmark created! Upload your JSON dataset:</p>
           <input type="file" accept=".json"
@@ -642,7 +642,7 @@ export default function BenchmarksPage() {
       )}
 
       {/* Filter tabs */}
-      <div className="px-8 pt-6 pb-2 flex gap-2 flex-wrap">
+      <div className="px-4 sm:px-8 pt-6 pb-2 flex gap-2 flex-wrap">
         {FILTER_TABS.map(({ key, label }) => (
           <button key={key} onClick={() => setFilter(key)}
             className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
@@ -657,7 +657,7 @@ export default function BenchmarksPage() {
       </div>
 
       {/* List */}
-      <div className="p-8 pt-4">
+      <div className="p-4 sm:p-8 pt-4">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size={24} /></div>
         ) : filtered.length === 0 ? (

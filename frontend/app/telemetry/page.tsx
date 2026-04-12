@@ -341,7 +341,7 @@ function TelemetryContent() {
       />
 
       {/* View switcher */}
-      <div className="px-6 pt-4 pb-0 flex items-center gap-2">
+      <div className="px-4 sm:px-6 pt-4 pb-0 flex items-center gap-2 flex-wrap">
         <button onClick={() => setView("fleet")}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${view === "fleet" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
           🌐 Fleet Overview
@@ -359,7 +359,7 @@ function TelemetryContent() {
         )}
       </div>
 
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {loading && <div className="flex justify-center py-20"><Spinner size={28} /></div>}
         {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{error}</div>}
 

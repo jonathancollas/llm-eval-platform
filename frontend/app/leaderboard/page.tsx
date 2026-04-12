@@ -44,7 +44,7 @@ export default function LeaderboardPage() {
         title="Leaderboard INESIA"
         description="AI model rankings by evaluation domain — data from real campaigns."
       />
-      <div className="p-8 space-y-8">
+      <div className="p-4 sm:p-8 space-y-8">
 
         {/* Domain cards */}
         <div>
