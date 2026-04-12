@@ -93,6 +93,7 @@ export interface Benchmark {
   config: Record<string, unknown>; is_builtin: boolean;
   risk_threshold: number | null; has_dataset: boolean;
   source: "inesia" | "public" | "community";
+  citation_count: number;
   created_at: string;
 }
 
@@ -163,6 +164,8 @@ export const benchmarksApi = {
   list: (type?: BenchmarkType) => apiFetch<Benchmark[]>(`/benchmarks/${type ? `?type=${type}` : ""}`),
   get: (id: number) => apiFetch<Benchmark>(`/benchmarks/${id}`),
   create: (data: Record<string, unknown>) => apiFetch<Benchmark>("/benchmarks/", { method: "POST", body: JSON.stringify(data) }),
+  fork: (id: number, data?: { new_name?: string; fork_type?: string; changes_description?: string; forked_by?: number }) =>
+    apiFetch<{ id: number; name: string }>(`/benchmarks/${id}/fork`, { method: "POST", body: JSON.stringify(data ?? {}) }),
   delete: (id: number) => apiFetch<void>(`/benchmarks/${id}`, { method: "DELETE" }),
   uploadDataset: (id: number, file: File) => {
     const form = new FormData(); form.append("file", file);

@@ -35,6 +35,9 @@ Benchmarks — CRUD + dataset upload + HuggingFace import + fork/card/versions.
 | `POST` | `/benchmarks/import-huggingface` | Import a dataset from HuggingFace Hub and create a benchmark. |
 | `GET` | `/benchmarks/sources` | List available benchmark source types. |
 | `POST` | `/benchmarks/{benchmark_id}/fork` | Fork a benchmark into a new custom variant. |
+| `GET` | `/benchmarks/{benchmark_id}/lineage` | Get benchmark parent/child fork lineage tree. |
+| `GET` | `/benchmarks/{benchmark_id}/citations` | Get citation graph data, labs, yearly counts, and influence score. |
+| `POST` | `/benchmarks/{benchmark_id}/citations` | Add a citation record for a benchmark. |
 | `GET` | `/benchmarks/{benchmark_id}/card` | Get benchmark dataset card metadata. |
 | `GET` | `/benchmarks/{benchmark_id}/versions` | Get version history for a benchmark. |
 

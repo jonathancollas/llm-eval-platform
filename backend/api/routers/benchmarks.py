@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 
 from core.database import get_session
-from core.models import Benchmark, BenchmarkType
+from core.models import Benchmark, BenchmarkType, BenchmarkFork, BenchmarkCitation
 from core.config import get_settings
 from core.relations import get_benchmark_tags, replace_benchmark_tags
 
@@ -46,7 +46,21 @@ class BenchmarkRead(BaseModel):
     risk_threshold: Optional[float]
     has_dataset: bool
     source: str          # "inesia" | "public" | "community"
+    citation_count: int = 0
     created_at: datetime
+
+
+class ForkBenchmarkRequest(BaseModel):
+    new_name: Optional[str] = None
+    fork_type: str = "extension"  # extension | multilingual | agentic_variant | adversarial_hardening
+    changes_description: str = ""
+    forked_by: Optional[int] = None
+
+
+class BenchmarkCitationCreate(BaseModel):
+    paper_doi: str
+    citing_lab: str = ""
+    year: int
 
 
 def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
@@ -67,8 +81,25 @@ def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
         risk_threshold=b.risk_threshold,
         has_dataset=has_dataset,
         source=getattr(b, "source", "public") or "public",
+        citation_count=_get_citation_count(session, b.id),
         created_at=b.created_at,
     )
+
+
+def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
+    try:
+        cfg = json.loads(bench.config_json or "{}")
+        parent = cfg.get("forked_from", {})
+        parent_id = parent.get("id")
+        return int(parent_id) if parent_id is not None else None
+    except Exception:
+        return None
+
+
+def _get_citation_count(session: Session, benchmark_id: Optional[int]) -> int:
+    if benchmark_id is None:
+        return 0
+    return len(session.exec(select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)).all())
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -614,6 +645,7 @@ def list_benchmark_sources():
 @router.post("/{benchmark_id}/fork")
 def fork_benchmark(
     benchmark_id: int,
+    payload: Optional[ForkBenchmarkRequest] = None,
     new_name: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
@@ -622,7 +654,10 @@ def fork_benchmark(
     if not parent:
         raise HTTPException(404, detail="Benchmark not found.")
 
-    fork_name = new_name or f"{parent.name} (fork)"
+    fork_name = (payload.new_name if payload and payload.new_name else new_name) or f"{parent.name} (fork)"
+    fork_type = payload.fork_type if payload else "extension"
+    changes_description = payload.changes_description if payload else ""
+    forked_by = payload.forked_by if payload else None
 
     # Check unique
     existing = session.exec(select(Benchmark).where(Benchmark.name == fork_name)).first()
@@ -643,9 +678,15 @@ def fork_benchmark(
 
     # Parse parent config to add lineage
     parent_config = json.loads(parent.config_json) if parent.config_json else {}
+    forked_at_iso = datetime.utcnow().isoformat()
     fork_config = {
         **parent_config,
-        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
+        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": forked_at_iso},
+        "fork_metadata": {
+            "fork_type": fork_type,
+            "changes_description": changes_description,
+            "forked_by": forked_by,
+        },
     }
 
     parent_tags = get_benchmark_tags(session, parent)
@@ -671,13 +712,192 @@ def fork_benchmark(
     session.commit()
     session.refresh(fork)
     replace_benchmark_tags(session, fork.id, fork_tags)
+    session.add(
+        BenchmarkFork(
+            child_benchmark_id=fork.id,
+            parent_benchmark_id=parent.id,
+            fork_type=fork_type,
+            changes_description=changes_description,
+            forked_by=forked_by,
+        )
+    )
     session.commit()
 
     return {
         "id": fork.id,
         "name": fork.name,
         "forked_from": {"id": parent.id, "name": parent.name},
+        "fork_type": fork_type,
+        "changes_description": changes_description,
+        "forked_by": forked_by,
+        "forked_at": forked_at_iso,
         "dataset_path": fork_dataset_path,
+    }
+
+
+def _default_citations_for_benchmark(bench: Benchmark) -> list[dict]:
+    science = BENCHMARK_SCIENCE.get(bench.name, {})
+    papers = science.get("papers", []) if isinstance(science, dict) else []
+    defaults = []
+    for p in papers:
+        title = (p.get("title") or "").strip()
+        if not title:
+            continue
+        url = (p.get("url") or "").strip()
+        defaults.append({
+            "paper_doi": url or title.lower().replace(" ", "-"),
+            "citing_lab": (p.get("authors") or "").strip(),
+            "year": int(p.get("year") or datetime.utcnow().year),
+        })
+    return defaults
+
+
+@router.get("/{benchmark_id}/lineage")
+def get_benchmark_lineage(benchmark_id: int, session: Session = Depends(get_session)):
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(status_code=404, detail="Benchmark not found.")
+
+    parent_link = session.exec(
+        select(BenchmarkFork).where(BenchmarkFork.child_benchmark_id == benchmark_id)
+    ).first()
+    parent = session.get(Benchmark, parent_link.parent_benchmark_id) if parent_link else None
+    if not parent:
+        parent_id = _extract_parent_id_from_config(bench)
+        parent = session.get(Benchmark, parent_id) if parent_id else None
+
+    child_links = session.exec(
+        select(BenchmarkFork).where(BenchmarkFork.parent_benchmark_id == benchmark_id)
+    ).all()
+    children = []
+    child_ids = set()
+    for link in child_links:
+        child = session.get(Benchmark, link.child_benchmark_id)
+        if not child:
+            continue
+        child_ids.add(child.id)
+        children.append({
+            "id": child.id,
+            "name": child.name,
+            "fork_type": link.fork_type,
+            "changes_description": link.changes_description,
+            "forked_by": link.forked_by,
+            "forked_at": link.forked_at.isoformat() if link.forked_at else None,
+        })
+
+    for candidate in session.exec(select(Benchmark)).all():
+        if candidate.id in child_ids:
+            continue
+        if _extract_parent_id_from_config(candidate) != benchmark_id:
+            continue
+        meta = {}
+        try:
+            meta = json.loads(candidate.config_json or "{}").get("fork_metadata", {}) or {}
+        except Exception:
+            meta = {}
+        children.append({
+            "id": candidate.id,
+            "name": candidate.name,
+            "fork_type": meta.get("fork_type", "extension"),
+            "changes_description": meta.get("changes_description", ""),
+            "forked_by": meta.get("forked_by"),
+            "forked_at": json.loads(candidate.config_json or "{}").get("forked_from", {}).get("forked_at"),
+        })
+
+    ancestry = []
+    cursor = parent
+    visited = {bench.id}
+    while cursor and cursor.id not in visited:
+        ancestry.append({"id": cursor.id, "name": cursor.name})
+        visited.add(cursor.id)
+        next_link = session.exec(select(BenchmarkFork).where(BenchmarkFork.child_benchmark_id == cursor.id)).first()
+        next_parent = session.get(Benchmark, next_link.parent_benchmark_id) if next_link else None
+        if not next_parent:
+            next_id = _extract_parent_id_from_config(cursor)
+            next_parent = session.get(Benchmark, next_id) if next_id else None
+        cursor = next_parent
+
+    return {
+        "benchmark_id": bench.id,
+        "benchmark_name": bench.name,
+        "parent": {"id": parent.id, "name": parent.name} if parent else None,
+        "children": children,
+        "fork_count": len(children),
+        "lineage_depth": len(ancestry),
+        "ancestry": ancestry,
+    }
+
+
+@router.get("/{benchmark_id}/citations")
+def get_benchmark_citations(benchmark_id: int, session: Session = Depends(get_session)):
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(status_code=404, detail="Benchmark not found.")
+
+    rows = session.exec(
+        select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
+    ).all()
+    citations = [{
+        "id": c.id,
+        "paper_doi": c.paper_doi,
+        "citing_lab": c.citing_lab,
+        "year": c.year,
+    } for c in rows]
+    if not citations:
+        citations = _default_citations_for_benchmark(bench)
+
+    labs = {}
+    for c in citations:
+        lab = (c.get("citing_lab") or "Unknown").strip() or "Unknown"
+        labs[lab] = labs.get(lab, 0) + 1
+    by_year = {}
+    for c in citations:
+        y = int(c.get("year") or datetime.utcnow().year)
+        by_year[y] = by_year.get(y, 0) + 1
+
+    fork_children_count = len(
+        session.exec(select(BenchmarkFork).where(BenchmarkFork.parent_benchmark_id == benchmark_id)).all()
+    )
+    influence_score = len(citations) + len(labs) + fork_children_count
+
+    return {
+        "benchmark_id": bench.id,
+        "benchmark_name": bench.name,
+        "citation_count": len(citations),
+        "citations": sorted(citations, key=lambda c: c["year"], reverse=True),
+        "labs": [{"name": name, "count": count} for name, count in sorted(labs.items(), key=lambda kv: kv[1], reverse=True)],
+        "citations_by_year": [{"year": year, "count": count} for year, count in sorted(by_year.items())],
+        "fork_children_count": fork_children_count,
+        "influence_score": influence_score,
+    }
+
+
+@router.post("/{benchmark_id}/citations")
+def add_benchmark_citation(
+    benchmark_id: int,
+    payload: BenchmarkCitationCreate,
+    session: Session = Depends(get_session),
+):
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(status_code=404, detail="Benchmark not found.")
+    if not payload.paper_doi.strip():
+        raise HTTPException(status_code=422, detail="paper_doi cannot be empty.")
+    citation = BenchmarkCitation(
+        benchmark_id=benchmark_id,
+        paper_doi=payload.paper_doi.strip(),
+        citing_lab=payload.citing_lab.strip(),
+        year=payload.year,
+    )
+    session.add(citation)
+    session.commit()
+    session.refresh(citation)
+    return {
+        "id": citation.id,
+        "benchmark_id": citation.benchmark_id,
+        "paper_doi": citation.paper_doi,
+        "citing_lab": citation.citing_lab,
+        "year": citation.year,
     }
 
 
