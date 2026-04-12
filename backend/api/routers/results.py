@@ -15,6 +15,7 @@ from typing import Optional
 from core.utils import safe_json_load
 from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
+from core.relations import get_eval_run_metrics
 from eval_engine.confidence_engine import compute_confidence
 from eval_engine.comparison_engine import compare_campaigns as _compare_campaigns_engine
 from eval_engine.win_rate_engine import compute_win_rates
@@ -117,8 +118,8 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
                     f"— below risk threshold {bench.risk_threshold:.2%}"
                 )
         # Check safety-specific alerts
-        if run.metrics_json:
-            metrics = safe_json_load(run.metrics_json, {})
+        metrics = get_eval_run_metrics(session, run)
+        if metrics:
             for alert in metrics.get("alerts", []):
                 model_name = models.get(run.model_id, LLMModel(name="?")).name
                 alerts.append(f"⚠️ [{model_name}] {alert}")
@@ -161,7 +162,7 @@ def get_run_items(
     return {
         "run_id": run_id,
         "score": run.score,
-        "metrics": safe_json_load(run.metrics_json, {}),
+        "metrics": get_eval_run_metrics(session, run),
         "total": run.num_items,
         "items": [
             {

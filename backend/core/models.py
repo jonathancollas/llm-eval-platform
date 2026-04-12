@@ -92,6 +92,13 @@ class Benchmark(SQLModel, table=True):
     created_at: datetime             = Field(default_factory=datetime.utcnow)
 
 
+class BenchmarkTag(SQLModel, table=True):
+    __tablename__ = "benchmark_tags"
+
+    benchmark_id: int = Field(foreign_key="benchmarks.id", primary_key=True)
+    tag: str = Field(primary_key=True, index=True)
+
+
 class Campaign(SQLModel, table=True):
     __tablename__ = "campaigns"
 
@@ -124,6 +131,20 @@ class Campaign(SQLModel, table=True):
     completed_at: Optional[datetime] = Field(default=None)
 
 
+class CampaignModel(SQLModel, table=True):
+    __tablename__ = "campaign_models"
+
+    campaign_id: int = Field(foreign_key="campaigns.id", primary_key=True)
+    model_id: int = Field(foreign_key="llm_models.id", primary_key=True)
+
+
+class CampaignBenchmark(SQLModel, table=True):
+    __tablename__ = "campaign_benchmarks"
+
+    campaign_id: int = Field(foreign_key="campaigns.id", primary_key=True)
+    benchmark_id: int = Field(foreign_key="benchmarks.id", primary_key=True)
+
+
 class EvalRun(SQLModel, table=True):
     __tablename__ = "eval_runs"
 
@@ -147,6 +168,14 @@ class EvalRun(SQLModel, table=True):
     dataset_version: Optional[str]   = Field(default=None)
     judge_model: Optional[str]       = Field(default=None)
     run_context_json: Optional[str]  = Field(default=None)
+
+
+class EvalRunMetric(SQLModel, table=True):
+    __tablename__ = "eval_run_metrics"
+
+    run_id: int = Field(foreign_key="eval_runs.id", primary_key=True)
+    metric_key: str = Field(primary_key=True)
+    metric_value_json: str = Field(default="null")
 
 
 class EvalResult(SQLModel, table=True):
