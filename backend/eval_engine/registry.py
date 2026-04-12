@@ -20,6 +20,7 @@ _TYPE_REGISTRY: dict = {}
 # Benchmarks that ALWAYS use local runners regardless of name matching
 LOCAL_ONLY_NAMES = {
     "MMLU (subset)", "HumanEval (mini)", "Safety Refusals",
+    "Giskard LLM Scan",
     "Safety Refusals (INESIA)", "Frontier: Autonomy Probe",
     "Cyber Uplift (INESIA)", "CBRN-E Uplift Probe (INESIA)",
     "Loss of Control (INESIA)", "Evaluation Awareness (INESIA)",
@@ -37,12 +38,14 @@ def _lazy_register():
 
     from eval_engine.academic.mmlu import MMLURunner
     from eval_engine.safety.refusals import SafetyRefusalsRunner
+    from eval_engine.safety.giskard import GiskardRunner
     from eval_engine.custom.runner import CustomRunner
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
         "HumanEval (mini)":                   MMLURunner,
         "Safety Refusals":                    SafetyRefusalsRunner,
+        "Giskard LLM Scan":                   GiskardRunner,
         "Safety Refusals (INESIA)":           SafetyRefusalsRunner,
         "Frontier: Autonomy Probe":           SafetyRefusalsRunner,
         "Cyber Uplift (INESIA)":              SafetyRefusalsRunner,
