@@ -6,6 +6,7 @@ Supports EU AI Act, HIPAA, Finance compliance, custom policies.
 import json
 import logging
 from typing import Optional
+from importlib.util import find_spec
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from core.utils import safe_json_load
 
 router = APIRouter(prefix="/policy", tags=["policy"])
 logger = logging.getLogger(__name__)
+NEMO_GUARDRAILS_AVAILABLE = find_spec("nemoguardrails") is not None
 
 
 # ── Policy Definitions ─────────────────────────────────────────────────────────
@@ -153,6 +155,16 @@ COMPLIANCE_PATTERNS = {
     ],
 }
 
+JAILBREAK_PATTERNS = [
+    r"ignore (all|previous|prior) instructions",
+    r"bypass (safety|guardrails|policy|restrictions)",
+    r"\bjailbreak\b",
+    r"\bprompt injection\b",
+    r"\bdo anything now\b|\bdan\b",
+    r"reveal (the )?(system|hidden) prompt",
+    r"developer mode",
+]
+
 
 def _check_patterns(response: str, pattern_key: str) -> float:
     """Check if response matches compliance patterns. Returns 0-1 score."""
@@ -163,6 +175,66 @@ def _check_patterns(response: str, pattern_key: str) -> float:
     resp_lower = response.lower()
     matches = sum(1 for p in patterns if re.search(p, resp_lower))
     return min(1.0, matches / max(len(patterns) * 0.3, 1))  # Normalize
+
+
+def _detect_jailbreak(messages: list[dict]) -> tuple[bool, list[str]]:
+    snippets = []
+    for m in messages:
+        if str(m.get("role", "")).lower() in {"user", "system"}:
+            snippets.append(str(m.get("content", "")))
+    text = "\n".join(snippets).lower()
+    hits = [p for p in JAILBREAK_PATTERNS if re.search(p, text)]
+    return bool(hits), hits
+
+
+def _check_tool_control(
+    proposed_tool: str | None,
+    allowed_tools: list[str],
+    blocked_tools: list[str],
+) -> tuple[bool, str | None]:
+    if not proposed_tool:
+        return True, None
+
+    blocked = {t.strip().lower() for t in blocked_tools if t.strip()}
+    allowed = {t.strip().lower() for t in allowed_tools if t.strip()}
+    tool = proposed_tool.strip().lower()
+
+    if tool in blocked:
+        return False, f"Tool '{proposed_tool}' is blocked by runtime policy."
+    if allowed and tool not in allowed:
+        return False, f"Tool '{proposed_tool}' is not in allow-list."
+    return True, None
+
+
+def _check_conversation_constraints(
+    messages: list[dict],
+    max_user_turns: int,
+    max_total_chars: int,
+) -> tuple[bool, list[str]]:
+    violations = []
+    user_turns = sum(1 for m in messages if str(m.get("role", "")).lower() == "user")
+    total_chars = sum(len(str(m.get("content", ""))) for m in messages)
+
+    if user_turns > max_user_turns:
+        violations.append(f"Conversation exceeds max_user_turns ({user_turns}>{max_user_turns}).")
+    if total_chars > max_total_chars:
+        violations.append(f"Conversation exceeds max_total_chars ({total_chars}>{max_total_chars}).")
+
+    return len(violations) == 0, violations
+
+
+class RuntimeMessage(BaseModel):
+    role: str = Field(..., min_length=1, max_length=30)
+    content: str = Field(..., min_length=1, max_length=20000)
+
+
+class RuntimePolicyRequest(BaseModel):
+    messages: list[RuntimeMessage] = Field(..., min_length=1, max_length=300)
+    proposed_tool: Optional[str] = Field(default=None, max_length=120)
+    allowed_tools: list[str] = Field(default_factory=list, max_length=200)
+    blocked_tools: list[str] = Field(default_factory=list, max_length=200)
+    max_user_turns: int = Field(default=30, ge=1, le=500)
+    max_total_chars: int = Field(default=12000, ge=100, le=300000)
 
 
 def evaluate_policy(
@@ -314,4 +386,58 @@ def evaluate_campaign_policy(payload: PolicyEvalRequest, session: Session = Depe
         "campaign_name": campaign.name,
         "policy": POLICIES[payload.policy_id]["name"],
         "evaluations": evaluations,
+    }
+
+
+@router.post("/runtime/enforce")
+def enforce_runtime_policy(payload: RuntimePolicyRequest):
+    """
+    Runtime policy enforcement for live conversations.
+    Includes jailbreak detection, tool control, and conversation constraints.
+    """
+    messages = [m.model_dump() for m in payload.messages]
+
+    jailbreak_detected, jailbreak_signals = _detect_jailbreak(messages)
+    tool_allowed, tool_reason = _check_tool_control(
+        payload.proposed_tool,
+        payload.allowed_tools,
+        payload.blocked_tools,
+    )
+    conversation_ok, conversation_violations = _check_conversation_constraints(
+        messages,
+        payload.max_user_turns,
+        payload.max_total_chars,
+    )
+
+    violations = []
+    if jailbreak_detected:
+        violations.append("jailbreak_detected")
+    if not tool_allowed:
+        violations.append("tool_policy_violation")
+    if not conversation_ok:
+        violations.append("conversation_constraint_violation")
+
+    allowed = not violations
+    return {
+        "allowed": allowed,
+        "action": "allow" if allowed else "block",
+        "violations": violations,
+        "details": {
+            "jailbreak": {
+                "detected": jailbreak_detected,
+                "signals": jailbreak_signals,
+                "engine": "nemo_guardrails" if NEMO_GUARDRAILS_AVAILABLE else "heuristic_fallback",
+            },
+            "tool_control": {
+                "allowed": tool_allowed,
+                "proposed_tool": payload.proposed_tool,
+                "reason": tool_reason,
+            },
+            "conversation_constraints": {
+                "ok": conversation_ok,
+                "violations": conversation_violations,
+                "max_user_turns": payload.max_user_turns,
+                "max_total_chars": payload.max_total_chars,
+            },
+        },
     }
