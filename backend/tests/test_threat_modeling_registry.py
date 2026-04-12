@@ -37,15 +37,20 @@ def test_get_adapter_returns_component_adapter(component):
 
 
 def test_register_custom_adapter():
+    default_probe_adapter = type(get_adapter("probe_engines"))
+
     class _CustomProbeAdapter(ThreatModelingAdapter):
         component = "probe_engines"
 
         def run(self, payload: dict) -> dict:
             return {"ok": True, "payload": payload}
 
-    register_adapter("probe_engines", _CustomProbeAdapter, overwrite=True)
-    adapter = get_adapter("probe_engines")
-    assert adapter.run({"x": 1}) == {"ok": True, "payload": {"x": 1}}
+    try:
+        register_adapter("probe_engines", _CustomProbeAdapter, overwrite=True)
+        adapter = get_adapter("probe_engines")
+        assert adapter.run({"x": 1}) == {"ok": True, "payload": {"x": 1}}
+    finally:
+        register_adapter("probe_engines", default_probe_adapter, overwrite=True)
 
 
 def test_register_existing_without_overwrite_raises():
@@ -55,5 +60,8 @@ def test_register_existing_without_overwrite_raises():
         def run(self, payload: dict) -> dict:
             return payload
 
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError,
+        match="Adapter already registered for component 'runtime_guardrails'.",
+    ):
         register_adapter("runtime_guardrails", _NoopAdapter)
