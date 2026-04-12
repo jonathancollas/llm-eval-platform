@@ -27,10 +27,10 @@ def test_registry_covers_all_mutation_tools():
 def test_registry_has_required_standard_fields():
     required = {"tool_name", "category", "input_adapter", "output_schema", "severity_model"}
     for item in ADVERSARIAL_TOOL_REGISTRY:
-        assert required.issubset(item.keys())
         for field in required:
-            assert isinstance(item[field], str)
-            assert item[field]
+            value = item.get(field)
+            assert isinstance(value, str)
+            assert value
 
 
 def test_tool_registry_endpoint_supports_category_filter():
