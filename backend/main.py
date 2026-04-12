@@ -3,6 +3,7 @@ Mercury Retrograde — INESIA AI Evaluation Platform
 FastAPI application entry point.
 """
 import hmac as _hmac
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Callable
@@ -39,8 +40,6 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import asyncio
-
     # 1. Create tables + reset stuck campaigns + update has_dataset flags
     logger.info("Startup — initializing DB...")
     # Run sync DB init in executor to avoid blocking event loop
@@ -69,19 +68,20 @@ async def lifespan(app: FastAPI):
     # 4. Async OpenRouter sync in background (non-blocking)
     # Store the task so it can be properly cancelled on shutdown.
     app.state.bg_sync_task = asyncio.create_task(_background_openrouter_sync())
+    app.state.bg_queue_recovery_task = asyncio.create_task(_background_queue_recovery())
 
     logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
     yield
     # Cancel the background task and wait for it to finish cleanly.
-    task = app.state.bg_sync_task
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
+    tasks = [app.state.bg_sync_task, app.state.bg_queue_recovery_task]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("Shutdown.")
 
 
 async def _background_openrouter_sync():
     """Sync OpenRouter + Ollama models after startup — runs in background."""
-    import asyncio
     await asyncio.sleep(2)  # Let server fully start first
 
     # OpenRouter
@@ -104,6 +104,19 @@ async def _background_openrouter_sync():
                 logger.info("Ollama not available (optional — install from ollama.com)")
     except Exception as e:
         logger.debug(f"Ollama sync skipped: {e}")
+
+
+async def _background_queue_recovery():
+    from core import job_queue
+
+    while True:
+        try:
+            recovered = job_queue.recover_stale_campaigns()
+            if recovered:
+                logger.warning(f"Marked {len(recovered)} stale campaigns as FAILED: {recovered}")
+        except Exception as e:
+            logger.warning(f"Background queue recovery failed: {e}")
+        await asyncio.sleep(60)
 
 
 app = FastAPI(

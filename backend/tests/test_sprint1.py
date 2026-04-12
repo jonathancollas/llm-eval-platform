@@ -146,6 +146,16 @@ def test_job_queue_is_running_false_when_no_task():
     assert is_running(99999) is False
 
 
+def test_job_queue_mode_is_celery():
+    from core.job_queue import get_queue_status
+    assert get_queue_status()["mode"] == "celery"
+
+
+def test_job_queue_has_no_in_memory_running_tasks_registry():
+    import core.job_queue as job_queue
+    assert not hasattr(job_queue, "_running_tasks")
+
+
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
 def pytest_sessionfinish(session, exitstatus):
