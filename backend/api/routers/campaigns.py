@@ -14,6 +14,7 @@ from core.models import Campaign, EvalRun, LLMModel, Benchmark, JobStatus
 from core import job_queue
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+MAX_QUEUE_ERROR_MESSAGE_LENGTH = 300
 
 
 class CampaignCreate(BaseModel):
@@ -170,7 +171,7 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
         task_id = job_queue.submit_campaign(campaign_id)
     except Exception as e:
         campaign.status = JobStatus.FAILED
-        campaign.error_message = f"queue_enqueue_failed: {str(e)[:300]}"
+        campaign.error_message = f"queue_enqueue_failed: {str(e)[:MAX_QUEUE_ERROR_MESSAGE_LENGTH]}"
         campaign.completed_at = _dt.utcnow()
         session.add(campaign)
         session.commit()

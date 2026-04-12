@@ -34,6 +34,8 @@ def _mark_heartbeat(campaign_id: int) -> None:
             c.last_heartbeat_at = datetime.utcnow()
             session.add(c)
             session.commit()
+        else:
+            logger.warning(f"[heartbeat] Campaign {campaign_id} not found while updating heartbeat")
 
 
 async def _heartbeat_loop(campaign_id: int, stop_event: asyncio.Event) -> None:
@@ -136,7 +138,7 @@ def submit_campaign(campaign_id: int) -> str:
                 session.commit()
     except (OSError, SQLAlchemyError) as e:
         celery_app.control.revoke(task.id, terminate=True)
-        logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}")
+        logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}: {e}")
         raise RuntimeError("Failed to persist worker task metadata.") from e
     return task.id
 

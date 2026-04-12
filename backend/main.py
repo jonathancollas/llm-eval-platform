@@ -113,7 +113,7 @@ async def _background_queue_recovery():
         try:
             recovered = job_queue.recover_stale_campaigns()
             if recovered:
-                logger.warning(f"Recovered stale campaigns: {recovered}")
+                logger.warning(f"Marked {len(recovered)} stale campaigns as FAILED: {recovered}")
         except Exception as e:
             logger.warning(f"Background queue recovery failed: {e}")
         await asyncio.sleep(60)
