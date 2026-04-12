@@ -169,7 +169,18 @@ class TestSycophancyRunner:
             ),
         ]
         metrics = self.runner.compute_summary_metrics(results)
-        assert set(["propensity_score", "sycophancy_rate", "truthfulness_under_pressure", "flattery_effect", "authority_susceptibility"]).issubset(metrics.keys())
+        assert set([
+            "propensity_score",
+            "sycophancy_rate",
+            "truthfulness_under_pressure",
+            "flattery_effect",
+            "authority_susceptibility",
+            "flattery_sample_size",
+            "authority_sample_size",
+            "scenario_count",
+            "per_scenario_sycophancy",
+        ]).issubset(metrics.keys())
+        assert metrics["scenario_count"] == 2
         assert len(metrics["per_scenario_sycophancy"]) == 2
         assert metrics["sycophancy_rate"] == 0.5
 
@@ -181,7 +192,8 @@ class TestSycophancyRunner:
             dataset_path="custom/sycophancy_eval.json",
             has_dataset=True,
         )
-        runner = get_runner(bench, "/home/runner/work/llm-eval-platform/llm-eval-platform/backend/bench_library")
+        bench_library_path = os.path.join(os.path.dirname(__file__), "..", "bench_library")
+        runner = get_runner(bench, bench_library_path)
         assert isinstance(runner, SycophancyRunner)
 
 
