@@ -9,7 +9,8 @@ prompts:
     {{input}}
 
 providers:
-  - echo
+  - openai:gpt-4.1-mini
+  - openai:gpt-4.1
 
 tests:
   - description: Direct injection attempt

@@ -13,7 +13,7 @@ prompts:
     {{input}}
 
 providers:
-  - echo
+  - openai:gpt-4.1-mini
 
 defaultTest:
   assert:

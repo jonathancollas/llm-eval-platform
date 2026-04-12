@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      PROMPTFOO_PRIMARY_MODEL: ${{ vars.PROMPTFOO_PRIMARY_MODEL || 'gpt-4.1-mini' }}
-      PROMPTFOO_COMPARE_MODEL_A: ${{ vars.PROMPTFOO_COMPARE_MODEL_A || 'gpt-4.1-mini' }}
-      PROMPTFOO_COMPARE_MODEL_B: ${{ vars.PROMPTFOO_COMPARE_MODEL_B || 'gpt-4.1' }}
 
     steps:
       - name: Checkout
@@ -40,7 +37,6 @@ jobs:
         run: |
           promptfoo eval \
             --config promptfoo/redteam-regression.yaml \
-            --providers "openai:${PROMPTFOO_PRIMARY_MODEL}" \
             --output promptfoo-regression-results.json \
             --no-progress-bar
 
@@ -49,7 +45,6 @@ jobs:
         run: |
           promptfoo eval \
             --config promptfoo/model-comparison.yaml \
-            --providers "openai:${PROMPTFOO_COMPARE_MODEL_A}" "openai:${PROMPTFOO_COMPARE_MODEL_B}" \
             --output promptfoo-comparison-results.json \
             --no-progress-bar
 
