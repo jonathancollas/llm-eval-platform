@@ -431,6 +431,8 @@ class CompositionalRiskEngine:
             return "L2"
         if autonomy_recommendation.startswith("L3"):
             return "L3"
+        if autonomy_recommendation.startswith("L5"):
+            return "L5"
         return "L4"
 
 
