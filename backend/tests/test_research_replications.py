@@ -125,12 +125,12 @@ def test_submit_replication_computes_concordance_and_confidence(client, workspac
     assert body["n_successful"] == 1
     assert body["n_failed"] == 1
     assert body["scientific_confidence_grade"] == "C"
-    assert body["avg_concordance"] == 0.81
+    assert body["avg_concordance"] == pytest.approx(0.81, abs=1e-9)
 
     listing = client.get(f"/research/workspaces/{workspace_id}/replications")
     assert listing.status_code == 200, listing.text
     summary = listing.json()["summary"]
     assert summary["successful"] == 1
     assert summary["failed"] == 1
-    assert summary["mean_concordance"] == 0.81
+    assert summary["mean_concordance"] == pytest.approx(0.81, abs=1e-9)
     assert summary["confidence_grade"] == "C"

@@ -86,6 +86,7 @@ export default function ResearchPage() {
   const [newWs, setNewWs] = useState({ name: "", description: "", hypothesis: "", protocol: "", risk_domain: "capability", visibility: "private" });
   const [repForm, setRepForm] = useState({ lab: "", notes: "" });
   const [submitForm, setSubmitForm] = useState({ lab: "", concordance: "0.85", successful: true, notes: "" });
+  const [submitError, setSubmitError] = useState("");
   const [manifest, setManifest] = useState<any>(null);
   const [manifestLoading, setManifestLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -128,10 +129,19 @@ export default function ResearchPage() {
   const submitReplication = async () => {
     if (!selected || !submitForm.lab) return;
     setSaving(true);
-    await fetch(`${API}/research/workspaces/${selected.id}/replications/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: selected.id, replicating_lab: submitForm.lab, concordance_score: parseFloat(submitForm.concordance), successful: submitForm.successful, notes: submitForm.notes }) });
-    setShowSubmitForm(false);
-    const r2 = await fetch(`${API}/research/workspaces/${selected.id}/replications`);
-    const d2 = await r2.json(); setReplications(d2.replications ?? []); setRepSummary(d2.summary); setSaving(false);
+    setSubmitError("");
+    try {
+      const r = await fetch(`${API}/research/workspaces/${selected.id}/replications/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: selected.id, replicating_lab: submitForm.lab, concordance_score: parseFloat(submitForm.concordance), successful: submitForm.successful, notes: submitForm.notes }) });
+      if (!r.ok) throw new Error("Failed to submit replication results.");
+      setShowSubmitForm(false);
+      const r2 = await fetch(`${API}/research/workspaces/${selected.id}/replications`);
+      if (!r2.ok) throw new Error("Failed to refresh replication history.");
+      const d2 = await r2.json(); setReplications(d2.replications ?? []); setRepSummary(d2.summary);
+    } catch (e: any) {
+      setSubmitError(e?.message ?? "Failed to submit replication results.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const generateManifest = async () => {
@@ -248,6 +258,9 @@ export default function ResearchPage() {
                 </div>
                 {selected.hypothesis && <div className="bg-blue-50 border border-blue-200 rounded-xl p-5"><h4 className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-2">Hypothesis</h4><p className="text-sm text-blue-900 leading-relaxed">{selected.hypothesis}</p></div>}
                 {repSummary && (
+                  (() => {
+                    const concordanceValue = repSummary.mean_concordance ?? repSummary.avg_concordance;
+                    return (
                   <div className="bg-white border border-slate-200 rounded-xl p-5">
                     <h4 className="text-sm font-semibold text-slate-900 mb-3">Scientific Confidence</h4>
                     <p className="text-xs text-slate-500 mb-3">
@@ -255,7 +268,7 @@ export default function ResearchPage() {
                     </p>
                     <div className="grid grid-cols-4 gap-3 text-center">
                       {[["Replications", repSummary.total ?? 0], ["Successful", repSummary.successful ?? 0],
-                        ["Avg Concordance", repSummary.avg_concordance ? `${Math.round(repSummary.avg_concordance * 100)}%` : "—"],
+                        ["Avg Concordance", concordanceValue ? `${Math.round(concordanceValue * 100)}%` : "—"],
                         ["Grade", repSummary.confidence_grade ?? "—"]].map(([l, v]) => (
                         <div key={l} className="bg-slate-50 rounded-lg py-3">
                           <div className="text-[11px] text-slate-400">{l}</div>
@@ -264,6 +277,8 @@ export default function ResearchPage() {
                       ))}
                     </div>
                   </div>
+                    );
+                  })()
                 )}
               </>
             )}
@@ -314,6 +329,7 @@ export default function ResearchPage() {
                       <button onClick={submitReplication} disabled={saving || !submitForm.lab} className="bg-green-700 text-white px-4 py-1.5 rounded-lg text-xs disabled:opacity-40">{saving ? "…" : "Submit"}</button>
                       <button onClick={() => setShowSubmitForm(false)} className="text-xs text-slate-400">Cancel</button>
                     </div>
+                    {submitError && <p className="text-xs text-red-600">{submitError}</p>}
                   </div>
                 )}
                 {replications.length === 0

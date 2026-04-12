@@ -495,6 +495,11 @@ def _compute_concordance(
     delta_capability: Optional[float],
     delta_propensity: Optional[float],
 ) -> float:
+    """Compute normalized concordance (0..1), using explicit score when provided.
+
+    If no concordance score is provided, use mean absolute delta distance from the
+    original capability/propensity profile and invert it into a similarity score.
+    """
     if concordance_score is not None:
         return max(0.0, min(1.0, concordance_score))
     if delta_capability is None or delta_propensity is None:
@@ -516,11 +521,19 @@ def _compute_scientific_confidence(workspace_id: int, replications: list[dict]) 
     completed = _get_completed_replications(replications)
     n_successful = sum(1 for r in completed if r.get("successful"))
     n_failed = sum(1 for r in completed if not r.get("successful"))
+    concordance_values = [
+        r.get("concordance_score")
+        for r in completed
+        if r.get("concordance_score") is not None
+    ]
     mean_concordance = (
-        sum(r.get("concordance_score", 0) for r in completed) / len(completed)
-        if completed
+        sum(concordance_values) / len(concordance_values)
+        if concordance_values
         else 0.0
     )
+    # Scientific confidence rubric for independent replications:
+    # - A: strong reproducibility (high concordance, >=3 successful, zero failures)
+    # - B/C/D: progressively weaker confidence with lower replication support
     if not completed:
         grade = "insufficient"
     elif mean_concordance >= 0.9 and n_successful >= 3 and n_failed == 0:
@@ -548,7 +561,10 @@ def request_replication(
 ):
     """Request an independent replication of a workspace (#110)."""
     if payload.workspace_id != workspace_id:
-        raise HTTPException(400, "workspace_id mismatch.")
+        raise HTTPException(
+            400,
+            f"Workspace ID mismatch: expected {workspace_id}, got {payload.workspace_id}.",
+        )
     ws = session.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404, "Workspace not found.")
@@ -583,7 +599,10 @@ def submit_replication_result(
 ):
     """Submit completed replication results (#110)."""
     if payload.workspace_id != workspace_id:
-        raise HTTPException(400, "workspace_id mismatch.")
+        raise HTTPException(
+            400,
+            f"Workspace ID mismatch: expected {workspace_id}, got {payload.workspace_id}.",
+        )
     ws = session.get(Workspace, workspace_id)
     if not ws:
         raise HTTPException(404, "Workspace not found.")
@@ -669,7 +688,6 @@ def get_replications(workspace_id: int, session: Session = Depends(get_session))
             "completed": len(completed),
             "successful": confidence.n_successful_replications,
             "failed": confidence.n_failed_replications,
-            "avg_concordance": confidence.mean_concordance,
             "mean_concordance": confidence.mean_concordance,
             "confidence_grade": confidence.confidence_grade,
         }
@@ -757,7 +775,6 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
                 "n_replications": len(replications),
                 "n_successful": confidence.n_successful_replications,
                 "n_failed": confidence.n_failed_replications,
-                "avg_concordance": confidence.mean_concordance,
                 "mean_concordance": confidence.mean_concordance,
                 "grade": confidence.confidence_grade,
                 "interpretation": (
