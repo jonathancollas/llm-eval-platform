@@ -196,8 +196,9 @@ export default function ResearchPage() {
           <button
             className="md:hidden flex items-center gap-1.5 px-4 py-2.5 text-sm text-slate-600 border-b border-slate-100 bg-white hover:bg-slate-50 transition-colors w-full text-left"
             onClick={() => setMobileShowDetail(false)}
+            aria-label="Back to workspaces list"
           >
-            <ChevronLeft size={14} /> Back to workspaces
+            <ChevronLeft size={14} aria-hidden="true" /> Back to workspaces
           </button>
           <div className="px-4 sm:px-8 py-4 sm:py-5 border-b border-slate-200 bg-white">
             <div className="flex items-start justify-between mb-3">
