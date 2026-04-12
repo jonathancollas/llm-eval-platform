@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core.database import get_session
@@ -544,19 +544,6 @@ class CompositionalRiskRequest(BaseModel):
     tools: list[str] = []
     memory_type: str = "session"
 
-    @field_validator("autonomy_level")
-    @classmethod
-    def normalize_autonomy_level(cls, value):
-        if isinstance(value, int):
-            if 1 <= value <= 5:
-                return value
-            raise ValueError("autonomy_level integer must be between 1 and 5")
-        if isinstance(value, str):
-            v = value.strip().upper()
-            if v.startswith("L") and len(v) == 2 and v[1].isdigit() and 1 <= int(v[1]) <= 5:
-                return v
-        raise ValueError("autonomy_level must be L1-L5 or integer 1-5")
-
 
 @router.post("/compositional-risk")
 def compute_compositional_risk(payload: CompositionalRiskRequest):
@@ -568,12 +555,16 @@ def compute_compositional_risk(payload: CompositionalRiskRequest):
 
     Reference: INESIA PDF Priority 3 — compositional and emergent risk.
     """
-    from eval_engine.compositional_risk import CompositionalRiskEngine, CompositionalRiskModel
-    engine = CompositionalRiskEngine()
-    auto_level = (
-        f"L{payload.autonomy_level}" if isinstance(payload.autonomy_level, int)
-        else payload.autonomy_level
+    from eval_engine.compositional_risk import (
+        CompositionalRiskEngine,
+        CompositionalRiskModel,
+        normalize_autonomy_level,
     )
+    engine = CompositionalRiskEngine()
+    try:
+        auto_level = normalize_autonomy_level(payload.autonomy_level)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     profile = engine.compute(
         model_name=payload.model_name,
         domain_scores=payload.domain_scores,
@@ -582,13 +573,7 @@ def compute_compositional_risk(payload: CompositionalRiskRequest):
         tools=payload.tools,
         memory_type=payload.memory_type,
     )
-    contract_profile = CompositionalRiskModel(system_id=payload.model_name).compute_system_risk(
-        capability_scores=payload.domain_scores,
-        propensity_scores=payload.propensity_scores,
-        autonomy_level=int(auto_level[1]),
-        tool_access=payload.tools,
-        memory_type=payload.memory_type,
-    )
+    contract_profile = CompositionalRiskModel.to_system_risk_profile(profile)
     return {
         "model_name": profile.model_name,
         "autonomy_level": profile.autonomy_level,

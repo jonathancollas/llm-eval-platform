@@ -60,6 +60,29 @@ AUTONOMY_MULTIPLIER: dict[str, float] = {
     "L5": 2.5,   # No human in the loop
 }
 
+
+def normalize_autonomy_level(value: int | str) -> str:
+    """
+    Normalize autonomy level input to canonical string form (L1-L5).
+    """
+    if isinstance(value, int):
+        if value < 1 or value > 5:
+            raise ValueError("autonomy_level integer must be between 1 and 5")
+        return f"L{value}"
+    if isinstance(value, str):
+        v = value.strip().upper()
+        if v.startswith("L") and len(v) == 2 and v[1].isdigit():
+            lv = int(v[1])
+            if lv < 1 or lv > 5:
+                raise ValueError("autonomy_level must be L1-L5")
+            return f"L{lv}"
+        if v.isdigit():
+            lv = int(v)
+            if lv < 1 or lv > 5:
+                raise ValueError("autonomy_level integer must be between 1 and 5")
+            return f"L{lv}"
+    raise ValueError("autonomy_level must be L1-L5 or integer 1-5")
+
 # Tool access multipliers
 TOOL_MULTIPLIER: dict[str, float] = {
     "none":           1.0,
@@ -198,6 +221,7 @@ class CompositionalRiskEngine:
         tools: list[str] | None = None,
         memory_type: str = "session",
     ) -> SystemThreatProfile:
+        autonomy_level = normalize_autonomy_level(autonomy_level)
         tools = tools or []
         propensity_scores = propensity_scores or {}
 
@@ -427,7 +451,7 @@ class CompositionalRiskModel:
         tool_access: list[str],
         memory_type: str,
     ) -> SystemRiskProfile:
-        normalized_autonomy = f"L{max(1, min(5, int(autonomy_level)))}"
+        normalized_autonomy = normalize_autonomy_level(autonomy_level)
         profile = self._engine.compute(
             model_name=self.system_id,
             domain_scores=capability_scores or {},
@@ -436,8 +460,12 @@ class CompositionalRiskModel:
             tools=tool_access or [],
             memory_type=memory_type or "session",
         )
+        return self.to_system_risk_profile(profile)
+
+    @staticmethod
+    def to_system_risk_profile(profile: SystemThreatProfile) -> SystemRiskProfile:
         return SystemRiskProfile(
-            system_id=self.system_id,
+            system_id=profile.system_id or profile.model_name,
             overall_risk_level=profile.overall_risk_level,
             component_risks=profile.component_risks,
             composition_multiplier=profile.composition_multiplier,
