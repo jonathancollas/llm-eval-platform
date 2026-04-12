@@ -122,8 +122,8 @@ def _reset_stuck_campaigns() -> None:
             if stale:
                 c.status = JobStatus.FAILED
                 c.error_message = (
-                    "Campaign failed: process restarted or heartbeat lost. "
-                    f"Last heartbeat: {heartbeat or 'never'}. Please re-run."
+                    "heartbeat_timeout: campaign heartbeat stale. "
+                    f"Last heartbeat: {heartbeat or 'never'}."
                 )
                 session.add(c)
                 reset_count += 1

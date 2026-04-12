@@ -103,6 +103,7 @@ class Campaign(SQLModel, table=True):
     __tablename__ = "campaigns"
 
     id: Optional[int]             = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]      = Field(default=None, foreign_key="tenants.id", index=True)
     name: str                     = Field(index=True)
     description: str              = Field(default="")
     model_ids: str                = Field(default="[]")
@@ -124,6 +125,7 @@ class Campaign(SQLModel, table=True):
     current_item_label: Optional[str] = Field(default=None)
     # Heartbeat for durable job queue (#S3) — updated every 30s by running campaign
     last_heartbeat_at: Optional[datetime] = Field(default=None, sa_column_kwargs={"nullable": True})
+    worker_task_id: Optional[str] = Field(default=None, sa_column_kwargs={"nullable": True})
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)

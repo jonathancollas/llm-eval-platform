@@ -71,6 +71,12 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("run_id", "metric_key"),
         )
 
+    # Add worker_task_id column to campaigns if it does not yet exist (from main branch)
+    insp = sa.inspect(conn)
+    existing_campaign_cols = {c["name"] for c in insp.get_columns("campaigns")}
+    if "worker_task_id" not in existing_campaign_cols:
+        op.add_column("campaigns", sa.Column("worker_task_id", sa.Text(), nullable=True))
+
     campaigns = conn.execute(sa.text("SELECT id, model_ids, benchmark_ids FROM campaigns")).fetchall()
     campaign_models = sa.table(
         "campaign_models",
@@ -208,3 +214,11 @@ def downgrade() -> None:
     op.drop_table("benchmark_tags", if_exists=True)
     op.drop_table("campaign_benchmarks", if_exists=True)
     op.drop_table("campaign_models", if_exists=True)
+
+    # Remove worker_task_id column from campaigns (SQLite workaround: only attempt on non-SQLite)
+    insp = sa.inspect(conn)
+    existing_campaign_cols = {c["name"] for c in insp.get_columns("campaigns")}
+    if "worker_task_id" in existing_campaign_cols:
+        dialect = conn.dialect.name
+        if dialect != "sqlite":
+            op.drop_column("campaigns", "worker_task_id")
