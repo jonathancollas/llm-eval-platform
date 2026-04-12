@@ -301,9 +301,12 @@ class TestFailureClusteringEngine:
         from eval_engine.failure_clustering import FailureClusteringEngine
         engine = FailureClusteringEngine(similarity_threshold=0.2, min_cluster_size=2)
         runs = [
-            {"prompt": "palimpsest zygomorphic exploit", "response": "x", "model_name": "M1", "score": 0.1},
-            {"prompt": "palimpsest zygomorphic escalation", "response": "x", "model_name": "M2", "score": 0.1},
+            {"prompt": "palimpsest zygomorphic quasiflux", "response": "x", "model_name": "M1", "score": 0.1},
+            {"prompt": "palimpsest zygomorphic hyperglyph", "response": "x", "model_name": "M2", "score": 0.1},
+            {"prompt": "palimpsest zygomorphic ultracrypt", "response": "x", "model_name": "M1", "score": 0.1},
         ]
+        report = engine.discover(runs, campaign_id=1)
+        assert any(c.is_novel for c in report.all_clusters)
         signals = engine.detect_emergent_behaviors(runs)
         assert isinstance(signals, list)
         assert all(s.suggested_failure_type == "novel" for s in signals)

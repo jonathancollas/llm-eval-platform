@@ -621,7 +621,7 @@ def get_risk_domains():
 @router.get("/failure-clusters/campaign/{campaign_id}")
 def get_failure_clusters(
     campaign_id: int,
-    min_cluster_size: int = 3,
+    min_cluster_size: int = 2,
     similarity_threshold: float = 0.3,
     session: Session = Depends(get_session),
 ):

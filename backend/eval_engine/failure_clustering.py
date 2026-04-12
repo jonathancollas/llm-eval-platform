@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 # ── Known failure taxonomy (from failure_genome/ontology.py) ─────────────────
 
 KNOWN_FAILURE_FAMILIES = set(ONTOLOGY.keys())
+SEVERITY_RANK = ("critical", "high", "medium", "low", "unknown")
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -271,12 +272,12 @@ class FailureClusteringEngine:
         if not failures:
             return []
 
-        previous_min = self.min_size
-        self.min_size = min_cluster_size
-        try:
-            report = self.discover(failures, campaign_id=campaign_ids[0] if campaign_ids else 0)
-        finally:
-            self.min_size = previous_min
+        campaign_ref = campaign_ids[0] if len(campaign_ids) == 1 else 0
+        report = self.discover(
+            failures,
+            campaign_id=campaign_ref,
+            min_cluster_size=min_cluster_size,
+        )
         return report.all_clusters
 
     def detect_emergent_behaviors(
@@ -303,7 +304,7 @@ class FailureClusteringEngine:
         signals: list[EmergentBehaviorSignal] = []
         for idx, cluster in enumerate(report.novel_clusters):
             signals.append(EmergentBehaviorSignal(
-                signal_id=f"emergent_{idx:03d}",
+                signal_id=f"emergent_{idx:03d}_{cluster.cluster_id}",
                 cluster_id=cluster.cluster_id,
                 description=cluster.hypothesis,
                 affected_models=cluster.affected_models,
@@ -317,6 +318,7 @@ class FailureClusteringEngine:
         self,
         failures: list[dict],   # {prompt, response, model_name, score, severity?, category?}
         campaign_id: int = 0,
+        min_cluster_size: Optional[int] = None,
     ) -> ClusteringReport:
         """
         Cluster failures and detect novel patterns.
@@ -347,7 +349,8 @@ class FailureClusteringEngine:
         # Cluster
         raw_clusters = _cluster(vectors, self.threshold)
         # Filter by min size
-        raw_clusters = [c for c in raw_clusters if len(c) >= self.min_size]
+        effective_min_cluster_size = self.min_size if min_cluster_size is None else min_cluster_size
+        raw_clusters = [c for c in raw_clusters if len(c) >= effective_min_cluster_size]
 
         # Build FailureCluster objects
         clusters: list[FailureCluster] = []
@@ -395,12 +398,15 @@ class FailureClusteringEngine:
                 "novel": "Extract and formalise as new benchmark",
             }.get(family)
 
-            severity_rank = ["critical", "high", "medium", "low", "unknown"]
-            severity = next((s for s in severity_rank if severities.get(s)), "unknown")
+            severity = next((s for s in SEVERITY_RANK if severities.get(s)), "unknown")
+            cluster_name = (
+                f"Novel cluster: {', '.join(top_keywords[:2])}" if is_novel
+                else f"{family.replace('_', ' ').title()} cluster {idx + 1}"
+            )
 
             clusters.append(FailureCluster(
                 cluster_id=f"cluster_{campaign_id}_{idx:03d}",
-                name=f"{'Novel' if is_novel else family.replace('_', ' ').title()} cluster {idx + 1}",
+                name=cluster_name,
                 failure_type=family if not is_novel else "novel",
                 n_instances=len(cluster_failures),
                 reproducibility_score=reproducibility,
