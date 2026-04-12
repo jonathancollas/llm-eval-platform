@@ -13,6 +13,7 @@ from pathlib import Path
 from core.database import get_session
 from core.models import Benchmark, BenchmarkType
 from core.config import get_settings
+from core.relations import get_benchmark_tags, replace_benchmark_tags
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -48,7 +49,7 @@ class BenchmarkRead(BaseModel):
     created_at: datetime
 
 
-def _to_read(b: Benchmark) -> BenchmarkRead:
+def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
     has_dataset = False
     if b.dataset_path:
         full = Path(settings.bench_library_path) / b.dataset_path
@@ -58,7 +59,7 @@ def _to_read(b: Benchmark) -> BenchmarkRead:
         name=b.name,
         type=b.type,
         description=b.description,
-        tags=json.loads(b.tags),
+        tags=get_benchmark_tags(session, b),
         metric=b.metric,
         num_samples=b.num_samples,
         config=json.loads(b.config_json),
@@ -80,7 +81,7 @@ def list_benchmarks(
     query = select(Benchmark)
     if type:
         query = query.where(Benchmark.type == type)
-    return [_to_read(b) for b in session.exec(query).all()]
+    return [_to_read(session, b) for b in session.exec(query).all()]
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkRead)
@@ -88,7 +89,7 @@ def get_benchmark(benchmark_id: int, session: Session = Depends(get_session)):
     bench = session.get(Benchmark, benchmark_id)
     if not bench:
         raise HTTPException(status_code=404, detail="Benchmark not found.")
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 @router.post("/", response_model=BenchmarkRead, status_code=status.HTTP_201_CREATED)
@@ -108,7 +109,9 @@ def create_benchmark(payload: BenchmarkCreate, session: Session = Depends(get_se
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    replace_benchmark_tags(session, bench.id, payload.tags)
+    session.commit()
+    return _to_read(session, bench)
 
 
 @router.post("/{benchmark_id}/upload-dataset", response_model=BenchmarkRead)
@@ -201,7 +204,7 @@ async def upload_dataset(
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 class BenchmarkUpdate(BaseModel):
@@ -219,6 +222,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
         raise HTTPException(status_code=404, detail="Benchmark not found.")
     if payload.tags is not None:
         bench.tags = json.dumps(payload.tags)
+        replace_benchmark_tags(session, bench.id, payload.tags)
     if payload.source is not None:
         bench.source = payload.source
     if payload.description is not None:
@@ -228,7 +232,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -638,13 +642,14 @@ def fork_benchmark(
         "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
     }
 
-    parent_tags = json.loads(parent.tags) if parent.tags else []
+    parent_tags = get_benchmark_tags(session, parent)
+    fork_tags = [*parent_tags, "fork", f"fork-of-{parent.id}"]
 
     fork = Benchmark(
         name=fork_name,
         type=parent.type,
         description=f"Fork of {parent.name}. {parent.description}",
-        tags=json.dumps([*parent_tags, "fork", f"fork-of-{parent.id}"]),
+        tags=json.dumps(fork_tags),
         config_json=json.dumps(fork_config),
         dataset_path=fork_dataset_path,
         metric=parent.metric,
@@ -659,6 +664,8 @@ def fork_benchmark(
     session.add(fork)
     session.commit()
     session.refresh(fork)
+    replace_benchmark_tags(session, fork.id, fork_tags)
+    session.commit()
 
     return {
         "id": fork.id,
