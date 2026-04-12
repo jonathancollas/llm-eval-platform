@@ -22,6 +22,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
+from core.lakera_guard import screen_prompt_with_lakera
+
 logger = logging.getLogger(__name__)
 
 
@@ -87,6 +89,9 @@ class InferenceAdapter(ABC):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(model_id={self.model_id!r})"
 
+    async def _screen_prompt(self, prompt: str, system_prompt: str = "") -> None:
+        await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt or None)
+
 
 # ── LiteLLM adapter (OpenAI-compatible: OpenRouter, Groq, Mistral…) ──────────
 
@@ -105,6 +110,7 @@ class LiteLLMAdapter(InferenceAdapter):
     ) -> AdapterResult:
         from litellm import acompletion
 
+        await self._screen_prompt(prompt, system_prompt)
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -165,6 +171,7 @@ class AnthropicAdapter(InferenceAdapter):
         import anthropic
         from core.config import get_settings
 
+        await self._screen_prompt(prompt, system_prompt)
         settings = get_settings()
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
@@ -220,6 +227,7 @@ class OllamaAdapter(InferenceAdapter):
     ) -> AdapterResult:
         import httpx
 
+        await self._screen_prompt(prompt, system_prompt)
         payload = {
             "model": self.model_id,
             "prompt": prompt,
