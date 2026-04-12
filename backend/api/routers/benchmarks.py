@@ -125,16 +125,19 @@ async def upload_dataset(
         raise HTTPException(status_code=400, detail="Cannot override built-in benchmark datasets.")
 
     # ── Security hardening (#S2) ──────────────────────────────────────────────
-    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB hard limit
+    max_upload_bytes = settings.benchmark_upload_max_bytes
 
     # MIME type whitelist — only JSON and CSV
-    allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
+    allowed_content_types = {"application/json", "text/csv"}
     ct = file.content_type or ""
     if ct and ct.split(";")[0].strip() not in allowed_content_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
 
     # Filename sanitization — strip all directory components (path traversal prevention)
-    safe_name = Path(file.filename or "dataset.json").name
+    original_name = file.filename or "dataset.json"
+    safe_name = Path(original_name).name
+    if original_name != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     # Remove any remaining path separators and dangerous characters
     safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:
@@ -144,7 +147,7 @@ async def upload_dataset(
     if not (safe_name.endswith(".json") or safe_name.endswith(".csv")):
         raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
 
-    # Bounded read — never read more than MAX_UPLOAD_BYTES
+    # Bounded read — never read more than max_upload_bytes
     chunks = []
     total = 0
     while True:
@@ -152,10 +155,10 @@ async def upload_dataset(
         if not chunk:
             break
         total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
+        if total > max_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is 50MB.",
+                detail=f"File too large. Maximum size is {max_upload_bytes} bytes.",
             )
         chunks.append(chunk)
     content = b"".join(chunks)
@@ -179,7 +182,9 @@ async def upload_dataset(
             data = json.loads(content)
         except json.JSONDecodeError as e:
             raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
-        items = data if isinstance(data, list) else data.get("items", [])
+        if not isinstance(data, dict) or "items" not in data or not isinstance(data["items"], list):
+            raise HTTPException(status_code=422, detail="JSON dataset must be an object with an 'items' list.")
+        items = data["items"]
 
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
