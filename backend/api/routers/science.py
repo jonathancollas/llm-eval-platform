@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlmodel import Session, select
 
 from core.database import get_session
@@ -538,11 +538,24 @@ def check_benchmark_validity(
 
 class CompositionalRiskRequest(BaseModel):
     model_name: str
-    domain_scores: dict = {}       # capability scores per domain
-    propensity_scores: dict = {}   # propensity scores per domain
-    autonomy_level: str = "L2"
+    domain_scores: dict[str, float] = {}       # capability scores per domain
+    propensity_scores: dict[str, float] = {}   # propensity scores per domain
+    autonomy_level: int | str = "L2"
     tools: list[str] = []
     memory_type: str = "session"
+
+    @field_validator("autonomy_level")
+    @classmethod
+    def normalize_autonomy_level(cls, value):
+        if isinstance(value, int):
+            if 1 <= value <= 5:
+                return value
+            raise ValueError("autonomy_level integer must be between 1 and 5")
+        if isinstance(value, str):
+            v = value.strip().upper()
+            if v.startswith("L") and len(v) == 2 and v[1].isdigit() and 1 <= int(v[1]) <= 5:
+                return v
+        raise ValueError("autonomy_level must be L1-L5 or integer 1-5")
 
 
 @router.post("/compositional-risk")
@@ -555,14 +568,25 @@ def compute_compositional_risk(payload: CompositionalRiskRequest):
 
     Reference: INESIA PDF Priority 3 — compositional and emergent risk.
     """
-    from eval_engine.compositional_risk import CompositionalRiskEngine
+    from eval_engine.compositional_risk import CompositionalRiskEngine, CompositionalRiskModel
     engine = CompositionalRiskEngine()
+    auto_level = (
+        f"L{payload.autonomy_level}" if isinstance(payload.autonomy_level, int)
+        else payload.autonomy_level
+    )
     profile = engine.compute(
         model_name=payload.model_name,
         domain_scores=payload.domain_scores,
         propensity_scores=payload.propensity_scores,
-        autonomy_level=payload.autonomy_level,
+        autonomy_level=auto_level,
         tools=payload.tools,
+        memory_type=payload.memory_type,
+    )
+    contract_profile = CompositionalRiskModel(system_id=payload.model_name).compute_system_risk(
+        capability_scores=payload.domain_scores,
+        propensity_scores=payload.propensity_scores,
+        autonomy_level=int(auto_level[1]),
+        tool_access=payload.tools,
         memory_type=payload.memory_type,
     )
     return {
@@ -595,6 +619,15 @@ def compute_compositional_risk(payload: CompositionalRiskRequest):
         ],
         "key_concerns": profile.key_concerns,
         "mitigation_priorities": profile.mitigation_priorities,
+        "system_threat_profile": {
+            "system_id": contract_profile.system_id,
+            "overall_risk_level": contract_profile.overall_risk_level,
+            "component_risks": contract_profile.component_risks,
+            "composition_multiplier": contract_profile.composition_multiplier,
+            "dominant_threat_vector": contract_profile.dominant_threat_vector,
+            "mitigation_recommendations": contract_profile.mitigation_recommendations,
+            "autonomy_certification": contract_profile.autonomy_certification,
+        },
         "caveat": profile.caveat,
         "references": [
             "INESIA PDF Priority 3 — Compositional and emergent risk",
