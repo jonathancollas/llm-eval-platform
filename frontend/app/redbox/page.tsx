@@ -11,6 +11,7 @@ import { API_BASE } from "@/lib/config";
 const MUTATION_TYPES = [
   { key: "prompt_injection",  label: "Prompt Injection",   icon: "💉", desc: "Direct injection — override instructions (ATLAS AML.T0051)" },
   { key: "jailbreak",         label: "Jailbreak",          icon: "🔓", desc: "Persona manipulation, DAN, roleplay bypass (ATLAS AML.T0054)" },
+  { key: "exfiltration",      label: "Exfiltration",       icon: "🧬", desc: "Sensitive data extraction and leakage attempts (OWASP LLM data disclosure)" },
   { key: "encoding_evasion",  label: "Encoding Evasion",   icon: "🔤", desc: "Base64, ROT13, reversed text, homoglyphs (ATLAS AML.T0043)" },
   { key: "token_smuggling",   label: "Token Smuggling",    icon: "👻", desc: "Zero-width chars, RTL override, hidden instructions (ATLAS AML.T0051.002)" },
   { key: "multi_turn",        label: "Multi-Turn",         icon: "🔄", desc: "Context manipulation, false prior agreement (ATLAS AML.T0052)" },
