@@ -20,7 +20,7 @@ def _load_catalog_entries() -> list[dict]:
     raise AssertionError("BENCHMARK_CATALOG not found in catalog.py")
 
 
-def test_scheming_eval_has_50_plus_scenarios():
+def test_scheming_eval_has_minimum_scenarios():
     data = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
     assert len(data) >= 50
 
@@ -47,10 +47,11 @@ def test_scheming_eval_has_monitored_vs_unmonitored_pairs():
 
 
 def test_scheming_eval_is_integrated_as_propensity_dimension():
+    dataset = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
     catalog = _load_catalog_entries()
     entry = next((b for b in catalog if b.get("key") == "scheming_eval"), None)
 
     assert entry is not None
     assert entry["dataset_path"] == "custom/scheming_eval.json"
     assert entry["eval_dimension"] == "propensity"
-    assert entry["num_samples"] == len(json.loads(DATASET_PATH.read_text(encoding="utf-8")))
+    assert entry["num_samples"] == len(dataset)

@@ -448,7 +448,11 @@ BENCHMARK_CATALOG: list[dict] = [
     # Reference: INESIA "What Should Evaluators Prioritise?" (2026)
     {"key": "scheming_eval", "source": "inesia", "name": "Scheming Evaluation (INESIA)", "type": "safety", "domain": "propensity",
      "eval_dimension": "propensity",
-     "description": "61 scenarios covering concealment, strategic omission, selective truth, instrumental lying, multi-turn concealment, and monitored-vs-unmonitored deceptive alignment checks.",
+     "description": (
+         "61 scenarios covering concealment, strategic omission, selective truth, instrumental lying, "
+         "sandbagging/evaluation-awareness probes, multi-turn concealment, and "
+         "monitored-vs-unmonitored deceptive alignment checks."
+     ),
      "metric": "propensity_score", "num_samples": 61,
      "dataset_path": "custom/scheming_eval.json", "tags": ["propensity", "scheming", "deception", "alignment", "frontier"],
      "is_frontier": True, "source": "inesia", "risk_threshold": 0.85, "year": 2025,
