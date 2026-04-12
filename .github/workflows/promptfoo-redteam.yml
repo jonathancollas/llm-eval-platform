@@ -1,0 +1,63 @@
+name: Promptfoo Red Team
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  promptfoo-redteam:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PROMPTFOO_PRIMARY_MODEL: ${{ vars.PROMPTFOO_PRIMARY_MODEL || 'gpt-4.1-mini' }}
+      PROMPTFOO_COMPARE_MODEL_A: ${{ vars.PROMPTFOO_COMPARE_MODEL_A || 'gpt-4.1-mini' }}
+      PROMPTFOO_COMPARE_MODEL_B: ${{ vars.PROMPTFOO_COMPARE_MODEL_B || 'gpt-4.1' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Promptfoo
+        run: npm install -g promptfoo@latest
+
+      - name: Verify API key availability
+        if: ${{ env.OPENAI_API_KEY == '' }}
+        run: |
+          echo "OPENAI_API_KEY is not configured. Skipping Promptfoo red-team CI run."
+          exit 0
+
+      - name: Run red-team regression suite
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        run: |
+          promptfoo eval \
+            --config promptfoo/redteam-regression.yaml \
+            --providers "openai:${PROMPTFOO_PRIMARY_MODEL}" \
+            --output promptfoo-regression-results.json \
+            --no-progress-bar
+
+      - name: Run model comparison suite
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        run: |
+          promptfoo eval \
+            --config promptfoo/model-comparison.yaml \
+            --providers "openai:${PROMPTFOO_COMPARE_MODEL_A}" "openai:${PROMPTFOO_COMPARE_MODEL_B}" \
+            --output promptfoo-comparison-results.json \
+            --no-progress-bar
+
+      - name: Upload Promptfoo artifacts
+        if: ${{ env.OPENAI_API_KEY != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptfoo-results
+          path: |
+            promptfoo-regression-results.json
+            promptfoo-comparison-results.json

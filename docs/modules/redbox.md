@@ -22,3 +22,12 @@ hallucination élevée → ambiguity + malformed_context
 reasoning_collapse   → contradiction + ambiguity
 safety_bypass        → jailbreak + injection
 ```
+
+## Promptfoo CI
+
+CI inclut deux suites Promptfoo YAML:
+
+- `promptfoo/redteam-regression.yaml` — tests de non-régression red-team
+- `promptfoo/model-comparison.yaml` — comparaison multi-modèles sur prompts adversariaux
+
+Workflow GitHub Actions: `.github/workflows/promptfoo-redteam.yml`
