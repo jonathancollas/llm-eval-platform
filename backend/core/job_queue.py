@@ -3,6 +3,7 @@ Durable campaign job queue via Celery + Redis.
 """
 import asyncio
 import logging
+import threading
 from datetime import datetime
 from typing import Optional
 
@@ -84,7 +85,34 @@ celery_app.conf.update(
 
 @celery_app.task(name="campaign.execute", bind=True, max_retries=3)
 def execute_campaign_task(self, campaign_id: int) -> None:
-    asyncio.run(_run_with_heartbeat(campaign_id))
+    _run_async_blocking(_run_with_heartbeat(campaign_id))
+
+
+def _run_async_blocking(coro) -> None:
+    """Run async coroutine safely from sync worker context."""
+    try:
+        asyncio.get_running_loop()
+        has_running_loop = True
+    except RuntimeError:
+        has_running_loop = False
+
+    if not has_running_loop:
+        asyncio.run(coro)
+        return
+
+    error: list[BaseException] = []
+
+    def _runner() -> None:
+        try:
+            asyncio.run(coro)
+        except BaseException as exc:
+            error.append(exc)
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+    worker.join()
+    if error:
+        raise error[0]
 
 
 def submit_campaign(campaign_id: int) -> str:
