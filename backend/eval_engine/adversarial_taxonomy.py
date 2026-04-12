@@ -371,6 +371,10 @@ _KILLCHAIN_CATEGORY = {
     6: "impact",
 }
 
+_TOOL_INPUT_ADAPTER = "redbox.seed_prompt.v1"
+_TOOL_OUTPUT_SCHEMA = "redbox.forge_variant.v1"
+_TOOL_SEVERITY_MODEL = "redbox.cvss_like.v1"
+
 
 def _build_tool_registry() -> list[dict[str, str]]:
     tools = []
@@ -383,9 +387,9 @@ def _build_tool_registry() -> list[dict[str, str]]:
             {
                 "tool_name": tool_name,
                 "category": category,
-                "input_adapter": "redbox.seed_prompt.v1",
-                "output_schema": "redbox.forge_variant.v1",
-                "severity_model": "redbox.cvss_like.v1",
+                "input_adapter": _TOOL_INPUT_ADAPTER,
+                "output_schema": _TOOL_OUTPUT_SCHEMA,
+                "severity_model": _TOOL_SEVERITY_MODEL,
             }
         )
     return tools

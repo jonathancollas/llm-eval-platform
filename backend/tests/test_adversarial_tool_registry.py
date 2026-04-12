@@ -2,6 +2,8 @@ import importlib.util
 import os
 import sys
 
+import pytest
+
 BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, BACKEND_DIR)
 
@@ -31,6 +33,10 @@ def test_registry_has_required_standard_fields():
             value = item.get(field)
             assert isinstance(value, str)
             assert value
+        assert item["category"] in ADVERSARIAL_TOOL_CATEGORIES
+        assert item["input_adapter"] == "redbox.seed_prompt.v1"
+        assert item["output_schema"] == "redbox.forge_variant.v1"
+        assert item["severity_model"] == "redbox.cvss_like.v1"
 
 
 def test_tool_registry_endpoint_supports_category_filter():
@@ -40,3 +46,9 @@ def test_tool_registry_endpoint_supports_category_filter():
     assert payload["total"] > 0
     assert category in payload["categories"]
     assert all(item["category"] == category for item in payload["tools"])
+
+
+def test_tool_registry_endpoint_rejects_unknown_category():
+    with pytest.raises(redbox.HTTPException) as exc:
+        redbox.get_adversarial_tool_registry(category="not-a-real-category")
+    assert exc.value.status_code == 400

@@ -701,6 +701,8 @@ def get_adversarial_tool_registry(category: Optional[str] = None):
 
     tools = ADVERSARIAL_TOOL_REGISTRY
     if category:
+        if category not in ADVERSARIAL_TOOL_CATEGORIES:
+            raise HTTPException(400, detail=f"Unknown category '{category}'.")
         tools = [t for t in tools if t["category"] == category]
 
     return {
