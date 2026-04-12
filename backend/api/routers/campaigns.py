@@ -14,6 +14,7 @@ from core.models import Campaign, EvalRun, LLMModel, Benchmark, JobStatus
 from core import job_queue
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+# Keep queue error details bounded for DB/UI readability.
 MAX_QUEUE_ERROR_MESSAGE_LENGTH = 300
 
 

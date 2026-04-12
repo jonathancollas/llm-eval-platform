@@ -4,6 +4,7 @@ Durable campaign job queue via Celery + Redis.
 import asyncio
 import logging
 import threading
+from queue import SimpleQueue
 from datetime import datetime
 from typing import Optional
 
@@ -88,7 +89,7 @@ celery_app.conf.update(
 @celery_app.task(
     name="campaign.execute",
     bind=True,
-    autoretry_for=(OSError, SQLAlchemyError, RuntimeError),
+    autoretry_for=(OSError, SQLAlchemyError),
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 3},
@@ -109,19 +110,19 @@ def _run_async_blocking(coro) -> None:
         asyncio.run(coro)
         return
 
-    errors: list[BaseException] = []
+    errors: SimpleQueue[BaseException] = SimpleQueue()
 
     def _runner() -> None:
         try:
             asyncio.run(coro)
         except BaseException as exc:
-            errors.append(exc)
+            errors.put(exc)
 
     worker = threading.Thread(target=_runner)
     worker.start()
     worker.join()
-    if errors:
-        raise errors[0]
+    if not errors.empty():
+        raise errors.get()
 
 
 def submit_campaign(campaign_id: int) -> str:
@@ -137,7 +138,10 @@ def submit_campaign(campaign_id: int) -> str:
                 session.add(c)
                 session.commit()
     except (OSError, SQLAlchemyError) as e:
-        celery_app.control.revoke(task.id, terminate=True)
+        try:
+            celery_app.control.revoke(task.id, terminate=True)
+        except Exception as revoke_error:
+            logger.warning(f"[job_queue] Failed to revoke orphan task {task.id}: {revoke_error}")
         logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}: {e}")
         raise RuntimeError("Failed to persist worker task metadata.") from e
     return task.id
