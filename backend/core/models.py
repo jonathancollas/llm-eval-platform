@@ -99,6 +99,21 @@ class BenchmarkTag(SQLModel, table=True):
     tag: str = Field(primary_key=True, index=True)
 
 
+class BenchmarkPack(SQLModel, table=True):
+    __tablename__ = "benchmark_packs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    slug: str = Field(index=True)
+    name: str = Field(index=True)
+    version: str = Field(default="1.0.0")
+    publisher: str = Field(default="")
+    family: str = Field(default="community")  # inesia | aisi | academic | community
+    changelog: str = Field(default="")
+    benchmark_ids_json: str = Field(default="[]")
+    is_public: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Campaign(SQLModel, table=True):
     __tablename__ = "campaigns"
 
