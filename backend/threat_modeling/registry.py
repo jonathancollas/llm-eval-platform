@@ -17,7 +17,7 @@ from threat_modeling.adapters import (
 
 _initialized = False
 _REGISTRY: dict[str, Type[ThreatModelingAdapter]] = {}
-_registry_lock = threading.RLock()
+_registry_lock = threading.Lock()
 
 
 def _lazy_register() -> None:
@@ -58,7 +58,7 @@ def get_adapter(component: str) -> ThreatModelingAdapter:
             adapter_cls = _REGISTRY[component]
         except KeyError as exc:
             raise KeyError(f"Unknown threat-modeling component '{component}'.") from exc
-    return adapter_cls()
+        return adapter_cls()
 
 
 def list_components() -> list[str]:
