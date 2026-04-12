@@ -272,7 +272,7 @@ class FailureClusteringEngine:
         if not failures:
             return []
 
-        campaign_ref = campaign_ids[0] if len(campaign_ids) == 1 else 0
+        campaign_ref = campaign_ids[0] if campaign_ids else 0
         report = self.discover(
             failures,
             campaign_id=campaign_ref,
@@ -452,7 +452,8 @@ class FailureClusteringEngine:
 
         alerts = []
         if novel:
-            alerts.append(f"Novel failure cluster detected in campaign {campaign_id}: {len(novel)} cluster(s).")
+            cluster_word = "cluster" if len(novel) == 1 else "clusters"
+            alerts.append(f"Novel failure cluster detected in campaign {campaign_id}: {len(novel)} {cluster_word}.")
             logger.warning(alerts[-1])
 
         return ClusteringReport(
