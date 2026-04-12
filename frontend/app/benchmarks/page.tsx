@@ -9,9 +9,10 @@ import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
+import { SecurityBenchmarkWizard } from "@/components/SecurityBenchmarkWizard";
 import { benchmarkTypeColor } from "@/lib/utils";
 import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles,
-         Search, ChevronLeft, ChevronRight, Eye } from "lucide-react";
+         Search, ChevronLeft, ChevronRight, Eye, Shield } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
@@ -304,6 +305,8 @@ export default function BenchmarksPage() {
   const { benchmarksAdded: newBenchmarks } = useSync();
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  // Security wizard state
+  const [showSecurityWizard, setShowSecurityWizard] = useState(false);
   // Tag management state
   const [editingTagsId, setEditingTagsId] = useState<number | null>(null);
   const [newTagInput, setNewTagInput] = useState("");
@@ -456,6 +459,10 @@ export default function BenchmarksPage() {
             <button onClick={() => setShowCustomForm(!showCustomForm)}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
               <Plus size={14} /> Import Custom
+            </button>
+            <button onClick={() => setShowSecurityWizard(true)}
+              className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700 transition-colors">
+              <Shield size={14} /> Security Wizard
             </button>
           </div>
         }
@@ -787,6 +794,12 @@ export default function BenchmarksPage() {
 
       {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
       {exploringId !== null && <ItemExplorer benchmarkId={exploringId} onClose={() => setExploringId(null)} />}
+      {showSecurityWizard && (
+        <SecurityBenchmarkWizard
+          onClose={() => setShowSecurityWizard(false)}
+          onCreated={() => { setShowSecurityWizard(false); load(); }}
+        />
+      )}
     </div>
   );
 }
