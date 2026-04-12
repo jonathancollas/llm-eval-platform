@@ -42,6 +42,7 @@ type FilterKey = typeof FILTER_TABS[number]["key"];
 export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const [catalog, setCatalog] = useState<CatalogBenchmark[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState<string | null>(null);
@@ -49,9 +50,15 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const [addAllProgress, setAddAllProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
+    setError(null);
     fetch(`${API_BASE}/catalog/benchmarks`)
-      .then(r => r.json())
-      .then(setCatalog)
+      .then(async (r) => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(data?.detail ?? `HTTP ${r.status} ${r.statusText}`);
+        if (!Array.isArray(data)) throw new Error("Invalid catalog response");
+        setCatalog(data);
+      })
+      .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -175,6 +182,11 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
           {loading ? (
             <div className="flex justify-center py-16"><Spinner size={24} /></div>
+          ) : error ? (
+            <div className="text-center py-16 text-red-500 text-sm">
+              Unable to load benchmark catalog.
+              <br /><span className="text-xs text-slate-400">{error}</span>
+            </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-slate-400 text-sm">No benchmarks in this category.</div>
           ) : (

@@ -2,14 +2,18 @@
 Catalog endpoints — browse available models (OpenRouter) and benchmarks.
 """
 import logging
+import json
 from typing import Optional
 
 import time
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlmodel import Session, select
 
 from core.config import get_settings
+from core.database import get_session
+from core.models import LLMModel
 from eval_engine.harness_runner import get_catalog_for_api as _harness_catalog
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -35,7 +39,7 @@ class CatalogModel(BaseModel):
 
 class CatalogBenchmark(BaseModel):
     key: str; name: str; type: str; domain: str; description: str
-    metric: str; num_samples: int; dataset_path: str; tags: list[str]
+    metric: str; num_samples: int; dataset_path: str = ""; tags: list[str] = []
     risk_threshold: Optional[float] = None
     is_frontier: bool = False
     methodology_note: Optional[str] = None
@@ -52,6 +56,7 @@ async def get_model_catalog(
     open_source_only: bool = Query(False),
     max_cost_per_1k: Optional[float] = Query(None),
     search: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
 ):
     api_key = getattr(settings, "openrouter_api_key", "")
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -78,7 +83,8 @@ async def get_model_catalog(
                 logger.warning(f"OpenRouter unreachable, serving cached catalog: {e}")
                 raw = {"data": fallback}
             else:
-                raise HTTPException(status_code=502, detail=f"OpenRouter unreachable: {e}")
+                logger.warning(f"OpenRouter unreachable, serving local DB catalog fallback: {e}")
+                raw = {"data": []}
 
     models: list[CatalogModel] = []
     open_source_providers = {
@@ -87,6 +93,14 @@ async def get_model_catalog(
         "phind", "wizardlm", "allenai", "tiiuae", "bigcode", "eleutherai",
         "huggingfaceh4", "stabilityai",
     }
+
+    def matches_filters(*, provider_name: str, is_free: bool, is_oss: bool, cost_in: float, name: str, model_id: str) -> bool:
+        if provider and provider.lower() not in provider_name.lower(): return False
+        if free_only and not is_free: return False
+        if open_source_only and not is_oss: return False
+        if max_cost_per_1k is not None and cost_in > max_cost_per_1k: return False
+        if search and search.lower() not in name.lower() and search.lower() not in model_id.lower(): return False
+        return True
 
     for m in raw.get("data", []):
         pricing = m.get("pricing", {})
@@ -121,12 +135,50 @@ async def get_model_catalog(
             cost_output_per_1k=round(cost_out, 4), is_free=is_free,
             is_open_source=is_oss, description=description, tags=tags,
         )
-        if provider and provider.lower() not in provider_name.lower(): continue
-        if free_only and not is_free: continue
-        if open_source_only and not is_oss: continue
-        if max_cost_per_1k is not None and cost_in > max_cost_per_1k: continue
-        if search and search.lower() not in name.lower() and search.lower() not in model_id.lower(): continue
+        if not matches_filters(
+            provider_name=provider_name,
+            is_free=is_free,
+            is_oss=is_oss,
+            cost_in=cost_in,
+            name=name,
+            model_id=model_id,
+        ):
+            continue
         models.append(m_obj)
+
+    # Fallback: if OpenRouter catalog is unavailable, expose locally registered models.
+    if not models:
+        for m in session.exec(select(LLMModel)).all():
+            try:
+                tags = json.loads(m.tags or "[]")
+                if not isinstance(tags, list):
+                    tags = []
+            except Exception:
+                tags = []
+            is_oss = "open-source" in tags
+            is_free = (m.cost_input_per_1k == 0 and m.cost_output_per_1k == 0)
+            provider_name = (m.provider.value if hasattr(m.provider, "value") else str(m.provider or "Unknown")).title()
+            if not matches_filters(
+                provider_name=provider_name,
+                is_free=is_free,
+                is_oss=is_oss,
+                cost_in=float(m.cost_input_per_1k or 0.0),
+                name=m.name or m.model_id,
+                model_id=m.model_id or "",
+            ):
+                continue
+            models.append(CatalogModel(
+                id=m.model_id,
+                name=m.name or m.model_id,
+                provider=provider_name,
+                context_length=int(m.context_length or 4096),
+                cost_input_per_1k=round(float(m.cost_input_per_1k or 0.0), 4),
+                cost_output_per_1k=round(float(m.cost_output_per_1k or 0.0), 4),
+                is_free=is_free,
+                is_open_source=is_oss,
+                description=(m.notes or "")[:300],
+                tags=tags,
+            ))
 
     return sorted(models, key=lambda m: (not m.is_free, m.cost_input_per_1k, m.name))
 
