@@ -302,8 +302,6 @@ def create_campaign_comment(
     }
     comments.append(comment)
     collab["comments"] = comments
-    if collab.get("review_state") == "approved":
-        collab["review_state"] = "changes_requested"
     _save_campaign_collaboration(campaign, collab)
     session.add(campaign)
     session.commit()
