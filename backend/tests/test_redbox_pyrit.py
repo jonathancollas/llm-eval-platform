@@ -7,6 +7,7 @@ import pytest
 
 # Ensure backend is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Test-only key for Settings initialization during unit tests.
 os.environ.setdefault("SECRET_KEY", "a" * 64)
 
 _REDBOX_PATH = pathlib.Path(__file__).resolve().parents[1] / "api" / "routers" / "redbox.py"

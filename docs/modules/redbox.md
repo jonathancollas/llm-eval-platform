@@ -23,7 +23,7 @@ reasoning_collapse   → contradiction + ambiguity
 safety_bypass        → jailbreak + injection
 ```
 
-## Intégration Microsoft PyRIT
+## Microsoft PyRIT Integration
 
 REDBOX peut utiliser Microsoft **PyRIT** (si installé) pour générer automatiquement des attaques:
 
