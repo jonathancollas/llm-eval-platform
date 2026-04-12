@@ -166,9 +166,8 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
     session.commit()
     session.refresh(campaign)
 
-    from eval_engine.runner import execute_campaign
-    job_queue.submit_campaign(campaign_id, execute_campaign(campaign_id))
-    _logger.info(f"Campaign {campaign_id} submitted — status set to RUNNING immediately")
+    task_id = job_queue.submit_campaign(campaign_id)
+    _logger.info(f"Campaign {campaign_id} submitted to Celery task={task_id} — status set to RUNNING immediately")
 
     return _to_read(campaign)
 

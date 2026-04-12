@@ -93,6 +93,7 @@ def _migrate_add_columns() -> None:
         ("campaigns", "current_item_index", "INTEGER", "NULL"),
         ("campaigns", "current_item_total", "INTEGER", "NULL"),
         ("campaigns", "current_item_label", "TEXT", "NULL"),
+        ("campaigns", "worker_task_id", "TEXT", "NULL"),
         # Capability/Propensity dual scores (v0.5+)
         ("eval_runs", "capability_score", "REAL", "NULL"),
         ("eval_runs", "propensity_score", "REAL", "NULL"),
@@ -149,8 +150,8 @@ def _reset_stuck_campaigns() -> None:
             if stale:
                 c.status = JobStatus.FAILED
                 c.error_message = (
-                    "Campaign failed: process restarted or heartbeat lost. "
-                    f"Last heartbeat: {heartbeat or 'never'}. Please re-run."
+                    "heartbeat_timeout: campaign heartbeat stale. "
+                    f"Last heartbeat: {heartbeat or 'never'}."
                 )
                 session.add(c)
                 reset_count += 1

@@ -69,13 +69,15 @@ async def lifespan(app: FastAPI):
     # 4. Async OpenRouter sync in background (non-blocking)
     # Store the task so it can be properly cancelled on shutdown.
     app.state.bg_sync_task = asyncio.create_task(_background_openrouter_sync())
+    app.state.bg_queue_recovery_task = asyncio.create_task(_background_queue_recovery())
 
     logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
     yield
     # Cancel the background task and wait for it to finish cleanly.
-    task = app.state.bg_sync_task
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
+    tasks = [app.state.bg_sync_task, app.state.bg_queue_recovery_task]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("Shutdown.")
 
 
@@ -104,6 +106,20 @@ async def _background_openrouter_sync():
                 logger.info("Ollama not available (optional — install from ollama.com)")
     except Exception as e:
         logger.debug(f"Ollama sync skipped: {e}")
+
+
+async def _background_queue_recovery():
+    import asyncio
+    from core import job_queue
+
+    while True:
+        try:
+            recovered = job_queue.recover_stale_campaigns()
+            if recovered:
+                logger.warning(f"Recovered stale campaigns: {recovered}")
+        except Exception as e:
+            logger.warning(f"Background queue recovery failed: {e}")
+        await asyncio.sleep(30)
 
 
 app = FastAPI(

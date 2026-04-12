@@ -99,7 +99,7 @@ Mercury Retrograde est construit autour de ce principe. L'objectif est de rendre
 
 ### Infrastructure
 - SQLite (dev) / **PostgreSQL** (prod) — dual mode automatique
-- **Redis** job queue (optionnel, fallback in-memory)
+- **Celery + Redis** durable job queue (worker dédié)
 - **Ollama** — découverte et import automatiques de modèles locaux
 - Multi-tenant scaffolding (Tenant, User, API key auth)
 - Rate limiting, chiffrement clés API, headers sécurité

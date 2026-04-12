@@ -16,3 +16,4 @@ lm-eval>=0.4.4
 # NOTE: sqlitedict (transitive dep of lm-eval) has CVE-2024-35515 (insecure deserialization).
 # No fixed version is available yet. Monitor https://github.com/RaRe-Technologies/sqlitedict/issues.
 datasets>=2.18.0
+celery[redis]>=5.6.3
