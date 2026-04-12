@@ -10,6 +10,10 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
+/** Optional API key sent as X-API-Key — set NEXT_PUBLIC_API_KEY in your environment. */
+export const API_KEY =
+  process.env.NEXT_PUBLIC_API_KEY ?? "";
+
 export const APP_NAME = "EVAL RESEARCH OS";
 export const APP_TAGLINE = "made with love by INESIA";
 export const APP_VERSION = "v0.6.0";

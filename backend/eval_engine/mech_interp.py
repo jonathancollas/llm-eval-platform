@@ -430,7 +430,8 @@ class MechInterpValidator:
                 answers.append(r.text.strip().lower()[:100])
                 tokens += r.total_tokens
                 cost += r.cost_usd
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Paraphrase inference error: {e}")
                 answers.append("[error]")
 
         # Agreement: do >50% of answers contain the same key phrase?

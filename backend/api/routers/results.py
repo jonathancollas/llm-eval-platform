@@ -21,6 +21,15 @@ from eval_engine.win_rate_engine import compute_win_rates
 
 router = APIRouter(prefix="/results", tags=["results"])
 
+_CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_escape(value: str) -> str:
+    """Prevent CSV formula injection by prefixing formula-triggering characters."""
+    if value and value[0] in _CSV_FORMULA_CHARS:
+        return "'" + value
+    return value
+
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
@@ -212,15 +221,15 @@ def export_csv(campaign_id: int, session: Session = Depends(get_session)):
     for r in results:
         run = run_map.get(r.run_id)
         writer.writerow({
-            "campaign": campaign.name,
-            "model": models.get(run.model_id, LLMModel(name="?")).name if run else "?",
-            "benchmark": benches.get(run.benchmark_id, Benchmark(name="?")).name if run else "?",
+            "campaign": _csv_escape(campaign.name),
+            "model": _csv_escape(models.get(run.model_id, LLMModel(name="?")).name if run else "?"),
+            "benchmark": _csv_escape(benches.get(run.benchmark_id, Benchmark(name="?")).name if run else "?"),
             "item_index": r.item_index,
             "score": r.score,
             "latency_ms": r.latency_ms,
             "cost_usd": r.cost_usd,
-            "expected": r.expected or "",
-            "response": r.response[:200],  # truncate for readability
+            "expected": _csv_escape(r.expected or ""),
+            "response": _csv_escape(r.response[:200]),  # truncate for readability
         })
 
     output.seek(0)

@@ -58,8 +58,8 @@ def _get_questions(benchmark: Benchmark, n: int, session: Session) -> list[dict]
                      "category": i.get("category", benchmark.type)}
                     for i in items[:n] if i.get("prompt") or i.get("question")
                 ]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to load benchmark dataset for questions: {e}")
     return []
 
 

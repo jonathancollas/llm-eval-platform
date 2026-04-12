@@ -459,8 +459,8 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
                                 "latency_ms": item_result.latency_ms,
                             },
                         ))
-                except Exception:
-                    pass  # Never block the eval for telemetry
+                except Exception as e:
+                    logger.debug(f"Telemetry emit failed (non-blocking): {e}")  # Never block the eval for telemetry
 
         except Exception as ex:
             logger.debug(f"Progress callback error (non-blocking): {ex}")
