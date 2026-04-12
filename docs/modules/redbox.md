@@ -16,7 +16,7 @@ Laboratoire de test adversarial pour modèles LLM.
 
 ## Garak probing engine
 
-REDBOX intègre un mode `engine="garak"` pour le scanner de vulnérabilités LLM. Couverture principale:
+REDBOX intègre un mode `engine="garak"` pour le scanner de vulnérabilités LLM. Couverture principale :
 
 - jailbreak
 - prompt injection

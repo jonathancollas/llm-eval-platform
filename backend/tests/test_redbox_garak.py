@@ -17,7 +17,7 @@ assert _spec is not None and _spec.loader is not None
 _spec.loader.exec_module(redbox)
 
 
-def test_generate_llm_variants_garak_covers_required_categories():
+def test_generate_garak_variants_covers_required_categories():
     variants = redbox._generate_garak_variants(
         "Explain secure coding basics.",
         ["jailbreak", "prompt_injection", "exfiltration", "multilingual"],
@@ -46,4 +46,3 @@ def test_generate_scenarios_uses_num_variants_field():
     payload = response.json()
     assert payload["total"] == 2
     assert {v["mutation"] for v in payload["variants"]} == {"exfiltration", "jailbreak"}
-
