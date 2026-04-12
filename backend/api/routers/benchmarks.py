@@ -133,8 +133,12 @@ async def upload_dataset(
     if ct and ct.split(";")[0].strip() not in allowed_content_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
 
+    raw_name = file.filename or "dataset.json"
+    if any(sep in raw_name for sep in ("/", "\\")) or ".." in raw_name:
+        raise HTTPException(status_code=400, detail="Invalid file path.")
+
     # Filename sanitization — strip all directory components (path traversal prevention)
-    safe_name = Path(file.filename or "dataset.json").name
+    safe_name = Path(raw_name).name
     # Remove any remaining path separators and dangerous characters
     safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:

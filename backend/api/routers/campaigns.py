@@ -167,21 +167,27 @@ async def run_campaign(campaign_id: int, session: Session = Depends(get_session)
     session.refresh(campaign)
 
     from eval_engine.runner import execute_campaign
-    job_queue.submit_campaign(campaign_id, execute_campaign(campaign_id))
+    await job_queue.submit(campaign_id, execute_campaign(campaign_id))
     _logger.info(f"Campaign {campaign_id} submitted — status set to RUNNING immediately")
 
     return _to_read(campaign)
 
 
 @router.post("/{campaign_id}/cancel", response_model=CampaignRead)
-def cancel_campaign(campaign_id: int, session: Session = Depends(get_session)):
+async def cancel_campaign(campaign_id: int, session: Session = Depends(get_session)):
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(404, detail="Campaign not found.")
 
-    cancelled = job_queue.cancel_campaign(campaign_id)
+    cancelled = await job_queue.cancel(campaign_id)
 
-    if not cancelled:
+    if cancelled:
+        campaign.status = JobStatus.CANCELLED
+        campaign.error_message = "Cancelled by user."
+        campaign.completed_at = datetime.utcnow()
+        session.add(campaign)
+        session.commit()
+    else:
         # Task not in queue — force status update if DB still shows running
         if campaign.status == JobStatus.RUNNING:
             campaign.status = JobStatus.CANCELLED
