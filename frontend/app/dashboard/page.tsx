@@ -498,7 +498,7 @@ function DashboardContent() {
         }
       />
 
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         {/* Campaign selector */}
         <div className="mb-6">
           <label className="text-xs font-medium text-slate-600 mb-1.5 block">Campaign</label>
@@ -515,7 +515,7 @@ function DashboardContent() {
         {data && (
           <div className="space-y-6">
             {/* KPI bar */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { label: "Total cost", value: formatCost(data.total_cost_usd) },
                 { label: "Average latency / run", value: formatLatency(data.avg_latency_ms) },
@@ -543,7 +543,7 @@ function DashboardContent() {
             )}
 
             {/* Tab navigation */}
-            <div className="flex gap-1 border-b border-slate-100">
+            <div className="flex gap-1 overflow-x-auto border-b border-slate-100">
               {TABS.map(({ key, label, badge }) => (
                 <button key={key} onClick={() => setTab(key)}
                   className={`px-4 py-2.5 text-sm border-b-2 transition-colors flex items-center gap-1.5

@@ -42,7 +42,7 @@ export default function EvidencePage() {
     <div>
       <PageHeader title="Evidence-Based Evaluation" description="RCT × RWD → RWE — Clinical trial rigor for AI safety science." />
 
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-8 space-y-6">
         {/* Tabs */}
         <div className="flex gap-2 border-b border-slate-200 pb-3">
           {TABS.map(t => (

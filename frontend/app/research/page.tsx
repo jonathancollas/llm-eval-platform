@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { API_BASE } from "@/lib/config";
-import { Plus, GitFork, FlaskConical, ScrollText, Users, ChevronRight,
+import { Plus, GitFork, FlaskConical, ScrollText, Users, ChevronRight, ChevronLeft,
          CheckCircle2, Clock, Copy, ExternalLink, BookOpen, Beaker } from "lucide-react";
 
 const API = API_BASE;
@@ -78,6 +78,7 @@ export default function ResearchPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showRepForm, setShowRepForm] = useState(false);
   const [showSubmitForm, setShowSubmitForm] = useState(false);
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newWs, setNewWs] = useState({ name: "", description: "", hypothesis: "", protocol: "", risk_domain: "capability", visibility: "private" });
   const [repForm, setRepForm] = useState({ lab: "", notes: "" });
@@ -95,6 +96,7 @@ export default function ResearchPage() {
 
   const selectWorkspace = async (ws: any) => {
     setSelected(ws); setTab("overview"); setManifest(null);
+    setMobileShowDetail(true);
     const r = await fetch(`${API}/research/workspaces/${ws.id}/replications`);
     if (r.ok) { const d = await r.json(); setReplications(d.replications ?? []); setRepSummary(d.summary); }
   };
@@ -136,9 +138,9 @@ export default function ResearchPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-72 border-r border-slate-200 flex flex-col bg-white shrink-0">
+    <div className="flex flex-col md:flex-row md:h-screen md:overflow-hidden">
+      {/* Workspace list panel */}
+      <div className={`${mobileShowDetail ? "hidden md:flex" : "flex"} md:w-72 border-b md:border-b-0 md:border-r border-slate-200 flex-col bg-white md:shrink-0`}>
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div><h2 className="font-semibold text-slate-900 text-sm">Research Workspaces</h2><p className="text-[11px] text-slate-400">Mercury Research OS</p></div>
           <button onClick={() => setShowCreateForm(!showCreateForm)} className="p-2 bg-slate-900 text-white rounded-lg hover:bg-slate-700"><Plus size={14} /></button>
@@ -189,11 +191,18 @@ export default function ResearchPage() {
 
       {/* Main */}
       {selected ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-8 py-5 border-b border-slate-200 bg-white">
+        <div className={`${mobileShowDetail ? "flex" : "hidden md:flex"} flex-1 flex-col md:overflow-hidden`}>
+          {/* Back button — mobile only */}
+          <button
+            className="md:hidden flex items-center gap-1.5 px-4 py-2.5 text-sm text-slate-600 border-b border-slate-100 bg-white hover:bg-slate-50 transition-colors w-full text-left"
+            onClick={() => setMobileShowDetail(false)}
+          >
+            <ChevronLeft size={14} /> Back to workspaces
+          </button>
+          <div className="px-4 sm:px-8 py-4 sm:py-5 border-b border-slate-200 bg-white">
             <div className="flex items-start justify-between mb-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
+              <div className="min-w-0 flex-1 mr-2">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h2 className="text-lg font-semibold text-slate-900">{selected.name}</h2>
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${STATUS_CFG[selected.status]?.color}`}>{STATUS_CFG[selected.status]?.label}</span>
                   {repSummary?.confidence_grade && repSummary.confidence_grade !== "insufficient" && (
@@ -202,12 +211,12 @@ export default function ResearchPage() {
                 </div>
                 <p className="text-xs text-slate-500">{selected.description || "No description"}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 shrink-0">
                 <button onClick={() => fork(selected.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><GitFork size={12} /> Fork</button>
                 {selected.status !== "published" && <button onClick={() => publish(selected.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700"><ExternalLink size={12} /> Publish</button>}
               </div>
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {[
                 { key: "overview", label: "Overview", icon: <FlaskConical size={12} /> },
                 { key: "hypothesis", label: "Hypothesis", icon: <BookOpen size={12} /> },
@@ -221,7 +230,7 @@ export default function ResearchPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-8 space-y-5">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-5">
             {tab === "overview" && (
               <>
                 <div className="grid grid-cols-3 gap-4">

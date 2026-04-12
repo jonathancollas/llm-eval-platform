@@ -70,7 +70,7 @@ export default function OverviewPage() {
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="p-8 space-y-6 max-w-5xl">
+    <div className="p-4 sm:p-8 space-y-6 max-w-5xl">
 
       {/* Stat counters */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">

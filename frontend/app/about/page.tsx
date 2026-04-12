@@ -66,7 +66,7 @@ export default function AboutPage() {
         title="About"
         description={`${APP_NAME} ${APP_VERSION} — ${APP_TAGLINE}`}
       />
-      <div className="p-8 space-y-8 max-w-3xl">
+      <div className="p-4 sm:p-8 space-y-8 max-w-3xl">
 
         {/* Identity */}
         <div className="bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-100 rounded-xl p-6">

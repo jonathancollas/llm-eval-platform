@@ -86,3 +86,13 @@ body.theme-mercury aside a:hover {
 .scrollbar-thin::-webkit-scrollbar { width: 6px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+/* ── Mobile topbar theme overrides ─────────────────────── */
+body.theme-dark .mobile-topbar {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+body.theme-mercury .mobile-topbar {
+  background: linear-gradient(180deg, #0d001a 0%, #1a0030 100%) !important;
+  border-color: #2d1b69 !important;
+}
