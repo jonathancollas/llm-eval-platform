@@ -5,6 +5,7 @@
 ### Nouveaux modules
 - **Genomia** — Signal Extractor (25+ signaux) + 7 classifieurs rules + LLM hybrid
 - **REDBOX** — Forge adversariale (6 mutations) + exploit tracker + smart-forge
+- **MLSec (IBM ART)** — 3 suites adversariales dédiées (evasion, poisoning, extraction)
 - **LLM-as-Judge** — Multi-judge + Cohen's κ + calibration CJE + bias detection
 - **Agent Eval** — Trajectoires 6 axes + scoring hybride
 - **Compliance** — EU AI Act (6 checks), HIPAA (5 checks), Finance (5 checks)
