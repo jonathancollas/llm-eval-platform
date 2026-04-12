@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 class ThreatModelingAdapter(ABC):
     """Base interface for all threat-modeling components."""
 
+    # Must match the registry key (for example: "probe_engines").
     component: str
 
     @abstractmethod

@@ -55,7 +55,7 @@ def test_register_custom_adapter():
 
 def test_register_existing_without_overwrite_raises():
     class _NoopAdapter(ThreatModelingAdapter):
-        component = "probe_engines"
+        component = "runtime_guardrails"
 
         def run(self, payload: dict) -> dict:
             return payload
