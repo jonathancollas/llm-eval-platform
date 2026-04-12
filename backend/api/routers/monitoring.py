@@ -17,6 +17,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import TelemetryEvent, LLMModel
 from eval_engine.monitoring import ContinuousMonitoringEngine
+from eval_engine.safety.llama_guard import classify_runtime_safety
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 logger = logging.getLogger(__name__)
@@ -68,6 +69,15 @@ async def ingest_telemetry(
     prompt_hash = hashlib.sha256((payload.prompt or "").encode()).hexdigest()[:16] if payload.prompt else ""
     resp_hash = hashlib.sha256((payload.response or "").encode()).hexdigest()[:16] if payload.response else ""
 
+    safety_flag = payload.safety_flag
+    confidence = payload.confidence
+    if safety_flag is None:
+        auto_flag, auto_conf = await classify_runtime_safety(payload.prompt or "", payload.response or "")
+        if auto_flag:
+            safety_flag = auto_flag
+        if confidence is None and auto_conf is not None:
+            confidence = auto_conf
+
     event = TelemetryEvent(
         model_id=payload.model_id,
         event_type=payload.event_type,
@@ -78,8 +88,8 @@ async def ingest_telemetry(
         input_tokens=payload.input_tokens,
         output_tokens=payload.output_tokens,
         cost_usd=payload.cost_usd,
-        safety_flag=payload.safety_flag,
-        confidence=payload.confidence,
+        safety_flag=safety_flag,
+        confidence=confidence,
         deployment_context=payload.deployment_context,
         model_version=payload.model_version,
         tool_names=json.dumps(payload.tool_names),
@@ -108,6 +118,15 @@ async def ingest_telemetry_batch(
 
     records = []
     for e in payload.events:
+        safety_flag = e.safety_flag
+        confidence = e.confidence
+        if safety_flag is None:
+            auto_flag, auto_conf = await classify_runtime_safety(e.prompt or "", e.response or "")
+            if auto_flag:
+                safety_flag = auto_flag
+            if confidence is None and auto_conf is not None:
+                confidence = auto_conf
+
         records.append(TelemetryEvent(
             model_id=e.model_id,
             event_type=e.event_type,
@@ -118,8 +137,8 @@ async def ingest_telemetry_batch(
             input_tokens=e.input_tokens,
             output_tokens=e.output_tokens,
             cost_usd=e.cost_usd,
-            safety_flag=e.safety_flag,
-            confidence=e.confidence,
+            safety_flag=safety_flag,
+            confidence=confidence,
             deployment_context=e.deployment_context,
             model_version=e.model_version,
             tool_names=json.dumps(e.tool_names),
