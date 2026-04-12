@@ -17,6 +17,7 @@ from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
 from core.relations import get_eval_run_metrics
 from eval_engine.confidence_engine import compute_confidence
+from core.utils import normalize_adversarial_risk
 from eval_engine.comparison_engine import compare_campaigns as _compare_campaigns_engine
 from eval_engine.win_rate_engine import compute_win_rates
 
@@ -507,11 +508,25 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
         by_mutation = {}
         for e in breached:
             by_mutation[e.mutation_type] = by_mutation.get(e.mutation_type, 0) + 1
+        normalized_metrics = [
+            normalize_adversarial_risk(
+                severity=e.severity,
+                difficulty=e.difficulty,
+                breached=e.breached,
+                response=e.model_response,
+            ) for e in redbox_exploits
+        ]
         redbox_summary = {
             "total_tested": len(redbox_exploits),
             "total_breached": len(breached),
             "breach_rate": round(len(breached) / max(len(redbox_exploits), 1), 3),
             "avg_severity": round(sum(e.severity for e in breached) / max(len(breached), 1), 3),
+            "risk_metrics": {
+                "exploitability": round(sum(m["exploitability"] for m in normalized_metrics) / max(len(normalized_metrics), 1), 3),
+                "impact": round(sum(m["impact"] for m in normalized_metrics) / max(len(normalized_metrics), 1), 3),
+                "bypass_probability": round(sum(m["bypass_probability"] for m in normalized_metrics) / max(len(normalized_metrics), 1), 3),
+                "confidence": round(sum(m["confidence"] for m in normalized_metrics) / max(len(normalized_metrics), 1), 3),
+            },
             "breaches_by_mutation": by_mutation,
         }
 

@@ -16,7 +16,7 @@ from sqlmodel import Session, select, desc
 from core.database import get_session
 from core.config import get_settings
 from core.models import LLMModel, RedboxExploit
-from core.utils import safe_extract_text
+from core.utils import safe_extract_text, normalize_adversarial_risk
 
 router = APIRouter(prefix="/redbox", tags=["redbox"])
 settings = get_settings()
@@ -324,6 +324,12 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
 
         breached, failure_detected = _detect_breach(response, v.mutation)
         severity = _compute_severity(v.mutation, breached, response, v.expected_failure)
+        risk_metrics = normalize_adversarial_risk(
+            severity=severity,
+            difficulty=v.difficulty,
+            breached=breached,
+            response=response,
+        )
 
         exploit = RedboxExploit(
             model_id=payload.model_id,
@@ -346,6 +352,7 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
             "response": response[:500],
             "breached": breached,
             "severity": severity,
+            "risk_metrics": risk_metrics,
             "failure_detected": failure_detected,
             "latency_ms": latency_ms,
             "index": idx,
@@ -399,6 +406,12 @@ def list_exploits(
             "breached": e.breached,
             "severity": e.severity,
             "difficulty": e.difficulty,
+            "risk_metrics": normalize_adversarial_risk(
+                severity=e.severity,
+                difficulty=e.difficulty,
+                breached=e.breached,
+                response=e.model_response,
+            ),
             "failure_detected": e.failure_detected,
             "latency_ms": e.latency_ms,
             "created_at": e.created_at.isoformat(),
@@ -421,16 +434,37 @@ def attack_surface_heatmap(session: Session = Depends(get_session)):
 
     # Build matrix
     model_cache = {}
-    matrix: dict[str, dict[str, dict]] = {}  # model → mutation → {tested, breached, avg_severity}
+    matrix: dict[str, dict[str, dict]] = {}  # model → mutation → aggregated stats
 
     for e in exploits:
         if e.model_id not in model_cache:
             m = session.get(LLMModel, e.model_id)
             model_cache[e.model_id] = m.name if m else f"Model {e.model_id}"
         model_name = model_cache[e.model_id]
-        matrix.setdefault(model_name, {}).setdefault(e.mutation_type, {"tested": 0, "breached": 0, "severities": []})
+        matrix.setdefault(model_name, {}).setdefault(
+            e.mutation_type,
+            {
+                "tested": 0,
+                "breached": 0,
+                "severities": [],
+                "exploitability": [],
+                "impact": [],
+                "bypass_probability": [],
+                "confidence": [],
+            },
+        )
         cell = matrix[model_name][e.mutation_type]
         cell["tested"] += 1
+        metrics = normalize_adversarial_risk(
+            severity=e.severity,
+            difficulty=e.difficulty,
+            breached=e.breached,
+            response=e.model_response,
+        )
+        cell["exploitability"].append(metrics["exploitability"])
+        cell["impact"].append(metrics["impact"])
+        cell["bypass_probability"].append(metrics["bypass_probability"])
+        cell["confidence"].append(metrics["confidence"])
         if e.breached:
             cell["breached"] += 1
             cell["severities"].append(e.severity)
@@ -449,6 +483,12 @@ def attack_surface_heatmap(session: Session = Depends(get_session)):
                 "breached": data["breached"],
                 "breach_rate": round(breach_rate, 3),
                 "avg_severity": round(avg_severity, 3),
+                "avg_risk_metrics": {
+                    "exploitability": round(sum(data["exploitability"]) / max(len(data["exploitability"]), 1), 3),
+                    "impact": round(sum(data["impact"]) / max(len(data["impact"]), 1), 3),
+                    "bypass_probability": round(sum(data["bypass_probability"]) / max(len(data["bypass_probability"]), 1), 3),
+                    "confidence": round(sum(data["confidence"]) / max(len(data["confidence"]), 1), 3),
+                },
                 "risk_level": "red" if breach_rate > 0.5 else "yellow" if breach_rate > 0.2 else "green",
             })
 
@@ -486,6 +526,12 @@ async def replay_exploit(exploit_id: int, payload: ReplayRequest, session: Sessi
 
     breached, failure_detected = _detect_breach(response, original.mutation_type)
     severity = _compute_severity(original.mutation_type, breached, response, original.expected_failure)
+    risk_metrics = normalize_adversarial_risk(
+        severity=severity,
+        difficulty=original.difficulty,
+        breached=breached,
+        response=response,
+    )
 
     replay = RedboxExploit(
         model_id=payload.model_id,
@@ -511,6 +557,7 @@ async def replay_exploit(exploit_id: int, payload: ReplayRequest, session: Sessi
         "model_name": model.name,
         "breached": breached,
         "severity": severity,
+        "risk_metrics": risk_metrics,
         "transfer_success": breached,  # Did the exploit transfer?
         "response": response[:500],
     }
@@ -649,6 +696,12 @@ def redbox_live_feed(model_id: int, limit: int = 10, session: Session = Depends(
         "mutation_type": e.mutation_type,
         "breached": e.breached,
         "severity": e.severity,
+        "risk_metrics": normalize_adversarial_risk(
+            severity=e.severity,
+            difficulty=e.difficulty,
+            breached=e.breached,
+            response=e.model_response,
+        ),
         "prompt": (e.adversarial_prompt or "")[:300],
         "response": (e.model_response or "")[:300],
         "latency_ms": e.latency_ms,
