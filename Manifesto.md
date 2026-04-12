@@ -3,6 +3,72 @@
 > Advancing the science of AI evaluation and safety
 
 ---
+## Why Mercury Retrograde?
+
+In the sky, Mercury retrograde is an astronomical mirage.
+
+The planet is not truly moving backward: its apparent motion is an illusion created by the difference in orbital speeds between Mercury and Earth.
+
+And yet this simple phenomenon has evolved into an astrological myth — a symbol of chaos, confusion, and disruption, a celestial “bug” often blamed whenever things go wrong.
+
+AI model evaluation sometimes follows the same logic.
+
+We operate in a cognitive fog shaped by massive geopolitical and economic stakes.
+
+Metrics rise. Benchmarks celebrate progress. Research warns of catastrophic risks.
+
+It becomes increasingly difficult to know whether AI is truly causing us to “retrograde” — or derail entirely — or whether it is our perspective that lacks sufficient depth.
+
+But the mystery of Mercury has never been about magic.
+
+It has always been about measurement.
+
+The planet continues its orbit around the Sun in the same direction without interruption.
+
+Because its orbit is faster and closer than Earth’s, it periodically overtakes us.
+
+At that precise moment, our line of sight shifts against the background of the stars, creating the illusion of backward motion.
+
+In the same way, we reject this fog of interpretation when applied to AI.
+
+In a domain as sensitive and consequential as artificial intelligence, not understanding how systems behave is a vulnerability, not an inevitability.
+
+Mercury Retrograde is therefore an observatory for these phenomena.
+
+Neither doomer nor techno-messianic, it is a measurement space designed to distinguish real motion from optical illusion.
+
+To evaluate is to understand — and to remain clear-sighted where narratives collide.
+
+This platform is built to measure:
+
+- hallucinations and factual drift
+- reasoning regressions under pressure
+- failures to appropriately refuse dangerous requests
+- latent capabilities not revealed by default prompting
+- adversarial behaviours and jailbreak resistance
+- performance gaps between evaluation and real-world deployment
+
+Mercury Retrograde is the technical infrastructure developed by INESIA to evaluate LLMs across the full spectrum of risk — from standard academic benchmarks to frontier evaluations of systemic risk.
+
+---
+
+## Vision
+
+As AI systems become more capable, evaluation must go beyond benchmark scores.
+
+Evaluation should not merely celebrate strong performance.
+
+It must reveal:
+
+- where systems fail
+- when they regress
+- how they behave under ambiguity
+- what breaks under adversarial pressure
+
+Mercury Retrograde is built around this principle.
+
+Its objective is to make model evaluation **reproducible, transparent, scalable, and research-grade**.
+---
 
 ## Why This Platform Exists
 
