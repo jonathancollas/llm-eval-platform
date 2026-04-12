@@ -68,16 +68,16 @@ export default function JudgePage() {
     <div>
       <PageHeader title="LLM-as-Judge" description="Multi-judge evaluation with calibration and bias detection." />
 
-      <div className="px-8 pt-4 flex gap-1 border-b border-slate-100">
+      <div className="px-4 sm:px-8 pt-4 flex gap-1 overflow-x-auto border-b border-slate-100">
         {TABS.map(({ key, label }) => (
           <button key={key} onClick={() => setTab(key)}
-            className={`px-4 py-2.5 text-sm border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm border-b-2 transition-colors whitespace-nowrap ${
               tab === key ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-400 hover:text-slate-600"
             }`}>{label}</button>
         ))}
       </div>
 
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         {/* Campaign selector */}
         <div className="mb-6">
           <select value={selectedId ?? ""} onChange={e => setSelectedId(+e.target.value || null)}

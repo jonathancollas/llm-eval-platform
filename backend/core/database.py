@@ -65,12 +65,14 @@ else:
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
-    _migrate_add_columns()   # Safe ALTER TABLE for new columns
+    _run_alembic_migrations()
     _reset_stuck_campaigns()
     _update_has_dataset()
     _seed_builtin_benchmarks()
 
 
+def _run_alembic_migrations() -> None:
+    """Run Alembic schema migrations."""
 def _migrate_add_columns() -> None:
     """Add new columns to existing tables (idempotent). SQLite only — PostgreSQL uses create_all."""
     if not _is_sqlite:
@@ -93,6 +95,7 @@ def _migrate_add_columns() -> None:
         ("campaigns", "current_item_index", "INTEGER", "NULL"),
         ("campaigns", "current_item_total", "INTEGER", "NULL"),
         ("campaigns", "current_item_label", "TEXT", "NULL"),
+        ("campaigns", "worker_task_id", "TEXT", "NULL"),
         # Capability/Propensity dual scores (v0.5+)
         ("eval_runs", "capability_score", "REAL", "NULL"),
         ("eval_runs", "propensity_score", "REAL", "NULL"),
@@ -104,20 +107,23 @@ def _migrate_add_columns() -> None:
     if not db_path or db_path == ":memory:":
         return
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        for table, col, col_type, default in new_columns:
-            try:
-                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} DEFAULT {default}")
-                logger.info(f"Migration: added {table}.{col}")
-            except sqlite3.OperationalError as e:
-                # Only suppress "column already exists" errors; propagate real errors.
-                if "duplicate column" not in str(e).lower() and "already exists" not in str(e).lower():
-                    raise
-        conn.commit()
-        conn.close()
+        from alembic import command
+        from alembic.config import Config
     except Exception as e:
-        logger.warning(f"Migration warning (non-fatal): {e}")
+        logger.warning(f"Alembic unavailable, skipping migrations: {e}")
+        return
+
+    base_dir = Path(__file__).resolve().parent.parent
+    alembic_ini = base_dir / "alembic.ini"
+    script_location = base_dir / "alembic"
+    if not alembic_ini.exists() or not script_location.exists():
+        logger.info("Alembic config not found, skipping migrations.")
+        return
+
+    cfg = Config(str(alembic_ini))
+    cfg.set_main_option("script_location", str(script_location))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    command.upgrade(cfg, "head")
 
 
 def _reset_stuck_campaigns() -> None:
@@ -149,8 +155,8 @@ def _reset_stuck_campaigns() -> None:
             if stale:
                 c.status = JobStatus.FAILED
                 c.error_message = (
-                    "Campaign failed: process restarted or heartbeat lost. "
-                    f"Last heartbeat: {heartbeat or 'never'}. Please re-run."
+                    "heartbeat_timeout: campaign heartbeat stale. "
+                    f"Last heartbeat: {heartbeat or 'never'}."
                 )
                 session.add(c)
                 reset_count += 1

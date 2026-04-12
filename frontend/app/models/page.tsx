@@ -230,7 +230,7 @@ export default function ModelsPage(){
         </div>}
       />
 
-      <div className="px-8 pt-4 pb-2 space-y-3">
+      <div className="px-4 sm:px-8 pt-4 pb-2 space-y-3">
         <div className="relative max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
           <input value={filters.search} onChange={e=>setFilter("search",e.target.value)} placeholder="Search by name or model ID…" className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900"/>
@@ -246,10 +246,10 @@ export default function ModelsPage(){
       </div>
 
       {showForm&&(
-        <div className="mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-6">
+        <div className="mx-4 sm:mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-6">
           <h3 className="font-medium text-slate-900 mb-4">Nouveau model</h3>
           {dupWarning&&<div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">⚠️ {dupWarning}</div>}
-          <form onSubmit={handleCreate} className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleCreate} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[{label:"Nom *",key:"name",type:"text",ph:"ex. GPT-4o Mini"},{label:"Model ID *",key:"model_id",type:"text",ph:"ex. gpt-4o-mini"},{label:"Endpoint",key:"endpoint",type:"text",ph:"https://openrouter.ai/api/v1"},{label:"API Key",key:"api_key",type:"password",ph:"sk-…"}].map(({label,key,type,ph})=>(
               <div key={key}><label className="text-xs font-medium text-slate-600 mb-1 block">{label}</label><input type={type} required={label.includes("*")} value={(form as any)[key]} placeholder={ph} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"/></div>
             ))}
@@ -263,7 +263,7 @@ export default function ModelsPage(){
         </div>
       )}
 
-      <div className="px-8 pt-4 pb-8">
+      <div className="px-4 sm:px-8 pt-4 pb-8">
         {loading?(
           <div className="flex justify-center py-20"><Spinner size={24}/></div>
         ):filtered.length===0?(

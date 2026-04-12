@@ -13,6 +13,7 @@ from pathlib import Path
 from core.database import get_session
 from core.models import Benchmark, BenchmarkType
 from core.config import get_settings
+from core.relations import get_benchmark_tags, replace_benchmark_tags
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -48,7 +49,7 @@ class BenchmarkRead(BaseModel):
     created_at: datetime
 
 
-def _to_read(b: Benchmark) -> BenchmarkRead:
+def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
     has_dataset = False
     if b.dataset_path:
         full = Path(settings.bench_library_path) / b.dataset_path
@@ -58,7 +59,7 @@ def _to_read(b: Benchmark) -> BenchmarkRead:
         name=b.name,
         type=b.type,
         description=b.description,
-        tags=json.loads(b.tags),
+        tags=get_benchmark_tags(session, b),
         metric=b.metric,
         num_samples=b.num_samples,
         config=json.loads(b.config_json),
@@ -80,7 +81,7 @@ def list_benchmarks(
     query = select(Benchmark)
     if type:
         query = query.where(Benchmark.type == type)
-    return [_to_read(b) for b in session.exec(query).all()]
+    return [_to_read(session, b) for b in session.exec(query).all()]
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkRead)
@@ -88,7 +89,7 @@ def get_benchmark(benchmark_id: int, session: Session = Depends(get_session)):
     bench = session.get(Benchmark, benchmark_id)
     if not bench:
         raise HTTPException(status_code=404, detail="Benchmark not found.")
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 @router.post("/", response_model=BenchmarkRead, status_code=status.HTTP_201_CREATED)
@@ -108,7 +109,9 @@ def create_benchmark(payload: BenchmarkCreate, session: Session = Depends(get_se
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    replace_benchmark_tags(session, bench.id, payload.tags)
+    session.commit()
+    return _to_read(session, bench)
 
 
 @router.post("/{benchmark_id}/upload-dataset", response_model=BenchmarkRead)
@@ -125,20 +128,22 @@ async def upload_dataset(
         raise HTTPException(status_code=400, detail="Cannot override built-in benchmark datasets.")
 
     # ── Security hardening (#S2) ──────────────────────────────────────────────
-    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB hard limit
+    max_upload_bytes = settings.benchmark_upload_max_bytes
 
     # MIME type whitelist — only JSON and CSV
-    allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
+    allowed_content_types = {"application/json", "text/csv"}
     ct = file.content_type or ""
     if ct and ct.split(";")[0].strip() not in allowed_content_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
 
     raw_name = file.filename or "dataset.json"
     # Filename sanitization — strip all directory components (path traversal prevention)
-    safe_name = Path(raw_name).name
-    if safe_name != raw_name or ".." in raw_name:
-        raise HTTPException(status_code=400, detail="Invalid file path.")
-    safe_name = safe_name.strip()
+    original_name = file.filename or "dataset.json"
+    safe_name = Path(original_name).name
+    if original_name != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    # Remove any remaining path separators and dangerous characters
+    safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:
         safe_name = "dataset.json"
 
@@ -146,7 +151,7 @@ async def upload_dataset(
     if not (safe_name.endswith(".json") or safe_name.endswith(".csv")):
         raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
 
-    # Bounded read — never read more than MAX_UPLOAD_BYTES
+    # Bounded read — never read more than max_upload_bytes
     chunks = []
     total = 0
     while True:
@@ -154,10 +159,10 @@ async def upload_dataset(
         if not chunk:
             break
         total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
+        if total > max_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is 50MB.",
+                detail=f"File too large. Maximum size is {max_upload_bytes} bytes.",
             )
         chunks.append(chunk)
     content = b"".join(chunks)
@@ -181,7 +186,9 @@ async def upload_dataset(
             data = json.loads(content)
         except json.JSONDecodeError as e:
             raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
-        items = data if isinstance(data, list) else data.get("items", [])
+        if not isinstance(data, dict) or "items" not in data or not isinstance(data["items"], list):
+            raise HTTPException(status_code=422, detail="JSON dataset must be an object with an 'items' list.")
+        items = data["items"]
 
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
@@ -203,7 +210,7 @@ async def upload_dataset(
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 class BenchmarkUpdate(BaseModel):
@@ -221,6 +228,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
         raise HTTPException(status_code=404, detail="Benchmark not found.")
     if payload.tags is not None:
         bench.tags = json.dumps(payload.tags)
+        replace_benchmark_tags(session, bench.id, payload.tags)
     if payload.source is not None:
         bench.source = payload.source
     if payload.description is not None:
@@ -230,7 +238,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -640,13 +648,14 @@ def fork_benchmark(
         "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
     }
 
-    parent_tags = json.loads(parent.tags) if parent.tags else []
+    parent_tags = get_benchmark_tags(session, parent)
+    fork_tags = [*parent_tags, "fork", f"fork-of-{parent.id}"]
 
     fork = Benchmark(
         name=fork_name,
         type=parent.type,
         description=f"Fork of {parent.name}. {parent.description}",
-        tags=json.dumps([*parent_tags, "fork", f"fork-of-{parent.id}"]),
+        tags=json.dumps(fork_tags),
         config_json=json.dumps(fork_config),
         dataset_path=fork_dataset_path,
         metric=parent.metric,
@@ -661,6 +670,8 @@ def fork_benchmark(
     session.add(fork)
     session.commit()
     session.refresh(fork)
+    replace_benchmark_tags(session, fork.id, fork_tags)
+    session.commit()
 
     return {
         "id": fork.id,

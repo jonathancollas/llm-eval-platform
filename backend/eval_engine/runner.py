@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 from core.database import engine
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
 from core.config import get_settings
+from core.relations import get_campaign_benchmark_ids, get_campaign_model_ids, replace_eval_run_metrics
 from eval_engine.registry import get_runner
 from core.utils import safe_extract_text
 from eval_engine.event_pipeline import get_bus, EventType
@@ -56,8 +57,8 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             return
 
         # Status already set to RUNNING by the /run endpoint
-        model_ids: list[int] = json.loads(campaign.model_ids or "[]")
-        benchmark_ids: list[int] = json.loads(campaign.benchmark_ids or "[]")
+        model_ids = get_campaign_model_ids(session, campaign)
+        benchmark_ids = get_campaign_benchmark_ids(session, campaign)
         logger.info(f"Campaign {campaign_id} executing: '{campaign.name}' "
                     f"({len(model_ids)} models × {len(benchmark_ids)} benchmarks = {len(model_ids)*len(benchmark_ids)} runs)")
         total_runs = len(model_ids) * len(benchmark_ids)
@@ -181,6 +182,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                         eval_run.capability_score = summary.score
 
                     eval_run.metrics_json = json.dumps(summary.metrics)
+                    replace_eval_run_metrics(session, eval_run.id, summary.metrics)
                     eval_run.total_cost_usd = summary.total_cost_usd
                     eval_run.total_latency_ms = summary.total_latency_ms
                     eval_run.num_items = summary.num_items
