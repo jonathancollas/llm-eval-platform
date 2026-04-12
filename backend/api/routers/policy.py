@@ -19,6 +19,8 @@ from core.utils import safe_json_load
 router = APIRouter(prefix="/policy", tags=["policy"])
 logger = logging.getLogger(__name__)
 NEMO_GUARDRAILS_AVAILABLE = find_spec("nemoguardrails") is not None
+PATTERN_MATCH_THRESHOLD = 0.3
+MAX_TOOL_NAME_LENGTH = 120
 
 
 # ── Policy Definitions ─────────────────────────────────────────────────────────
@@ -160,7 +162,8 @@ JAILBREAK_PATTERNS = [
     r"bypass (safety|guardrails|policy|restrictions)",
     r"\bjailbreak\b",
     r"\bprompt injection\b",
-    r"\bdo anything now\b|\bdan\b",
+    r"\bdo anything now\b",
+    r"\bdan mode\b",
     r"reveal (the )?(system|hidden) prompt",
     r"developer mode",
 ]
@@ -174,7 +177,7 @@ def _check_patterns(response: str, pattern_key: str) -> float:
 
     resp_lower = response.lower()
     matches = sum(1 for p in patterns if re.search(p, resp_lower))
-    return min(1.0, matches / max(len(patterns) * 0.3, 1))  # Normalize
+    return min(1.0, matches / max(len(patterns) * PATTERN_MATCH_THRESHOLD, 1))
 
 
 def _detect_jailbreak(messages: list[dict]) -> tuple[bool, list[str]]:
@@ -225,12 +228,12 @@ def _check_conversation_constraints(
 
 class RuntimeMessage(BaseModel):
     role: str = Field(..., min_length=1, max_length=30)
-    content: str = Field(..., min_length=1, max_length=20000)
+    content: str = Field(..., min_length=0, max_length=20000)
 
 
 class RuntimePolicyRequest(BaseModel):
-    messages: list[RuntimeMessage] = Field(..., min_length=1, max_length=300)
-    proposed_tool: Optional[str] = Field(default=None, max_length=120)
+    messages: list[RuntimeMessage] = Field(..., min_length=1, max_length=1000)
+    proposed_tool: Optional[str] = Field(default=None, max_length=MAX_TOOL_NAME_LENGTH)
     allowed_tools: list[str] = Field(default_factory=list, max_length=200)
     blocked_tools: list[str] = Field(default_factory=list, max_length=200)
     max_user_turns: int = Field(default=30, ge=1, le=500)
@@ -426,7 +429,8 @@ def enforce_runtime_policy(payload: RuntimePolicyRequest):
             "jailbreak": {
                 "detected": jailbreak_detected,
                 "signals": jailbreak_signals,
-                "engine": "nemo_guardrails" if NEMO_GUARDRAILS_AVAILABLE else "heuristic_fallback",
+                "engine": "heuristic",
+                "nemo_guardrails_available": NEMO_GUARDRAILS_AVAILABLE,
             },
             "tool_control": {
                 "allowed": tool_allowed,

@@ -2,6 +2,7 @@ import importlib.util
 import os
 import sys
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -15,14 +16,15 @@ assert _spec is not None and _spec.loader is not None
 _spec.loader.exec_module(policy)
 
 
-def _client() -> TestClient:
+@pytest.fixture(scope="module")
+def client() -> TestClient:
     app = FastAPI()
     app.include_router(policy.router)
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def test_runtime_enforce_allows_safe_request():
-    client = _client()
+def test_runtime_enforce_allows_safe_request(client):
     resp = client.post(
         "/policy/runtime/enforce",
         json={
@@ -41,8 +43,7 @@ def test_runtime_enforce_allows_safe_request():
     assert body["violations"] == []
 
 
-def test_runtime_enforce_blocks_jailbreak_prompt():
-    client = _client()
+def test_runtime_enforce_blocks_jailbreak_prompt(client):
     resp = client.post(
         "/policy/runtime/enforce",
         json={
@@ -57,8 +58,7 @@ def test_runtime_enforce_blocks_jailbreak_prompt():
     assert "jailbreak_detected" in body["violations"]
 
 
-def test_runtime_enforce_blocks_non_allowlisted_tool():
-    client = _client()
+def test_runtime_enforce_blocks_non_allowlisted_tool(client):
     resp = client.post(
         "/policy/runtime/enforce",
         json={
@@ -74,8 +74,23 @@ def test_runtime_enforce_blocks_non_allowlisted_tool():
     assert "tool_policy_violation" in body["violations"]
 
 
-def test_runtime_enforce_blocks_conversation_constraints():
-    client = _client()
+def test_runtime_enforce_blocks_explicitly_blocked_tool(client):
+    resp = client.post(
+        "/policy/runtime/enforce",
+        json={
+            "messages": [{"role": "user", "content": "Need to run a command."}],
+            "proposed_tool": "shell_exec",
+            "allowed_tools": ["shell_exec"],
+            "blocked_tools": ["shell_exec"],
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["allowed"] is False
+    assert "tool_policy_violation" in body["violations"]
+
+
+def test_runtime_enforce_blocks_conversation_constraints(client):
     resp = client.post(
         "/policy/runtime/enforce",
         json={
@@ -92,3 +107,16 @@ def test_runtime_enforce_blocks_conversation_constraints():
     body = resp.json()
     assert body["allowed"] is False
     assert "conversation_constraint_violation" in body["violations"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"messages": [{"role": "", "content": "hello"}]},
+        {"messages": [{"role": "r" * 31, "content": "hello"}]},
+        {"messages": [{"role": "user", "content": "x" * 20001}]},
+    ],
+)
+def test_runtime_enforce_validates_message_boundaries(client, payload):
+    resp = client.post("/policy/runtime/enforce", json=payload)
+    assert resp.status_code == 422
