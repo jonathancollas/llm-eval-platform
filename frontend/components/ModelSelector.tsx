@@ -19,10 +19,10 @@ interface ModelSelectorBaseProps {
 type ModelSelectorProps<T extends ModelIdType = "db_id"> = ModelSelectorBaseProps & {
   selected: SelectedFor<T>;
   onChange: (selected: SelectedFor<T>) => void;
-  idType?: T;
+  idType: T;
 };
 
-export function ModelSelector<T extends ModelIdType = "db_id">({ mode, selected, onChange, idType = "db_id" as T, label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps<T>) {
+export function ModelSelector<T extends ModelIdType = "db_id">({ mode, selected, onChange, idType, label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps<T>) {
   const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "free" | "local" | "open">("all");
