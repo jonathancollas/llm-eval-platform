@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     report_max_tokens: int = 4096
     report_timeout_seconds: float = 120.0   # Timeout for report generation (was hardcoded 120)
 
+    # ── Runner batching ───────────────────────────────────────────────────────────
+    runner_batch_size: int = 10             # Flush EvalResult rows to DB every N items
+    runner_progress_heartbeat: int = 5      # Update campaign progress counter every N items
+
     # ── Rate limiting ────────────────────────────────────────────────────────────
     catalog_cache_ttl: int = 300
     tenant_key_rate_limit: int = 10         # Max tenant key lookups per minute per IP

@@ -327,6 +327,11 @@ async def upload_dataset(
     session.add(bench)
     session.commit()
     session.refresh(bench)
+
+    # Invalidate the dataset LRU cache so the next benchmark run loads fresh data
+    from eval_engine.base import BaseBenchmarkRunner
+    BaseBenchmarkRunner.invalidate_dataset_cache(str(dest))
+
     return _to_read(session, bench)
 
 

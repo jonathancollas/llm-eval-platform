@@ -4,6 +4,7 @@ Every benchmark is a plugin that implements this interface.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Optional
 import json
 import logging
@@ -39,6 +40,23 @@ class RunSummary:
     item_results: list[ItemResult]
 
 
+@lru_cache(maxsize=64)
+def _load_dataset_cached(full_path: str) -> list[dict]:
+    """Load and cache a dataset JSON file.  Cached by absolute path string.
+
+    The cache is process-level and lives for the lifetime of the worker.
+    It is invalidated automatically when the process restarts (e.g. after a
+    dataset upload followed by a gunicorn worker restart or Docker redeploy).
+    """
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else data.get("items", [])
+    except Exception as e:
+        logger.error(f"Failed to load dataset {full_path}: {e}")
+        return []
+
+
 class BaseBenchmarkRunner(ABC):
 
     def __init__(self, benchmark: Benchmark, bench_library_path: str):
@@ -47,7 +65,7 @@ class BaseBenchmarkRunner(ABC):
         self.config: dict = json.loads(benchmark.config_json or "{}")
 
     def load_dataset(self) -> list[dict]:
-        """Load items from dataset_path JSON. Returns [] if file missing."""
+        """Load items from dataset_path JSON. Cached per file path."""
         if not self.benchmark.dataset_path:
             return []
         full_path = self.bench_library_path / self.benchmark.dataset_path
@@ -58,19 +76,26 @@ class BaseBenchmarkRunner(ABC):
                 f"Upload a dataset via the Benchmarks page."
             )
             return []
-        try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data if isinstance(data, list) else data.get("items", [])
-        except Exception as e:
-            logger.error(f"Failed to load dataset {full_path}: {e}")
-            return []
+        return list(_load_dataset_cached(str(full_path)))
 
     def sample_items(self, items: list[dict], max_samples: int, seed: int) -> list[dict]:
         if max_samples and len(items) > max_samples:
             rng = random.Random(seed)
             items = rng.sample(items, max_samples)
         return items
+
+    @staticmethod
+    def invalidate_dataset_cache(full_path: str) -> None:
+        """Invalidate the LRU cache after uploading a new dataset file.
+
+        NOTE: `functools.lru_cache` does not support per-key invalidation, so
+        this clears the entire dataset cache (all benchmark files).  In practice
+        this is acceptable because uploads are rare, the cache is warm again after
+        the first benchmark run per file, and the cache is bounded to 64 entries.
+
+        Call this immediately after writing a new dataset to disk.
+        """
+        _load_dataset_cached.cache_clear()
 
     @abstractmethod
     async def build_prompt(self, item: dict, few_shot_examples: list[dict]) -> str: ...

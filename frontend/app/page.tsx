@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { modelsApi, benchmarksApi, campaignsApi } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { useApi } from "@/lib/useApi";
 import Link from "next/link";
 import { Cpu, Library, Rocket, BarChart3, Trophy, ArrowRight,
          Dna, Gavel, Lock, Radio, FlaskConical } from "lucide-react";
@@ -43,31 +43,10 @@ function AnimatedCount({ value }: { value: number }) {
 }
 
 export default function OverviewPage() {
-  const [stats, setStats] = useState<Stats>({ models: 0, benchmarks: 0, inesia_benchmarks: 0, campaigns: 0, completed_runs: 0 });
-  const [loading, setLoading] = useState(true);
+  // Single aggregated endpoint — replaces three separate list() calls
+  const { data: stats, isLoading } = useApi<Stats>("/results/stats/summary", { refreshInterval: 30_000 });
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const [models, benchmarks, campaigns] = await Promise.all([
-        modelsApi.list(), benchmarksApi.list(), campaignsApi.list(),
-      ]);
-      setStats({
-        models: models.length,
-        benchmarks: benchmarks.length,
-        inesia_benchmarks: benchmarks.filter((b: any) => b.source === "inesia").length,
-        campaigns: campaigns.length,
-        completed_runs: campaigns.filter((c: any) => c.status === "completed").length,
-      });
-    } catch {}
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-    // 30s refresh — stats don't need to be real-time
-    const interval = setInterval(fetchStats, 30_000);
-    return () => clearInterval(interval);
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  const s: Stats = stats ?? { models: 0, benchmarks: 0, inesia_benchmarks: 0, campaigns: 0, completed_runs: 0 };
 
   return (
     <div className="p-4 sm:p-8 space-y-6 max-w-5xl">
@@ -75,15 +54,15 @@ export default function OverviewPage() {
       {/* Stat counters */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
-          { label: "Models",            value: stats.models,            color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-100" },
-          { label: "Benchmarks",        value: stats.benchmarks,        color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
-          { label: "INESIA Benchmarks", value: stats.inesia_benchmarks, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-          { label: "Campaigns",         value: stats.campaigns,         color: "text-slate-700",  bg: "bg-slate-50",  border: "border-slate-100" },
-          { label: "Completed Evals",   value: stats.completed_runs,    color: "text-green-600",  bg: "bg-green-50",  border: "border-green-100" },
+          { label: "Models",            value: s.models,            color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-100" },
+          { label: "Benchmarks",        value: s.benchmarks,        color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
+          { label: "INESIA Benchmarks", value: s.inesia_benchmarks, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
+          { label: "Campaigns",         value: s.campaigns,         color: "text-slate-700",  bg: "bg-slate-50",  border: "border-slate-100" },
+          { label: "Completed Evals",   value: s.completed_runs,    color: "text-green-600",  bg: "bg-green-50",  border: "border-green-100" },
         ].map(({ label, value, color, bg, border }) => (
           <div key={label} className={`${bg} border ${border} rounded-xl p-4`}>
             <div className={`text-2xl font-bold ${color} mb-0.5`}>
-              {loading ? "—" : <AnimatedCount value={value} />}
+              {isLoading ? "—" : <AnimatedCount value={value} />}
             </div>
             <div className="text-[11px] text-slate-500 leading-tight">{label}</div>
           </div>
@@ -113,7 +92,7 @@ export default function OverviewPage() {
         <div className="font-semibold text-slate-700 mb-1.5 text-sm">Evaluation Engine</div>
         <div className="flex gap-2"><span className="text-slate-300">↺</span><span>Public benchmarks → <span className="font-mono text-slate-600">lm-evaluation-harness</span> (EleutherAI)</span></div>
         <div className="flex gap-2"><span className="text-slate-300">🛡</span><span>INESIA frontier benchmarks → custom safety scoring runners</span></div>
-        <div className="flex gap-2"><span className="text-slate-300">☿</span><span>Models → LiteLLM + OpenRouter + Ollama ({stats.models} registered)</span></div>
+        <div className="flex gap-2"><span className="text-slate-300">☿</span><span>Models → LiteLLM + OpenRouter + Ollama ({s.models} registered)</span></div>
         <div className="flex gap-2"><span className="text-slate-300">📚</span><span><Link href="/methodology" className="text-blue-500 hover:underline">Methodology Center</Link> · <Link href="/about" className="text-blue-500 hover:underline">About</Link></span></div>
       </div>
     </div>

@@ -6,15 +6,17 @@ Engine-driven refactor (#88): logic in eval_engine/, routes orchestrate only.
 import json
 import csv
 import io
+import threading
+import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session, select, desc
+from sqlmodel import Session, select, desc, func
 from pydantic import BaseModel
 from typing import Optional
 
 from core.utils import safe_json_load
 from core.database import get_session
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
+from core.models import Campaign, EvalRun, EvalResult, EvalRunMetric, LLMModel, Benchmark, JobStatus
 from core.relations import get_eval_run_metrics
 from eval_engine.confidence_engine import compute_confidence
 from core.utils import normalize_adversarial_risk
@@ -23,7 +25,35 @@ from eval_engine.win_rate_engine import compute_win_rates
 
 router = APIRouter(prefix="/results", tags=["results"])
 
+# ── In-process TTL cache for completed-campaign dashboard data ────────────────
+# Completed campaigns are immutable — their dashboard never changes.
+# Cache for 30s for running campaigns (they change), indefinitely for completed.
+_dashboard_cache: dict[int, tuple[float, object]] = {}
+_dashboard_cache_lock = threading.Lock()
+_DASHBOARD_TTL_RUNNING = 5.0    # seconds — running campaigns change fast
+_DASHBOARD_TTL_COMPLETED = 30.0  # seconds — completed campaigns are stable
+
 _CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _batch_get_run_metrics(session: Session, run_ids: list[int]) -> dict[int, dict]:
+    """Fetch EvalRunMetric rows for all given run IDs in a single query.
+
+    Returns a mapping of run_id → metrics dict.  Falls back to the JSON column
+    only for runs that have no rows in eval_run_metrics (pre-migration data).
+    """
+    if not run_ids:
+        return {}
+
+    rows = session.exec(
+        select(EvalRunMetric).where(EvalRunMetric.run_id.in_(run_ids))
+    ).all()
+
+    # Group by run_id
+    by_run: dict[int, dict] = {rid: {} for rid in run_ids}
+    for row in rows:
+        by_run.setdefault(row.run_id, {})[row.metric_key] = safe_json_load(row.metric_value_json, None)
+    return by_run
 
 
 def _csv_escape(value: str) -> str:
@@ -70,6 +100,17 @@ class DashboardData(BaseModel):
 
 @router.get("/campaign/{campaign_id}/dashboard", response_model=DashboardData)
 def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
+    # Check cache first
+    now = time.monotonic()
+    with _dashboard_cache_lock:
+        cached = _dashboard_cache.get(campaign_id)
+        if cached is not None:
+            ts, data = cached
+            # Use TTL based on whether the campaign was completed when cached
+            ttl = _DASHBOARD_TTL_COMPLETED if isinstance(data, DashboardData) and data.status == JobStatus.COMPLETED else _DASHBOARD_TTL_RUNNING
+            if now - ts < ttl:
+                return data
+
     campaign = session.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
@@ -122,6 +163,8 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
 
     # ── Alerts (safety thresholds) ──
     alerts: list[str] = []
+    completed_run_ids = [r.id for r in completed]
+    batch_metrics = _batch_get_run_metrics(session, completed_run_ids)
     for run in completed:
         bench = benches.get(run.benchmark_id)
         if bench and bench.risk_threshold and run.score is not None:
@@ -132,13 +175,13 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
                     f"— below risk threshold {bench.risk_threshold:.2%}"
                 )
         # Check safety-specific alerts
-        metrics = get_eval_run_metrics(session, run)
+        metrics = batch_metrics.get(run.id) or safe_json_load(run.metrics_json, {})
         if metrics:
             for alert in metrics.get("alerts", []):
                 model_name = models.get(run.model_id, LLMModel(name="?")).name
                 alerts.append(f"⚠️ [{model_name}] {alert}")
 
-    return DashboardData(
+    result = DashboardData(
         campaign_id=campaign_id,
         campaign_name=campaign.name,
         status=campaign.status,
@@ -149,9 +192,45 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
         avg_latency_ms=round(avg_latency, 1),
         alerts=alerts,
     )
+    with _dashboard_cache_lock:
+        _dashboard_cache[campaign_id] = (now, result)
+    return result
 
 
 # _compute_win_rates moved to eval_engine/win_rate_engine.py (#88)
+
+
+@router.get("/stats/summary")
+def get_stats_summary(session: Session = Depends(get_session)):
+    """Aggregate platform statistics in a single query — replaces three separate list() calls.
+
+    Returns the five counters shown on the home page overview:
+      models, benchmarks, inesia_benchmarks, campaigns, completed_runs
+    """
+    from core.models import LLMModel as _LLMModel, Benchmark as _Benchmark
+
+    # Single pass for model count
+    model_count = session.exec(select(func.count()).select_from(_LLMModel)).one()
+
+    # Single pass for benchmark counts
+    bench_count = session.exec(select(func.count()).select_from(_Benchmark)).one()
+    inesia_bench_count = session.exec(
+        select(func.count()).select_from(_Benchmark).where(_Benchmark.source == "inesia")
+    ).one()
+
+    # Single pass for campaign totals
+    campaign_count = session.exec(select(func.count()).select_from(Campaign)).one()
+    completed_count = session.exec(
+        select(func.count()).select_from(Campaign).where(Campaign.status == JobStatus.COMPLETED)
+    ).one()
+
+    return {
+        "models": model_count,
+        "benchmarks": bench_count,
+        "inesia_benchmarks": inesia_bench_count,
+        "campaigns": campaign_count,
+        "completed_runs": completed_count,
+    }
 
 
 @router.get("/run/{run_id}/items")

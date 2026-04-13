@@ -41,6 +41,8 @@ if _is_sqlite:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA cache_size=-64000")   # 64 MB page cache
+        cursor.execute("PRAGMA temp_store=MEMORY")   # keep temp tables in RAM
         cursor.close()
 elif _is_postgres:
     # PostgreSQL — connection pooling for production
