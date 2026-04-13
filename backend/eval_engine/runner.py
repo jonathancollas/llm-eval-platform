@@ -416,35 +416,57 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
     max_samples = campaign.max_samples or benchmark.num_samples or settings.default_max_samples
 
     # Live item tracking + streaming callback
-    # Each item is persisted to DB immediately so LiveFeed can show it
+    # Items are accumulated and flushed to DB every runner_batch_size items to
+    # reduce write amplification.  Campaign progress (current_item_index) is
+    # updated every runner_progress_heartbeat items so the LiveFeed stays fresh
+    # without committing on every single item.
+    _item_batch: list[EvalResult] = []
+    _items_since_heartbeat: int = 0
+
     def _progress(current: int, total: int, item_result: _ItemResult = None):
+        nonlocal _items_since_heartbeat
         try:
-            with Session(engine) as s:
-                # Update campaign live tracking
-                c = s.get(Campaign, campaign.id)
-                if c:
-                    c.current_item_index = current
-                    c.current_item_total = total
-                    c.current_item_label = f"{model.name} → {benchmark.name}"
-                    s.add(c)
+            new_result: EvalResult | None = None
+            if item_result is not None:
+                new_result = EvalResult(
+                    run_id=eval_run_id,
+                    item_index=item_result.item_index,
+                    prompt=item_result.prompt[:2000],
+                    response=item_result.response[:2000],
+                    expected=item_result.expected,
+                    score=item_result.score,
+                    latency_ms=item_result.latency_ms,
+                    input_tokens=item_result.input_tokens,
+                    output_tokens=item_result.output_tokens,
+                    cost_usd=item_result.cost_usd,
+                    metadata_json=json.dumps(item_result.metadata),
+                )
+                _item_batch.append(new_result)
+                _items_since_heartbeat += 1
 
-                # Stream item to DB immediately (powers the LiveFeed)
-                if item_result is not None:
-                    s.add(EvalResult(
-                        run_id=eval_run_id,
-                        item_index=item_result.item_index,
-                        prompt=item_result.prompt[:2000],
-                        response=item_result.response[:2000],
-                        expected=item_result.expected,
-                        score=item_result.score,
-                        latency_ms=item_result.latency_ms,
-                        input_tokens=item_result.input_tokens,
-                        output_tokens=item_result.output_tokens,
-                        cost_usd=item_result.cost_usd,
-                        metadata_json=json.dumps(item_result.metadata),
-                    ))
+            # Decide whether to flush items and/or update heartbeat
+            batch_full = len(_item_batch) >= settings.runner_batch_size
+            heartbeat_due = _items_since_heartbeat >= settings.runner_progress_heartbeat
+            last_item = (item_result is None)  # explicit flush when item_result is None
 
-                s.commit()
+            if batch_full or heartbeat_due or last_item:
+                with Session(engine) as s:
+                    # Flush accumulated EvalResult rows
+                    if _item_batch:
+                        s.add_all(_item_batch)
+                        _item_batch.clear()
+
+                    # Update campaign live tracking
+                    if heartbeat_due or last_item:
+                        c = s.get(Campaign, campaign.id)
+                        if c:
+                            c.current_item_index = current
+                            c.current_item_total = total
+                            c.current_item_label = f"{model.name} → {benchmark.name}"
+                            s.add(c)
+                        _items_since_heartbeat = 0
+
+                    s.commit()
 
             # Emit ITEM_COMPLETED event (non-blocking, best-effort)
             if item_result is not None:
@@ -486,6 +508,16 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
         raise RuntimeError(
             f"Runner failed — benchmark='{benchmark.name}' model='{model.name}': {type(e).__name__}: {str(e)[:200]}"
         ) from e
+
+    # Flush any remaining buffered items that weren't yet committed (partial batch)
+    if _item_batch:
+        try:
+            with Session(engine) as s:
+                s.add_all(_item_batch)
+                s.commit()
+            _item_batch.clear()
+        except Exception as ex:
+            logger.debug(f"Final batch flush failed (non-blocking): {ex}")
 
     return summary, summary.item_results
 

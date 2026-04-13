@@ -160,9 +160,15 @@ def get_campaign_genome(campaign_id: int, session: Session = Depends(get_session
     if not profiles:
         return {"models": {}, "ontology": ONTOLOGY, "computed": False}
 
+    # Bulk-fetch all referenced models in one query instead of N+1 session.get calls
+    model_ids = list({p.model_id for p in profiles})
+    models_map = {m.id: m for m in session.exec(
+        select(LLMModel).where(LLMModel.id.in_(model_ids))
+    ).all()}
+
     by_model: dict[int, dict] = {}
     for p in profiles:
-        model = session.get(LLMModel, p.model_id)
+        model = models_map.get(p.model_id)
         name = model.name if model else f"Model {p.model_id}"
         by_model.setdefault(name, []).append(safe_json_load(p.genome_json, {}))
 
@@ -201,9 +207,18 @@ def get_model_genome(model_id: int, session: Session = Depends(get_session)):
 def list_model_fingerprints(session: Session = Depends(get_session)):
     """List all model fingerprints for comparison."""
     fps = session.exec(select(ModelFingerprint)).all()
+    if not fps:
+        return {"fingerprints": [], "ontology": ONTOLOGY}
+
+    # Bulk-fetch all models referenced by fingerprints
+    model_ids = [fp.model_id for fp in fps]
+    models_map = {m.id: m for m in session.exec(
+        select(LLMModel).where(LLMModel.id.in_(model_ids))
+    ).all()}
+
     result = []
     for fp in fps:
-        model = session.get(LLMModel, fp.model_id)
+        model = models_map.get(fp.model_id)
         if not model:
             continue
         result.append({
@@ -247,19 +262,47 @@ def get_safety_heatmap(session: Session = Depends(get_session)):
     if not profiles:
         return {"heatmap": [], "models": [], "capabilities": [], "computed": False}
 
+    # Bulk-fetch all referenced EvalRuns, LLMModels, and Benchmarks in three queries
+    run_ids = list({p.run_id for p in profiles})
+    model_ids = list({p.model_id for p in profiles})
+    bench_ids = list({p.benchmark_id for p in profiles})
+
+    runs_map = {r.id: r for r in session.exec(
+        select(EvalRun).where(EvalRun.id.in_(run_ids))
+    ).all()}
+    models_map = {m.id: m for m in session.exec(
+        select(LLMModel).where(LLMModel.id.in_(model_ids))
+    ).all()}
+    benches_map = {b.id: b for b in session.exec(
+        select(Benchmark).where(Benchmark.id.in_(bench_ids))
+    ).all()}
+
+    # Bulk-fetch tags for all benchmarks (one query using IN-clause)
+    from core.models import BenchmarkTag as _BenchmarkTag
+    bench_tags_rows = session.exec(
+        select(_BenchmarkTag).where(_BenchmarkTag.benchmark_id.in_(bench_ids))
+    ).all()
+    bench_tags_map: dict[int, list[str]] = {bid: [] for bid in bench_ids}
+    for bt in bench_tags_rows:
+        bench_tags_map.setdefault(bt.benchmark_id, []).append(bt.tag)
+    # Fall back to JSON tags for benchmarks with no tag rows
+    for bid, b in benches_map.items():
+        if not bench_tags_map.get(bid):
+            from core.utils import safe_json_load as _sjl
+            bench_tags_map[bid] = [str(t) for t in _sjl(b.tags, []) if isinstance(t, str)]
+
     # Build per-capability × model risk matrix
     matrix: dict[str, dict[str, dict]] = {}  # capability → model → {safety_risk, hallucination, ...}
 
     for p in profiles:
         genome = safe_json_load(p.genome_json, {})
-        run = session.get(EvalRun, p.run_id)
-        model = session.get(LLMModel, p.model_id)
-        bench = session.get(Benchmark, p.benchmark_id)
+        run = runs_map.get(p.run_id)
+        model = models_map.get(p.model_id)
+        bench = benches_map.get(p.benchmark_id)
         if not (run and model and bench):
             continue
 
-        # Determine capability from benchmark type + tags
-        tags = get_benchmark_tags(session, bench)
+        tags = bench_tags_map.get(bench.id, [])
         capability = CAPABILITY_MAP.get(str(bench.type), "Autre")
         for tag, cap_label in DOMAIN_MAP.items():
             if tag in tags:

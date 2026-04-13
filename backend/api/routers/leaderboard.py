@@ -128,8 +128,19 @@ def _get_domain_runs(domain: str, session: Session) -> tuple[list[EvalRun], list
         select(EvalRun).where(EvalRun.status == JobStatus.COMPLETED)
     ).all()
 
-    models = {m.id: m for m in session.exec(select(LLMModel)).all()}
-    benchmarks = {b.id: b for b in session.exec(select(Benchmark)).all()}
+    if not runs:
+        return [], [], []
+
+    # Fetch only the models and benchmarks referenced by the fetched runs
+    model_ids = list({r.model_id for r in runs})
+    benchmark_ids = list({r.benchmark_id for r in runs})
+
+    models = {m.id: m for m in session.exec(
+        select(LLMModel).where(LLMModel.id.in_(model_ids))
+    ).all()}
+    benchmarks = {b.id: b for b in session.exec(
+        select(Benchmark).where(Benchmark.id.in_(benchmark_ids))
+    ).all()}
 
     domain_cfg = DOMAINS.get(domain, DOMAINS["global"])
     allowed_keys = domain_cfg["benchmark_keys"]
@@ -140,7 +151,6 @@ def _get_domain_runs(domain: str, session: Session) -> tuple[list[EvalRun], list
         filtered_bench_ids = set()
         for b_id, bench in benchmarks.items():
             bench_name_lower = bench.name.lower().replace(" ", "_").replace("-", "_")
-            bench_key = bench_name_lower.split("(")[0].strip().replace(" ", "_")
             for key in allowed_keys:
                 if key.lower() in bench_name_lower or bench_name_lower.startswith(key.lower()):
                     filtered_bench_ids.add(b_id)

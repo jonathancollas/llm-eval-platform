@@ -240,13 +240,6 @@ export default function CampaignsPage(){
     else if(!running&&runningId===null) setActiveLiveFeed(null);
   },[campaigns,runningId]);
 
-  // Auto-refresh while any campaign is running (SWR handles dedup)
-  useEffect(()=>{
-    if(!hasRunning&&runningId===null) return;
-    const t=setInterval(()=>refreshCampaigns(),5000);
-    return()=>clearInterval(t);
-  },[hasRunning,runningId,refreshCampaigns]);
-
   const toggleId=(arr:number[],id:number)=>arr.includes(id)?arr.filter(x=>x!==id):[...arr,id];
 
   const resetWizard=useCallback(()=>{
