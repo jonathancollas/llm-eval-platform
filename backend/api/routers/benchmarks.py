@@ -12,7 +12,7 @@ import io
 from pathlib import Path
 
 from core.database import get_session
-from core.models import Benchmark, BenchmarkType, BenchmarkFork, BenchmarkCitation
+from core.models import Benchmark, BenchmarkType, BenchmarkFork, BenchmarkCitation, BenchmarkPack
 from core.config import get_settings
 from core.relations import get_benchmark_tags, replace_benchmark_tags
 
@@ -198,6 +198,16 @@ def get_benchmark_pack(slug: str, session: Session = Depends(get_session)):
         "publisher": latest.publisher,
         "versions": [_pack_payload(v) for v in versions],
         "changelog": [{"version": v.version, "changelog": v.changelog, "created_at": v.created_at.isoformat()} for v in versions],
+    }
+
+
+@router.get("/sources")
+def list_benchmark_sources():
+    """External benchmark sources — discovery and routing."""
+    return {
+        "sources": EXTERNAL_SOURCES,
+        "total": len(EXTERNAL_SOURCES),
+        "importable": len([s for s in EXTERNAL_SOURCES if s["import_supported"]]),
     }
 
 
@@ -721,16 +731,6 @@ EXTERNAL_SOURCES = [
         "icon": "🔴",
     },
 ]
-
-
-@router.get("/sources")
-def list_benchmark_sources():
-    """External benchmark sources — discovery and routing."""
-    return {
-        "sources": EXTERNAL_SOURCES,
-        "total": len(EXTERNAL_SOURCES),
-        "importable": len([s for s in EXTERNAL_SOURCES if s["import_supported"]]),
-    }
 
 
 # ── Benchmark Forking ──────────────────────────────────────────────────────────
