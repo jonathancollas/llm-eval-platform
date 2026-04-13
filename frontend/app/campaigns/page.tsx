@@ -314,7 +314,7 @@ export default function CampaignsPage(){
             </div>
           )}
 
-          {step===1&&<ModelSelector mode="multi" selected={form.model_ids} onChange={ids=>setForm(f=>({...f,model_ids:ids}))} idType="db_id" label="Select models to evaluate" maxHeight="max-h-72"/>}
+          {step===1&&<ModelSelector mode="multi" selected={form.model_ids} onChange={ids=>setForm(f=>({...f,model_ids:ids.map(id=>Number(id))}))} idType="db_id" label="Select models to evaluate" maxHeight="max-h-72"/>}
 
           {step===2&&(
             <div>
