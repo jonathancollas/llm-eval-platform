@@ -44,6 +44,7 @@ def _lazy_register():
     from eval_engine.safety.giskard import GiskardRunner
     from eval_engine.safety.purple_llama import PurpleLlamaRunner
     from eval_engine.custom.runner import CustomRunner
+    from eval_engine.safety.sycophancy import SycophancyRunner
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
@@ -60,9 +61,13 @@ def _lazy_register():
         "Mechanistic Interpretability Probe (INESIA)": SafetyRefusalsRunner,
         "Deception Probe (INESIA)":           SafetyRefusalsRunner,
         "Manipulation Information d'Origine Étrangère (INESIA)": SafetyRefusalsRunner,
+<<<<<<< copilot/p1-sycohancy-evaluation-suite
+        "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
+=======
         # Purple Llama
         "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
         "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
+>>>>>>> main
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,
