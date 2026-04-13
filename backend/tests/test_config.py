@@ -36,7 +36,7 @@ def test_settings_rejects_short_secret_key(monkeypatch):
         Settings()
 
 
-def test_settings_requires_secret_key_on_known_prod_platform(monkeypatch):
+def test_settings_requires_secret_key_when_render_env_set(monkeypatch):
     monkeypatch.setenv("RENDER", "true")
     with pytest.raises(ValueError, match="SECRET_KEY is required in production"):
         Settings()
