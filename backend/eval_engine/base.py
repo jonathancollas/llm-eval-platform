@@ -86,10 +86,14 @@ class BaseBenchmarkRunner(ABC):
 
     @staticmethod
     def invalidate_dataset_cache(full_path: str) -> None:
-        """Invalidate the LRU cache for a specific dataset path.
+        """Invalidate the LRU cache after uploading a new dataset file.
 
-        Call this after uploading a new dataset file so that subsequent
-        benchmark runs see the fresh data.
+        NOTE: `functools.lru_cache` does not support per-key invalidation, so
+        this clears the entire dataset cache (all benchmark files).  In practice
+        this is acceptable because uploads are rare, the cache is warm again after
+        the first benchmark run per file, and the cache is bounded to 64 entries.
+
+        Call this immediately after writing a new dataset to disk.
         """
         _load_dataset_cached.cache_clear()
 

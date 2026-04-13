@@ -208,7 +208,6 @@ def get_stats_summary(session: Session = Depends(get_session)):
       models, benchmarks, inesia_benchmarks, campaigns, completed_runs
     """
     from core.models import LLMModel as _LLMModel, Benchmark as _Benchmark
-    from sqlmodel import func
 
     # Single pass for model count
     model_count = session.exec(select(func.count()).select_from(_LLMModel)).one()
