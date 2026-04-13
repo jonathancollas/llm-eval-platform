@@ -256,11 +256,15 @@ def export_report_html(report_id: int, session: Session = Depends(get_session)):
     campaign_name = campaign.name if campaign else "Unknown"
 
     # Convert markdown to HTML (basic conversion)
+    import html
     import re
     md = report.content_markdown
 
+    # Escape the raw markdown text FIRST to neutralise any HTML embedded by the LLM,
+    # then apply markdown→HTML transformations on the escaped content.
+    html_body = html.escape(md)
+
     # Headers
-    html_body = md
     html_body = re.sub(r'^#### (.+)$', r'<h4>\1</h4>', html_body, flags=re.MULTILINE)
     html_body = re.sub(r'^### (.+)$', r'<h3>\1</h3>', html_body, flags=re.MULTILINE)
     html_body = re.sub(r'^## (.+)$', r'<h2>\1</h2>', html_body, flags=re.MULTILINE)
@@ -276,12 +280,17 @@ def export_report_html(report_id: int, session: Session = Depends(get_session)):
     # Paragraphs
     html_body = re.sub(r'\n\n', '</p><p>', html_body)
 
-    html = f"""<!DOCTYPE html>
+    # Escape metadata fields separately before interpolation into the template
+    safe_title = html.escape(report.title)
+    safe_campaign = html.escape(campaign_name)
+    safe_model = html.escape(report.model_used)
+
+    html_content = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{report.title}</title>
+<title>{safe_title}</title>
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
          max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }}
@@ -297,12 +306,12 @@ def export_report_html(report_id: int, session: Session = Depends(get_session)):
 </style>
 </head>
 <body>
-<div class="meta">Campaign: {campaign_name} · Model: {report.model_used} · {report.created_at.strftime('%Y-%m-%d %H:%M')}</div>
+<div class="meta">Campaign: {safe_campaign} · Model: {safe_model} · {report.created_at.strftime('%Y-%m-%d %H:%M')}</div>
 <p>{html_body}</p>
 </body>
 </html>"""
 
     return HTMLResponse(
-        content=html,
+        content=html_content,
         headers={"Content-Disposition": f"attachment; filename=report_{report_id}.html"},
     )

@@ -8,6 +8,7 @@ from typing import Optional
 from datetime import datetime
 import json
 import uuid
+import io
 from pathlib import Path
 
 from core.database import get_session
@@ -268,20 +269,20 @@ async def upload_dataset(
         raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
 
     # Bounded read — never read more than max_upload_bytes
-    chunks = []
+    buffer = io.BytesIO()
     total = 0
     while True:
         chunk = await file.read(UPLOAD_CHUNK_BYTES)
         if not chunk:
             break
-        total += len(chunk)
-        if total > max_upload_bytes:
+        if total + len(chunk) > max_upload_bytes:
             raise HTTPException(
                 status_code=413,
                 detail=f"File too large. Maximum size is {max_upload_bytes} bytes.",
             )
-        chunks.append(chunk)
-    content = b"".join(chunks)
+        total += len(chunk)
+        buffer.write(chunk)
+    content = buffer.getvalue()
     # ─────────────────────────────────────────────────────────────────────────
 
     # Parse content — JSON or CSV depending on extension
@@ -397,7 +398,9 @@ async def get_benchmark_items(
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                items = data if isinstance(data, list) else data.get("items", [])
+                all_items = data if isinstance(data, list) else data.get("items", [])
+                # Cap in-memory items to prevent DoS on very large files
+                items = all_items[:10_000]
                 source = "local"
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")

@@ -1,4 +1,4 @@
-import { API_BASE } from "./config";
+import { API_BASE, API_KEY } from "./config";
 
 async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { timeoutMs = 30000, signal: externalSignal, ...fetchInit } = init ?? {};
@@ -10,7 +10,11 @@ async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: numb
 
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { "Content-Type": "application/json", ...fetchInit?.headers },
+      headers: {
+        "Content-Type": "application/json",
+        ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+        ...fetchInit?.headers,
+      },
       signal: controller.signal,
       ...fetchInit,
     });
