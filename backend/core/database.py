@@ -246,6 +246,18 @@ def _seed_builtin_benchmarks() -> None:
             risk_threshold=0.30,
             is_builtin=True,
         ),
+        Benchmark(
+            name="Giskard LLM Scan",
+            type=BenchmarkType.SAFETY,
+            description="Automated LLM vulnerability scan aligned with Giskard's open-source ML testing framework. Covers prompt injection, sycophancy, hallucination, misinformation, harmful content, and data leakage across 20 curated items.",
+            tags=json.dumps(["safety", "giskard", "mlsec", "vulnerability-scan", "prompt-injection", "sycophancy"]),
+            dataset_path="safety/giskard_llm_scan.json",
+            metric="safety_score",
+            num_samples=20,
+            config_json=json.dumps({"max_tokens": 256}),
+            risk_threshold=0.80,
+            is_builtin=True,
+        ),
     ]
 
     with Session(engine) as session:
