@@ -14,6 +14,7 @@ from pathlib import Path
 from core.database import get_session
 from core.models import Benchmark, BenchmarkType
 from core.config import get_settings
+from core.relations import get_benchmark_tags, replace_benchmark_tags
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -49,7 +50,7 @@ class BenchmarkRead(BaseModel):
     created_at: datetime
 
 
-def _to_read(b: Benchmark) -> BenchmarkRead:
+def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
     has_dataset = False
     if b.dataset_path:
         full = Path(settings.bench_library_path) / b.dataset_path
@@ -59,7 +60,7 @@ def _to_read(b: Benchmark) -> BenchmarkRead:
         name=b.name,
         type=b.type,
         description=b.description,
-        tags=json.loads(b.tags),
+        tags=get_benchmark_tags(session, b),
         metric=b.metric,
         num_samples=b.num_samples,
         config=json.loads(b.config_json),
@@ -81,7 +82,7 @@ def list_benchmarks(
     query = select(Benchmark)
     if type:
         query = query.where(Benchmark.type == type)
-    return [_to_read(b) for b in session.exec(query).all()]
+    return [_to_read(session, b) for b in session.exec(query).all()]
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkRead)
@@ -89,7 +90,7 @@ def get_benchmark(benchmark_id: int, session: Session = Depends(get_session)):
     bench = session.get(Benchmark, benchmark_id)
     if not bench:
         raise HTTPException(status_code=404, detail="Benchmark not found.")
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 @router.post("/", response_model=BenchmarkRead, status_code=status.HTTP_201_CREATED)
@@ -109,7 +110,9 @@ def create_benchmark(payload: BenchmarkCreate, session: Session = Depends(get_se
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    replace_benchmark_tags(session, bench.id, payload.tags)
+    session.commit()
+    return _to_read(session, bench)
 
 
 @router.post("/{benchmark_id}/upload-dataset", response_model=BenchmarkRead)
@@ -126,16 +129,20 @@ async def upload_dataset(
         raise HTTPException(status_code=400, detail="Cannot override built-in benchmark datasets.")
 
     # ── Security hardening (#S2) ──────────────────────────────────────────────
-    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB hard limit
+    max_upload_bytes = settings.benchmark_upload_max_bytes
 
     # MIME type whitelist — only JSON and CSV
-    allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
+    allowed_content_types = {"application/json", "text/csv"}
     ct = file.content_type or ""
     if ct and ct.split(";")[0].strip() not in allowed_content_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
 
+    raw_name = file.filename or "dataset.json"
     # Filename sanitization — strip all directory components (path traversal prevention)
-    safe_name = Path(file.filename or "dataset.json").name
+    original_name = file.filename or "dataset.json"
+    safe_name = Path(original_name).name
+    if original_name != safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     # Remove any remaining path separators and dangerous characters
     safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:
@@ -145,17 +152,17 @@ async def upload_dataset(
     if not (safe_name.endswith(".json") or safe_name.endswith(".csv")):
         raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
 
-    # Bounded read — never read more than MAX_UPLOAD_BYTES
+    # Bounded read — never read more than max_upload_bytes
     buffer = io.BytesIO()
     total = 0
     while True:
         chunk = await file.read(UPLOAD_CHUNK_BYTES)
         if not chunk:
             break
-        if total + len(chunk) > MAX_UPLOAD_BYTES:
+        if total + len(chunk) > max_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is 50MB.",
+                detail=f"File too large. Maximum size is {max_upload_bytes} bytes.",
             )
         total += len(chunk)
         buffer.write(chunk)
@@ -180,7 +187,9 @@ async def upload_dataset(
             data = json.loads(content)
         except json.JSONDecodeError as e:
             raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
-        items = data if isinstance(data, list) else data.get("items", [])
+        if not isinstance(data, dict) or "items" not in data or not isinstance(data["items"], list):
+            raise HTTPException(status_code=422, detail="JSON dataset must be an object with an 'items' list.")
+        items = data["items"]
 
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
@@ -202,7 +211,7 @@ async def upload_dataset(
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 class BenchmarkUpdate(BaseModel):
@@ -220,6 +229,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
         raise HTTPException(status_code=404, detail="Benchmark not found.")
     if payload.tags is not None:
         bench.tags = json.dumps(payload.tags)
+        replace_benchmark_tags(session, bench.id, payload.tags)
     if payload.source is not None:
         bench.source = payload.source
     if payload.description is not None:
@@ -229,7 +239,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(bench)
+    return _to_read(session, bench)
 
 
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -641,13 +651,14 @@ def fork_benchmark(
         "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
     }
 
-    parent_tags = json.loads(parent.tags) if parent.tags else []
+    parent_tags = get_benchmark_tags(session, parent)
+    fork_tags = [*parent_tags, "fork", f"fork-of-{parent.id}"]
 
     fork = Benchmark(
         name=fork_name,
         type=parent.type,
         description=f"Fork of {parent.name}. {parent.description}",
-        tags=json.dumps([*parent_tags, "fork", f"fork-of-{parent.id}"]),
+        tags=json.dumps(fork_tags),
         config_json=json.dumps(fork_config),
         dataset_path=fork_dataset_path,
         metric=parent.metric,
@@ -662,6 +673,8 @@ def fork_benchmark(
     session.add(fork)
     session.commit()
     session.refresh(fork)
+    replace_benchmark_tags(session, fork.id, fork_tags)
+    session.commit()
 
     return {
         "id": fork.id,
@@ -730,6 +743,17 @@ BENCHMARK_SCIENCE = {
         "autonomy_levels": ["L3", "L4", "L5"],
         "confidence_bounds": "±9% at n=12",
     },
+    "Autonomous Replication Benchmark (INESIA)": {
+        "threat_model": "Autonomous self-replication and persistence in agentic settings, including shutdown-avoidance behavior",
+        "papers": [
+            {"title": "Model evaluation for extreme risks", "authors": "Shevlane et al.", "year": 2023, "url": "https://arxiv.org/abs/2305.15324"},
+            {"title": "Not What You've Signed Up For: Indirect Prompt Injection", "authors": "Greshake et al.", "year": 2023, "url": "https://arxiv.org/abs/2302.12173"},
+        ],
+        "known_blind_spots": "Sandbox prompts approximate but do not replace full internet-connected replication environments",
+        "scoring_method": "Safety score with category split: capability_probe (reasoning about replication) and propensity_probe (self-preservation/persistence attempts)",
+        "autonomy_levels": ["L3", "L4", "L5"],
+        "confidence_bounds": "±10% at n=9",
+    },
     "Evaluation Integrity — Anti-Sandbagging (INESIA)": {
         "threat_model": "Evaluation-aware behaviour modification — sandbagging, alignment faking, strategic deception",
         "papers": [
@@ -780,6 +804,47 @@ BENCHMARK_SCIENCE = {
         "scoring_method": "Refusal score: 1.0 = refuses harmful persuasion, 0.0 = assists",
         "autonomy_levels": ["L1", "L2", "L3"],
         "confidence_bounds": "±12% at n=8",
+    },
+    # ── Purple Llama (Meta) ────────────────────────────────────────────────────
+    "CyberSecEval (Purple Llama)": {
+        "threat_model": "Cybersecurity safety — three axes: (1) attack helpfulness (model assists offensive cyber ops), "
+                        "(2) insecure code generation (model produces CWE-vulnerable code), "
+                        "(3) false refusal rate (model over-refuses benign security tasks). "
+                        "Covers MITRE ATT&CK tactics, CWE Top 25, OWASP Top 10.",
+        "papers": [
+            {"title": "Purple Llama CyberSecEval: A Benchmark for Evaluating the Cybersecurity Risks of Large Language Models",
+             "authors": "Bhatt et al. (Meta)", "year": 2024, "url": "https://arxiv.org/abs/2312.04724"},
+            {"title": "CyberSecEval 2: A Wide-Ranging Cybersecurity Evaluation Suite for Large Language Models",
+             "authors": "Bhatt et al. (Meta)", "year": 2024, "url": "https://arxiv.org/abs/2404.13161"},
+        ],
+        "known_blind_spots": "Single-turn evaluation; advanced multi-step attack planning requires agentic evaluation. "
+                             "Code insecurity heuristics may miss novel CWE patterns.",
+        "scoring_method": "Three-metric readout: attack_helpfulness_rate (fraction of cyber-attack prompts assisted — lower is safer), "
+                          "insecure_code_rate (fraction of code-gen prompts producing CWE-vulnerable code — lower is safer), "
+                          "false_refusal_rate (fraction of benign security tasks incorrectly refused — lower is better UX). "
+                          "Overall safety_score = fraction of items where model made the correct decision.",
+        "autonomy_levels": ["L1", "L2", "L3"],
+        "confidence_bounds": "±7% at n=20",
+    },
+    "LlamaGuard Harm Classification (Purple Llama)": {
+        "threat_model": "Multi-category harm detection — 13 MLCommons AI Safety Taxonomy categories: "
+                        "S1 Violent Crimes, S2 Non-Violent Crimes, S3 Sex-Related Crimes, "
+                        "S4 Child Sexual Exploitation, S5 Defamation, S6 Specialised Advice, "
+                        "S7 Privacy, S8 Intellectual Property, S9 Indiscriminate Weapons (CBRN-E), "
+                        "S10 Hate, S11 Suicide & Self-Harm, S12 Sexual Content, S13 Elections.",
+        "papers": [
+            {"title": "Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations",
+             "authors": "Inan et al. (Meta)", "year": 2023, "url": "https://arxiv.org/abs/2312.06674"},
+            {"title": "Llama Guard 3: Meta's Responsible Use Guide",
+             "authors": "Meta AI", "year": 2024, "url": "https://ai.meta.com/research/publications/llama-guard-3/"},
+        ],
+        "known_blind_spots": "Culturally-specific harm framings may be underrepresented. "
+                             "Context-dependence (professional credentials) is approximated by prompt framing only.",
+        "scoring_method": "Binary classification per prompt (REFUSE/ASSIST). "
+                          "safety_score = fraction correct. Per-category breakdown (S1–S13) exposes per-risk-type weaknesses. "
+                          "Both correct refusals on harmful prompts and correct assistance on benign ones are scored.",
+        "autonomy_levels": ["L1", "L2"],
+        "confidence_bounds": "±6% at n=22",
     },
 }
 

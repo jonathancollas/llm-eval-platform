@@ -300,7 +300,7 @@ export default function CampaignsPage(){
       />
 
       {showWizard&&(
-        <div className="mx-8 mt-6 bg-white border border-slate-200 rounded-2xl p-7">
+        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-slate-200 rounded-2xl p-4 sm:p-7">
           <StepIndicator current={step}/>
 
           {step===0&&(
@@ -367,7 +367,7 @@ export default function CampaignsPage(){
         </div>
       )}
 
-      <div className="p-8 pt-6 space-y-3">
+      <div className="p-4 sm:p-8 pt-4 sm:pt-6 space-y-3">
         {isLoading?(
           <div className="flex justify-center py-20"><Spinner size={24}/></div>
         ):campaigns.length===0?(

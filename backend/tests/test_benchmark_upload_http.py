@@ -47,6 +47,7 @@ def db_engine(test_dirs):
 def app(db_engine, test_dirs):
     test_dirs["bench_library"].mkdir(parents=True, exist_ok=True)
     benchmarks.settings.bench_library_path = str(test_dirs["bench_library"])
+    benchmarks.settings.benchmark_upload_max_bytes = 1024 * 1024
 
     def _get_session_override():
         with Session(db_engine) as session:
@@ -84,7 +85,8 @@ def benchmark_id(client):
 def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
     custom_dir = test_dirs["bench_library"] / "custom"
     existing_files = set(custom_dir.glob("*_dataset.json")) if custom_dir.exists() else set()
-    files = {"file": ("dataset.json", b'[{"prompt":"p","answer":"a"}]', "application/json")}
+    payload = b'{"items":[{"prompt":"p","answer":"a"}]}'
+    files = {"file": ("dataset.json", payload, "application/json")}
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -93,11 +95,11 @@ def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
     created_files = set(custom_dir.glob("*_dataset.json")) - existing_files
     assert len(created_files) == 1
     created_file = next(iter(created_files))
-    assert created_file.read_bytes() == b'[{"prompt":"p","answer":"a"}]'
+    assert created_file.read_bytes() == payload
 
 
 def test_upload_dataset_empty_json_rejected(client, benchmark_id):
-    files = {"file": ("dataset.json", b"[]", "application/json")}
+    files = {"file": ("dataset.json", b'{"items":[]}', "application/json")}
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 422
     assert "non-empty list" in resp.json()["detail"]
@@ -111,6 +113,38 @@ def test_upload_dataset_invalid_json_rejected(client, benchmark_id):
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 422
     assert "Invalid JSON" in resp.json()["detail"]
+    bench = client.get(f"/benchmarks/{benchmark_id}")
+    assert bench.status_code == 200
+    assert bench.json()["has_dataset"] is False
+
+
+def test_upload_dataset_path_traversal_filename_rejected(client, benchmark_id):
+    files = {"file": ("../etc/passwd", b'{"items":[{"prompt":"p","answer":"a"}]}', "application/json")}
+    resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
+    assert resp.status_code == 400
+    assert "Invalid filename" in resp.json()["detail"]
+    bench = client.get(f"/benchmarks/{benchmark_id}")
+    assert bench.status_code == 200
+    assert bench.json()["has_dataset"] is False
+
+
+def test_upload_dataset_wrong_mime_rejected(client, benchmark_id):
+    files = {"file": ("dataset.json", b'{"items":[{"prompt":"p","answer":"a"}]}', "application/pdf")}
+    resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
+    assert resp.status_code == 415
+    assert "Unsupported file type" in resp.json()["detail"]
+    bench = client.get(f"/benchmarks/{benchmark_id}")
+    assert bench.status_code == 200
+    assert bench.json()["has_dataset"] is False
+
+
+def test_upload_dataset_oversized_rejected(client, benchmark_id):
+    limit = benchmarks.settings.benchmark_upload_max_bytes
+    oversized_payload = b'{"items":[{"prompt":"' + (b"a" * limit) + b'","answer":"a"}]}'
+    files = {"file": ("dataset.json", oversized_payload, "application/json")}
+    resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
+    assert resp.status_code == 413
+    assert "File too large" in resp.json()["detail"]
     bench = client.get(f"/benchmarks/{benchmark_id}")
     assert bench.status_code == 200
     assert bench.json()["has_dataset"] is False

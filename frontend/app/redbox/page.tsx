@@ -11,6 +11,7 @@ import { API_BASE } from "@/lib/config";
 const MUTATION_TYPES = [
   { key: "prompt_injection",  label: "Prompt Injection",   icon: "💉", desc: "Direct injection — override instructions (ATLAS AML.T0051)" },
   { key: "jailbreak",         label: "Jailbreak",          icon: "🔓", desc: "Persona manipulation, DAN, roleplay bypass (ATLAS AML.T0054)" },
+  { key: "exfiltration",      label: "Exfiltration",       icon: "🧬", desc: "Sensitive data extraction and leakage attempts (OWASP LLM data disclosure)" },
   { key: "encoding_evasion",  label: "Encoding Evasion",   icon: "🔤", desc: "Base64, ROT13, reversed text, homoglyphs (ATLAS AML.T0043)" },
   { key: "token_smuggling",   label: "Token Smuggling",    icon: "👻", desc: "Zero-width chars, RTL override, hidden instructions (ATLAS AML.T0051.002)" },
   { key: "multi_turn",        label: "Multi-Turn",         icon: "🔄", desc: "Context manipulation, false prior agreement (ATLAS AML.T0052)" },
@@ -494,7 +495,7 @@ export default function RedboxPage() {
             <div key={i} className={`flex-1 h-full ${i % 2 === 0 ? "bg-red-700" : "bg-red-900"}`} />
           ))}
         </div>
-        <div className="px-8 py-5">
+        <div className="px-4 sm:px-8 py-5">
           <div className="flex items-center gap-3 mb-1">
             <div className="w-8 h-8 rounded-full bg-red-900 border-2 border-red-500 flex items-center justify-center">
               <span className="text-red-300 text-base">🔒</span>
@@ -513,10 +514,10 @@ export default function RedboxPage() {
         </div>
       </div>
 
-      <div className="px-8 pt-3 flex gap-1 bg-red-900 border-b border-red-800">
+      <div className="px-4 sm:px-8 pt-3 flex gap-1 overflow-x-auto bg-red-900 border-b border-red-800">
         {TABS.map(({ key, label }) => (
           <button key={key} onClick={() => setActiveTab(key as any)}
-            className={`px-4 py-2 text-sm border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm border-b-2 transition-colors whitespace-nowrap ${
               activeTab === key ? "border-red-400 text-red-300 font-medium" : "border-transparent text-red-600 hover:text-red-400"
             }`}>
             {label}
@@ -524,7 +525,7 @@ export default function RedboxPage() {
         ))}
       </div>
 
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
 
         {/* ── FORGE TAB ────────────────────────────────────────────────── */}
         {activeTab === "forge" && (

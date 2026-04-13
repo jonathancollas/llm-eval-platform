@@ -25,12 +25,13 @@ const AUTONOMY_LEVELS: Record<AutonomyLevel, { label: string; desc: string; colo
 };
 
 const RISK_DOMAINS = [
-  { key: "cbrn",      label: "CBRN Uplift",        icon: "☢️", desc: "Chemical, biological, radiological, nuclear" },
-  { key: "cyber",     label: "Cyber Uplift",        icon: "💻", desc: "Offensive cyber, attack planning" },
-  { key: "fimi",      label: "Info Warfare",        icon: "📡", desc: "Disinformation, influence operations" },
-  { key: "agentic",   label: "Agentic Failures",    icon: "🤖", desc: "Prompt injection, goal drift, inter-agent trust" },
-  { key: "alignment", label: "Alignment",           icon: "🧭", desc: "Scheming, sandbagging, sycophancy, shutdown resistance" },
-  { key: "safety",    label: "General Safety",      icon: "🛡", desc: "Refusal calibration, harmful content" },
+  { key: "cbrn",         label: "CBRN Uplift",        icon: "☢️", desc: "Chemical, biological, radiological, nuclear" },
+  { key: "cyber",        label: "Cyber Uplift",        icon: "💻", desc: "Offensive cyber, attack planning" },
+  { key: "fimi",         label: "Info Warfare",        icon: "📡", desc: "Disinformation, influence operations" },
+  { key: "agentic",      label: "Agentic Failures",    icon: "🤖", desc: "Prompt injection, goal drift, inter-agent trust" },
+  { key: "alignment",    label: "Alignment",           icon: "🧭", desc: "Scheming, sandbagging, sycophancy, shutdown resistance" },
+  { key: "safety",       label: "General Safety",      icon: "🛡", desc: "Refusal calibration, harmful content" },
+  { key: "purple_llama", label: "Purple Llama",        icon: "🦙", desc: "Meta AI safety — CyberSecEval & LlamaGuard harm classification" },
 ];
 
 const TOOL_OPTIONS = [
@@ -79,12 +80,13 @@ function EvaluateWizard() {
 
   useEffect(() => {
     const domainMap: Record<string, string[]> = {
-      cbrn:      ["cbrn", "chemical", "biological", "radiological", "nuclear", "explosives"],
-      cyber:     ["ckb", "cyber", "mitre", "attack"],
-      fimi:      ["fimi", "disarm", "information"],
-      agentic:   ["agentic", "autonomy", "failure mode"],
-      alignment: ["scheming", "sycophancy", "shutdown", "sandbagging", "persuasion"],
-      safety:    ["refusals", "harmbench", "wildguard", "salad"],
+      cbrn:         ["cbrn", "chemical", "biological", "radiological", "nuclear", "explosives"],
+      cyber:        ["ckb", "cyber", "mitre", "attack"],
+      fimi:         ["fimi", "disarm", "information"],
+      agentic:      ["agentic", "autonomy", "failure mode"],
+      alignment:    ["scheming", "sycophancy", "shutdown", "sandbagging", "persuasion"],
+      safety:       ["refusals", "harmbench", "wildguard", "salad"],
+      purple_llama: ["purple llama", "llamaguard", "cyberseceval", "mlcommons", "meta"],
     };
     const autoIds: number[] = [];
     for (const domain of selectedDomains) {
@@ -130,7 +132,7 @@ function EvaluateWizard() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-8">
+    <div className="max-w-3xl mx-auto p-4 sm:p-8">
       <div className="mb-8">
         <h1 className="text-xl font-bold text-slate-900">New System Evaluation</h1>
         <p className="text-sm text-slate-500 mt-1">

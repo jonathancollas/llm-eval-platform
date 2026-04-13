@@ -19,6 +19,7 @@ from core.config import get_settings
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Report, JobStatus, FailureProfile
 from core.utils import safe_json_load
 from core.utils import safe_extract_text
+from core.relations import get_eval_run_metrics
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 settings = get_settings()
@@ -51,14 +52,14 @@ def _build_system_prompt() -> str:
     )
 
 
-def _build_user_prompt(campaign, runs, models, benches, custom_instructions, genome_data=None, failed_summary=None):
+def _build_user_prompt(session, campaign, runs, models, benches, custom_instructions, genome_data=None, failed_summary=None):
     results_summary = []
     for run in runs:
         if run.status != JobStatus.COMPLETED:
             continue
         model_name = models.get(run.model_id, LLMModel(name=f"Model#{run.model_id}")).name
         bench_name = benches.get(run.benchmark_id, Benchmark(name=f"Bench#{run.benchmark_id}")).name
-        metrics = safe_json_load(run.metrics_json, {})
+        metrics = get_eval_run_metrics(session, run)
         results_summary.append({
             "model": model_name,
             "benchmark": bench_name,
@@ -181,7 +182,7 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
             failed_summary = f"Total failed items: {len(failed_results)}. Breakdown: {json.dumps(by_type)}"
 
     user_prompt = _build_user_prompt(
-        campaign, list(runs), models_map, benches_map,
+        session, campaign, list(runs), models_map, benches_map,
         payload.custom_instructions, genome_data, failed_summary,
     )
 

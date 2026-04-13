@@ -6,6 +6,12 @@ version: "3.9"
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   backend:
     build: ./backend
     ports:
@@ -26,7 +32,37 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - BENCH_LIBRARY_PATH=/bench_library
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - DEBUG=${DEBUG:-false}
+    depends_on:
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    command: celery -A core.job_queue:celery_app worker --loglevel=info
+    volumes:
+      - ./backend:/app
+      - ./bench_library:/bench_library
+      - backend_data:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:///./data/eval_platform.db
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - BENCH_LIBRARY_PATH=/bench_library
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - DEBUG=${DEBUG:-false}
+    depends_on:
+      - redis
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -42,6 +78,7 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api
     depends_on:
       - backend
+      - worker
     restart: unless-stopped
 
 volumes:

@@ -24,6 +24,7 @@ from core.database import get_session
 from core.models import Tenant, User
 
 logger = logging.getLogger(__name__)
+VALID_ROLES = {"admin", "evaluator", "viewer"}
 
 # ── Tenant key format ─────────────────────────────────────────────────────────
 _TENANT_KEY_RE = re.compile(r"^mr_[0-9a-f]{48}$")
@@ -73,55 +74,95 @@ def generate_api_key() -> str:
     return f"mr_{secrets.token_hex(24)}"
 
 
+_DEFAULT_TENANT_SLUG = "default"
+_DEFAULT_TENANT_NAME = "Default"
+
+
+def _get_or_create_default_tenant(session: Session) -> Tenant:
+    """Return the default tenant, creating it if it does not exist."""
+    tenant = session.exec(
+        select(Tenant).where(Tenant.slug == _DEFAULT_TENANT_SLUG, Tenant.is_active == True)
+    ).first()
+    if not tenant:
+        tenant = Tenant(name=_DEFAULT_TENANT_NAME, slug=_DEFAULT_TENANT_SLUG, api_key_hash="")
+        session.add(tenant)
+        session.commit()
+        session.refresh(tenant)
+        logger.info("[auth] Default tenant auto-created (access control disabled).")
+    return tenant
+
+
 def get_current_tenant(
     request: Request,
     session: Session = Depends(get_session),
 ) -> Optional[Tenant]:
     """
-    Extract and validate tenant from X-Tenant-Key header.
+    Access control DISABLED — always returns the default tenant.
 
-    Security checks (in order):
-      1. Rate limit by IP
-      2. Format validation (mr_ prefix + 48 hex chars)
-      3. Hash comparison via DB lookup
+    # To re-enable tenant key validation, uncomment the block below:
+    #
+    # key = request.headers.get("X-Tenant-Key", "")
+    # if not key:
+    #     return None  # Single-tenant mode — no key = default
+    #
+    # ip = request.client.host if request.client else "unknown"
+    #
+    # # 1. Rate limit before any processing
+    # _check_rate_limit(ip)
+    #
+    # # 2. Format validation — reject malformed keys immediately
+    # if not _TENANT_KEY_RE.match(key):
+    #     _record_failure(ip)
+    #     logger.warning(f"[auth] Invalid tenant key format from {ip} (length={len(key)})")
+    #     raise HTTPException(status_code=401, detail="Invalid tenant API key format.")
+    #
+    # # 3. DB lookup — hash first, compare constant-time via DB query
+    # key_hash = hash_api_key(key)
+    # tenant = session.exec(
+    #     select(Tenant).where(Tenant.api_key_hash == key_hash, Tenant.is_active == True)
+    # ).first()
+    # if not tenant:
+    #     _record_failure(ip)
+    #     raise HTTPException(status_code=401, detail="Invalid tenant API key.")
+    # return tenant
     """
-    key = request.headers.get("X-Tenant-Key", "")
-    if not key:
-        return None  # Single-tenant mode — no key = default
-
-    ip = request.client.host if request.client else "unknown"
-
-    # 1. Rate limit before any processing
-    _check_rate_limit(ip)
-
-    # 2. Format validation — reject malformed keys immediately
-    if not _TENANT_KEY_RE.match(key):
-        _record_failure(ip)
-        logger.warning(f"[auth] Invalid tenant key format from {ip} (length={len(key)})")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid tenant API key format.",
-        )
-
-    # 3. DB lookup — hash first, compare constant-time via DB query
-    key_hash = hash_api_key(key)
-    tenant = session.exec(
-        select(Tenant).where(Tenant.api_key_hash == key_hash, Tenant.is_active == True)
-    ).first()
-
-    if not tenant:
-        _record_failure(ip)
-        raise HTTPException(status_code=401, detail="Invalid tenant API key.")
-
-    return tenant
+    return _get_or_create_default_tenant(session)
 
 
 def require_tenant(
     request: Request,
     session: Session = Depends(get_session),
 ) -> Tenant:
-    """Require a valid tenant (strict mode — 401 if no key provided)."""
-    tenant = get_current_tenant(request, session)
-    if not tenant:
-        raise HTTPException(status_code=401, detail="X-Tenant-Key header required.")
-    return tenant
+    """
+    Access control DISABLED — always returns the default tenant without requiring a key.
+
+    # To re-enable strict tenant enforcement, replace the body with:
+    # tenant = get_current_tenant(request, session)
+    # if not tenant:
+    #     raise HTTPException(status_code=401, detail="X-Tenant-Key header required.")
+    # return tenant
+    """
+    return _get_or_create_default_tenant(session)
+
+
+def normalize_role(role: str) -> str:
+    """Normalize legacy role aliases and casing."""
+    r = (role or "").strip().lower()
+    # Backward compatibility: older clients used "runner" for write-capable users.
+    if r == "runner":
+        return "evaluator"
+    return r
+
+
+def get_request_role(request: Request) -> str:
+    """
+    Extract role from request headers.
+    Supported headers:
+      - X-Role
+      - X-User-Role
+    """
+    return normalize_role(
+        request.headers.get("X-Role", "")
+        or request.headers.get("X-User-Role", "")
+        or "viewer"
+    )

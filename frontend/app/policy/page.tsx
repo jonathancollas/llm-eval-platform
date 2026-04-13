@@ -66,7 +66,7 @@ export default function PolicyPage() {
     <div>
       <PageHeader title="Compliance & Policy" description="Simulate the regulatory compliance of your models." />
 
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-8 space-y-6">
         {/* Selector bar */}
         <div className="flex items-end gap-4 flex-wrap">
           <div>

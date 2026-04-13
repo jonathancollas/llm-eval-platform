@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="bg-slate-50 text-slate-900 antialiased theme-light">
         <ThemeProvider>
-          <div className="flex h-screen overflow-hidden">
+          <div className="flex h-screen overflow-hidden pt-14 md:pt-0">
             <Sidebar />
             <main className="flex-1 overflow-auto flex flex-col">
               <SyncBanner />
