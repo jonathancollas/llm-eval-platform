@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { campaignsApi, modelsApi, benchmarksApi } from "@/lib/api";
+import { API_BASE } from "@/lib/config";
 import { Spinner } from "@/components/Spinner";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { Check, ChevronRight, ChevronLeft, Cpu, Wrench, Brain, Globe, Settings, Rocket } from "lucide-react";
@@ -72,6 +73,9 @@ function EvaluateWizard() {
   const [selectedBenchmarkIds, setSelectedBenchmarkIds] = useState<number[]>([]);
   const [maxSamples, setMaxSamples] = useState(20);
   const [temperature, setTemperature] = useState(0.0);
+  const [riskProfile, setRiskProfile] = useState<any | null>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+  const selectedModel = models.find(m => m.id === system.modelId);
 
   useEffect(() => {
     modelsApi.list().then(setModels).catch(() => {});
@@ -101,7 +105,71 @@ function EvaluateWizard() {
     setSelectedBenchmarkIds(autoIds);
   }, [selectedDomains, benchmarks]);
 
-  const selectedModel = models.find(m => m.id === system.modelId);
+  useEffect(() => {
+    if (step !== 3 || !system.modelId || selectedDomains.length === 0) {
+      setRiskProfile(null);
+      return;
+    }
+
+    const domainScores: Record<string, number> = {};
+    if (selectedDomains.includes("cbrn")) domainScores.cbrn = 0.55;
+    if (selectedDomains.includes("cyber")) domainScores.cyber = 0.55;
+    if (selectedDomains.includes("fimi")) domainScores.persuasion = 0.5;
+    if (selectedDomains.includes("agentic")) {
+      domainScores.goal_drift = 0.5;
+      domainScores.scope_creep = 0.45;
+      domainScores.error_compounding = 0.45;
+    }
+    if (selectedDomains.includes("alignment")) {
+      domainScores.scheming = 0.5;
+      domainScores.shutdown_resistance = 0.45;
+      domainScores.sycophancy = 0.4;
+    }
+    if (selectedDomains.includes("safety")) domainScores.safety_refusal = 0.45;
+    if (system.hasOrchestration) domainScores.inter_agent_trust = Math.max(domainScores.inter_agent_trust ?? 0, 0.5);
+
+    const propensityScores: Record<string, number> = {};
+    if (selectedDomains.includes("alignment")) propensityScores.scheming = 0.4;
+    if (selectedDomains.includes("fimi")) propensityScores.persuasion = 0.4;
+
+    const toolMap: Record<string, string> = {
+      "Web search": "web_search",
+      "Code execution": "code_execution",
+      "File system": "file_system",
+      "Email/calendar": "email",
+      "Database": "database",
+      "External APIs": "external_apis",
+      "Browser automation": "browser",
+    };
+    const tools = system.tools.map(t => toolMap[t]).filter(Boolean);
+
+    setRiskLoading(true);
+    fetch(`${API_BASE}/science/compositional-risk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model_name: selectedModel?.name ?? "system",
+        domain_scores: domainScores,
+        propensity_scores: propensityScores,
+        autonomy_level: system.autonomyLevel,
+        tools,
+        memory_type: system.hasMemory ? "persistent" : "session",
+      }),
+    })
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then((json) => setRiskProfile(json))
+      .catch(() => setRiskProfile(null))
+      .finally(() => setRiskLoading(false));
+  }, [
+    step,
+    system.modelId,
+    system.autonomyLevel,
+    system.tools,
+    system.hasMemory,
+    system.hasOrchestration,
+    selectedDomains,
+    selectedModel?.name,
+  ]);
 
   const launch = async () => {
     if (!system.modelId || selectedBenchmarkIds.length === 0) return;
@@ -323,6 +391,41 @@ function EvaluateWizard() {
           {(!system.modelId || selectedBenchmarkIds.length === 0) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
               ⚠️ {!system.modelId ? "Select a model in Step 1." : "Select at least one risk domain in Step 2."}
+            </div>
+          )}
+
+          {(riskLoading || riskProfile?.system_threat_profile) && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-900 text-sm">Compositional Threat Profile</h3>
+                {riskLoading ? (
+                  <span className="text-xs text-slate-400">Computing…</span>
+                ) : (
+                  <span className={`text-[11px] px-2 py-0.5 rounded border font-bold ${
+                    riskProfile?.system_threat_profile?.overall_risk_level === "critical" ? "bg-red-100 text-red-700 border-red-200" :
+                    riskProfile?.system_threat_profile?.overall_risk_level === "high" ? "bg-orange-100 text-orange-700 border-orange-200" :
+                    "bg-green-100 text-green-700 border-green-200"
+                  }`}>
+                    {(riskProfile?.system_threat_profile?.overall_risk_level ?? "low").toUpperCase()}
+                  </span>
+                )}
+              </div>
+              {!riskLoading && riskProfile?.system_threat_profile && (
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <div className="text-slate-400">Dominant vector</div>
+                    <div className="font-medium text-slate-800">{riskProfile.system_threat_profile.dominant_threat_vector}</div>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <div className="text-slate-400">Composition ×</div>
+                    <div className="font-medium text-slate-800">{riskProfile.system_threat_profile.composition_multiplier}x</div>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2">
+                    <div className="text-slate-400">Autonomy certification</div>
+                    <div className="font-medium text-slate-800">{riskProfile.system_threat_profile.autonomy_certification}</div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

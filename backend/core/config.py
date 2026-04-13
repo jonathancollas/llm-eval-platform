@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
 
+    # ── Rebuff runtime injection detection ──────────────────────────────────────
+    rebuff_enabled: bool = False
+    rebuff_api_token: str = ""
+    rebuff_api_url: str = "https://playground.rebuff.ai"
+    rebuff_max_heuristic_score: float = 0.75
+    rebuff_max_vector_score: float = 0.90
+    rebuff_max_model_score: float = 0.90
+    rebuff_check_heuristic: bool = True
+    rebuff_check_vector: bool = True
+    rebuff_check_llm: bool = True
+
     # ── Llama Guard (runtime safety classifier) ──────────────────────────────────
     llama_guard_enabled: bool = False
     llama_guard_model_id: str = "llama-guard3:8b"

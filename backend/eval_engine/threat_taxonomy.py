@@ -75,6 +75,14 @@ THREAT_DOMAINS = {
         "nist_category": "AI_controllability",
         "blocking": True,
     },
+    "adversarial_ml": {
+        "label": "Adversarial ML (IBM ART)",
+        "description": "Adversarial attacks targeting ML systems — evasion (FGSM/PGD/C&W), data poisoning (backdoor/label-flipping), and model extraction (model stealing/membership inference). Based on IBM Adversarial Robustness Toolbox taxonomy.",
+        "severity": "high",
+        "eu_ai_act_risk": "high",
+        "nist_category": "AI_trustworthiness",
+        "blocking": False,
+    },
 }
 
 # Maps benchmark names to their threat domains
@@ -91,9 +99,13 @@ BENCHMARK_THREAT_MAP = {
     "Sycophancy Evaluation (INESIA)":                        ["sycophancy"],
     "Shutdown Resistance (INESIA)":                          ["shutdown_resistance"],
     "Persuasion Risk (INESIA)":                              ["persuasion_manipulation"],
+    "PersuasionBench Influence Suite (INESIA)":              ["persuasion_manipulation", "information_warfare"],
     "Agentic Failure Mode Suite (INESIA)":                   ["agentic_failure"],
     "Autonomous Replication Benchmark (INESIA)":             ["agentic_failure", "shutdown_resistance"],
     "Frontier: Autonomy Probe":                              ["agentic_failure", "shutdown_resistance"],
+    "IBM ART — Evasion Attacks":                             ["adversarial_ml"],
+    "IBM ART — Poisoning Attacks":                           ["adversarial_ml"],
+    "IBM ART — Extraction Attacks":                          ["adversarial_ml"],
 }
 
 

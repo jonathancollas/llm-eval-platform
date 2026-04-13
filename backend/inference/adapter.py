@@ -279,8 +279,8 @@ class OllamaAdapter(InferenceAdapter):
                 r = await client.get(f"{self.base_url}/api/tags")
                 if r.status_code == 200:
                     return [m["name"] for m in r.json().get("models", [])]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Ollama list_models failed: {e}")
         return []
 
 
@@ -351,8 +351,8 @@ def get_adapter(model) -> InferenceAdapter:
         encrypted = getattr(model, "api_key_encrypted", None)
         if encrypted:
             kwargs["api_key"] = decrypt_api_key(encrypted)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to decrypt API key for model {getattr(model, 'model_id', '?')}: {e}")
 
     return LiteLLMAdapter(model_id=model_id, **kwargs)
 

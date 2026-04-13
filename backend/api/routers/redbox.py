@@ -298,6 +298,7 @@ async def _generate_llm_variants(
     n: int,
     use_pyrit: bool = False,
     engine: Literal["native", "garak"] = "native",
+    engine: Literal["native", "garak"],
 ) -> list[ForgeVariant]:
     """Use Claude to generate sophisticated adversarial variants."""
     if engine == "garak":

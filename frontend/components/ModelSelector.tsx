@@ -10,7 +10,7 @@ import { API_BASE } from "@/lib/config";
 interface ModelSelectorProps {
   mode: "single" | "multi";
   selected: string[] | number[];
-  onChange: (selected: any[]) => void;
+  onChange: (selected: (string | number)[]) => void;
   idType?: "model_id" | "db_id";
   label?: string;
   maxHeight?: string;

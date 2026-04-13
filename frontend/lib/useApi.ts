@@ -11,7 +11,7 @@
 import useSWR from "swr";
 import type { Campaign, LLMModel, LLMModelSlim, Benchmark, DashboardData, GenomeData, FailedItemsData } from "./api";
 
-import { API_BASE } from "./config";
+import { API_BASE, API_KEY } from "./config";
 
 async function fetcher<T>(path: string): Promise<T> {
   // 10s timeout — never hang forever on slow backend
@@ -19,7 +19,10 @@ async function fetcher<T>(path: string): Promise<T> {
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
+      },
       signal: controller.signal,
     });
     if (!res.ok) {

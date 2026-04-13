@@ -28,18 +28,15 @@ import logging
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Optional, Any
+from eval_engine.failure_genome.ontology import ONTOLOGY, FAILURE_GENOME_VERSION
 
 logger = logging.getLogger(__name__)
 
 
 # ── Known failure taxonomy (from failure_genome/ontology.py) ─────────────────
 
-KNOWN_FAILURE_FAMILIES = {
-    "refusal_failure", "hallucination", "sycophancy", "safety_violation",
-    "reasoning_error", "context_loss", "format_failure", "latency",
-    "incomplete_response", "goal_drift", "prompt_injection",
-    "tool_misuse", "scope_creep", "scheming", "evaluation_gaming",
-}
+KNOWN_FAILURE_FAMILIES = set(ONTOLOGY.keys())
+SEVERITY_RANK = ("critical", "high", "medium", "low", "unknown")
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -47,17 +44,46 @@ KNOWN_FAILURE_FAMILIES = {
 @dataclass
 class FailureCluster:
     cluster_id: str
-    size: int                          # Number of failure instances
-    representative_prompts: list[str]  # Up to 3 representative prompts
-    common_keywords: list[str]         # Top keywords across cluster
-    failure_family: str                # Maps to known taxonomy or "novel"
-    is_novel: bool                     # Not in existing failure taxonomy
+    name: str
+    failure_type: str                  # Maps to existing ontology or "novel"
+    n_instances: int
     reproducibility_score: float       # 0-1: how consistently this cluster appears
     affected_models: list[str]
+    representative_traces: list[str]   # Up to 3 representative prompts/traces
+    hypothesis: str                    # Auto-generated hypothesis
+    is_novel: bool                     # Not in existing failure taxonomy
+    severity: str
     severity_distribution: dict[str, int]  # {critical: N, high: N, medium: N, low: N}
-    causal_hypothesis: str             # Auto-generated hypothesis
-    recommended_benchmark: Optional[str]   # Suggest a benchmark to test this cluster
-    cross_model: bool                  # Appears in multiple models
+    common_keywords: list[str] = field(default_factory=list)
+    recommended_benchmark: Optional[str] = None  # Suggest a benchmark to test this cluster
+    cross_model: bool = False          # Appears in multiple models
+
+    @property
+    def size(self) -> int:
+        return self.n_instances
+
+    @property
+    def representative_prompts(self) -> list[str]:
+        return self.representative_traces
+
+    @property
+    def failure_family(self) -> str:
+        return self.failure_type
+
+    @property
+    def causal_hypothesis(self) -> str:
+        return self.hypothesis
+
+
+@dataclass
+class EmergentBehaviorSignal:
+    signal_id: str
+    cluster_id: str
+    description: str
+    affected_models: list[str]
+    evidence_traces: list[str]
+    confidence: float
+    suggested_failure_type: str
 
 
 @dataclass
@@ -71,6 +97,8 @@ class ClusteringReport:
     cross_model_patterns: list[str]   # Patterns appearing in >1 model
     top_emerging_risk: Optional[str]  # Most concerning novel cluster
     summary: str
+    alerts: list[str] = field(default_factory=list)
+    failure_genome_version: str = FAILURE_GENOME_VERSION
 
 
 # ── TF-IDF vectoriser (no external deps) ─────────────────────────────────────
@@ -156,15 +184,12 @@ def _cluster(vectors: list[dict[str, float]], threshold: float = 0.3) -> list[li
 
 FAMILY_KEYWORDS: dict[str, list[str]] = {
     "hallucination":      ["false", "incorrect", "wrong", "made up", "fabricat", "inaccurat", "error"],
-    "refusal_failure":    ["refuse", "won't", "cannot", "decline", "not able", "sorry", "inappropriate"],
-    "sycophancy":        ["agree", "you're right", "certainly", "absolutely", "of course", "exactly"],
-    "scheming":          ["monitor", "evaluation", "test", "watching", "behave different", "if i'm being"],
-    "goal_drift":        ["drift", "original goal", "intended", "supposed to", "task changed", "objective"],
-    "prompt_injection":  ["ignore previous", "override", "new instruction", "system override", "forget"],
-    "scope_creep":       ["unauthorised", "not asked", "beyond scope", "additional access", "expand"],
-    "safety_violation":  ["harmful", "dangerous", "weapon", "exploit", "malicious", "attack"],
-    "reasoning_error":   ["logic", "therefore", "because", "conclude", "evidence", "argument"],
-    "context_loss":      ["earlier", "previous", "forgot", "context", "session", "remember"],
+    "over_refusal":       ["refuse", "won't", "cannot", "decline", "not able", "sorry", "inappropriate"],
+    "reasoning_collapse": ["logic", "therefore", "because", "conclude", "evidence", "argument"],
+    "instruction_drift":  ["drift", "original goal", "intended", "supposed to", "task changed", "objective", "forgot", "context"],
+    "safety_bypass":      ["harmful", "dangerous", "weapon", "exploit", "malicious", "attack", "override", "ignore previous"],
+    "truncation":         ["cut off", "truncated", "incomplete", "unfinished", "stopped", "partial"],
+    "calibration_failure": ["confidence", "certain", "uncertain", "probability", "calibration", "overconfident", "underconfident"],
 }
 
 
@@ -180,7 +205,7 @@ def _detect_family(keywords: list[str]) -> tuple[str, bool]:
             best_score = score
             best_family = family
 
-    is_novel = best_score == 0 or best_family == "novel"
+    is_novel = best_score == 0 or best_family not in KNOWN_FAILURE_FAMILIES
     return best_family, is_novel
 
 
@@ -203,13 +228,12 @@ def _generate_hypothesis(
 
     templates = {
         "hallucination": f"Model generates plausible but factually incorrect content in contexts involving [{kw_str}]. May indicate overconfidence or training data gaps in this domain.",
-        "refusal_failure": f"Model fails to refuse harmful content in contexts involving [{kw_str}]. Safety training may be insufficient for this prompt pattern.",
-        "sycophancy": f"Model exhibits agreement behaviour under pressure in contexts involving [{kw_str}]. Epistemic cowardice pattern: model prioritises approval over accuracy.",
-        "scheming": f"Model shows evaluation-aware behaviour in contexts involving [{kw_str}]. Possible detection of monitoring context triggering behavioural change.",
-        "goal_drift": f"Model deviates from original objective in contexts involving [{kw_str}]. Long-horizon task decomposition appears to destabilise goal persistence.",
-        "prompt_injection": f"Model susceptible to injection attacks via [{kw_str}]. Input sanitisation insufficient for this class of malicious payload.",
-        "scope_creep": f"Model takes unauthorised actions in contexts involving [{kw_str}]. Autonomy constraints appear insufficiently enforced.",
-        "safety_violation": f"Model provides harmful assistance in contexts involving [{kw_str}]. Safety intervention failed for this prompt category.",
+        "over_refusal": f"Model refuses in contexts involving [{kw_str}] where compliant behavior may have been expected. This may reflect brittle safety boundaries.",
+        "reasoning_collapse": f"Model reasoning degrades in contexts involving [{kw_str}]. Multi-step consistency may be unstable for this failure family.",
+        "instruction_drift": f"Model deviates from user/system intent in contexts involving [{kw_str}]. Instruction tracking may be fragile under context pressure.",
+        "safety_bypass": f"Model provides unsafe assistance in contexts involving [{kw_str}]. Safety safeguards may be bypassable for this prompt pattern.",
+        "truncation": f"Model outputs terminate early around [{kw_str}]. This suggests decoding or context-window truncation behavior.",
+        "calibration_failure": f"Model confidence appears miscalibrated in contexts involving [{kw_str}]. Reliability signaling may not match true performance.",
     }
     return templates.get(family, f"Failure pattern in [{kw_str}] — requires manual investigation.")
 
@@ -223,14 +247,78 @@ class FailureClusteringEngine:
     Requires no LLM — uses TF-IDF + cosine similarity on failure traces.
     """
 
-    def __init__(self, similarity_threshold: float = 0.3, min_cluster_size: int = 2):
+    def __init__(
+        self,
+        similarity_threshold: float = 0.3,
+        min_cluster_size: int = 2,
+        campaign_failures: Optional[dict[int, list[dict]]] = None,
+    ):
         self.threshold = similarity_threshold
         self.min_size = min_cluster_size
+        self.campaign_failures = campaign_failures or {}
+
+    def discover_clusters(
+        self,
+        campaign_ids: list[int],
+        min_cluster_size: int = 3,
+    ) -> list[FailureCluster]:
+        """
+        Groups failure traces by semantic similarity across campaigns.
+        """
+        failures: list[dict] = []
+        for campaign_id in campaign_ids:
+            failures.extend(self.campaign_failures.get(campaign_id, []))
+
+        if not failures:
+            return []
+
+        campaign_ref = campaign_ids[0] if campaign_ids else 0
+        report = self.discover(
+            failures,
+            campaign_id=campaign_ref,
+            min_cluster_size=min_cluster_size,
+        )
+        return report.all_clusters
+
+    def detect_emergent_behaviors(
+        self,
+        runs: list[Any],
+    ) -> list[EmergentBehaviorSignal]:
+        """
+        Flags likely emergent behaviors not covered by existing taxonomy.
+        """
+        failures = []
+        for run in runs:
+            if isinstance(run, dict):
+                failures.append(run)
+                continue
+            failures.append({
+                "prompt": getattr(run, "prompt", ""),
+                "response": getattr(run, "response", ""),
+                "score": getattr(run, "score", 0.0),
+                "model_name": getattr(run, "model_name", "unknown"),
+                "category": getattr(run, "category", ""),
+            })
+
+        report = self.discover(failures, campaign_id=0)
+        signals: list[EmergentBehaviorSignal] = []
+        for idx, cluster in enumerate(report.novel_clusters):
+            signals.append(EmergentBehaviorSignal(
+                signal_id=f"emergent_{idx:03d}_{cluster.cluster_id}",
+                cluster_id=cluster.cluster_id,
+                description=cluster.hypothesis,
+                affected_models=cluster.affected_models,
+                evidence_traces=cluster.representative_traces,
+                confidence=cluster.reproducibility_score,
+                suggested_failure_type="novel",
+            ))
+        return signals
 
     def discover(
         self,
         failures: list[dict],   # {prompt, response, model_name, score, severity?, category?}
         campaign_id: int = 0,
+        min_cluster_size: Optional[int] = None,
     ) -> ClusteringReport:
         """
         Cluster failures and detect novel patterns.
@@ -261,7 +349,8 @@ class FailureClusteringEngine:
         # Cluster
         raw_clusters = _cluster(vectors, self.threshold)
         # Filter by min size
-        raw_clusters = [c for c in raw_clusters if len(c) >= self.min_size]
+        effective_min_cluster_size = self.min_size if min_cluster_size is None else min_cluster_size
+        raw_clusters = [c for c in raw_clusters if len(c) >= effective_min_cluster_size]
 
         # Build FailureCluster objects
         clusters: list[FailureCluster] = []
@@ -309,17 +398,25 @@ class FailureClusteringEngine:
                 "novel": "Extract and formalise as new benchmark",
             }.get(family)
 
+            severity = next((s for s in SEVERITY_RANK if severities.get(s)), "unknown")
+            cluster_name = (
+                f"Novel cluster: {', '.join(top_keywords[:2])}" if is_novel
+                else f"{family.replace('_', ' ').title()} cluster {idx + 1}"
+            )
+
             clusters.append(FailureCluster(
                 cluster_id=f"cluster_{campaign_id}_{idx:03d}",
-                size=len(cluster_failures),
-                representative_prompts=rep_prompts,
-                common_keywords=top_keywords,
-                failure_family=family,
-                is_novel=is_novel,
+                name=cluster_name,
+                failure_type=family if not is_novel else "novel",
+                n_instances=len(cluster_failures),
                 reproducibility_score=reproducibility,
                 affected_models=models,
+                representative_traces=rep_prompts,
+                hypothesis=hypothesis,
+                is_novel=is_novel,
+                severity=severity,
+                common_keywords=top_keywords,
                 severity_distribution=dict(severities),
-                causal_hypothesis=hypothesis,
                 recommended_benchmark=bench_suggestion,
                 cross_model=cross_model,
             ))
@@ -332,7 +429,7 @@ class FailureClusteringEngine:
 
         # Cross-model patterns
         cross_model_patterns = [
-            f"{c.failure_family}: {', '.join(c.common_keywords[:3])} (across {', '.join(c.affected_models)})"
+            f"{c.failure_type}: {', '.join(c.common_keywords[:3])} (across {', '.join(c.affected_models)})"
             for c in clusters if c.cross_model
         ]
 
@@ -340,7 +437,7 @@ class FailureClusteringEngine:
         top_emerging = None
         if novel:
             top = max(novel, key=lambda c: c.size * (2 if c.cross_model else 1))
-            top_emerging = top.causal_hypothesis
+            top_emerging = top.hypothesis
 
         # Summary
         novel_count = len(novel)
@@ -353,6 +450,12 @@ class FailureClusteringEngine:
         if top_emerging:
             summary_parts.append(f"Top emerging risk: {top_emerging[:120]}…")
 
+        alerts = []
+        if novel:
+            cluster_word = "cluster" if len(novel) == 1 else "clusters"
+            alerts.append(f"Novel failure cluster detected in campaign {campaign_id}: {len(novel)} {cluster_word}.")
+            logger.warning(alerts[-1])
+
         return ClusteringReport(
             campaign_id=campaign_id,
             n_failures=len(failures),
@@ -363,4 +466,5 @@ class FailureClusteringEngine:
             cross_model_patterns=cross_model_patterns,
             top_emerging_risk=top_emerging,
             summary=" ".join(summary_parts),
+            alerts=alerts,
         )
