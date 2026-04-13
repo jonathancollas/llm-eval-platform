@@ -60,6 +60,29 @@ AUTONOMY_MULTIPLIER: dict[str, float] = {
     "L5": 2.5,   # No human in the loop
 }
 
+
+def normalize_autonomy_level(value: int | str) -> str:
+    """
+    Normalize autonomy level input to canonical string form (L1-L5).
+    """
+    if isinstance(value, int):
+        if value < 1 or value > 5:
+            raise ValueError("autonomy_level integer must be between 1 and 5")
+        return f"L{value}"
+    if isinstance(value, str):
+        v = value.strip().upper()
+        if v.startswith("L") and len(v) == 2 and v[1].isdigit():
+            lv = int(v[1])
+            if lv < 1 or lv > 5:
+                raise ValueError("autonomy_level must be L1-L5")
+            return f"L{lv}"
+        if v.isdigit():
+            lv = int(v)
+            if lv < 1 or lv > 5:
+                raise ValueError("autonomy_level integer must be between 1 and 5")
+            return f"L{lv}"
+    raise ValueError("autonomy_level must be L1-L5 or integer 1-5")
+
 # Tool access multipliers
 TOOL_MULTIPLIER: dict[str, float] = {
     "none":           1.0,
@@ -151,6 +174,25 @@ class SystemThreatProfile:
     # Scientific note
     caveat: str
 
+    # Canonical system-level profile fields (#113 issue contract)
+    system_id: str = ""
+    overall_risk_level: str = "low"  # low | medium | high | critical
+    component_risks: dict[str, float] = field(default_factory=dict)
+    composition_multiplier: float = 1.0
+    mitigation_recommendations: list[str] = field(default_factory=list)
+    autonomy_certification: str = "L4"
+
+
+@dataclass
+class SystemRiskProfile:
+    system_id: str
+    overall_risk_level: str          # low | medium | high | critical
+    component_risks: dict[str, float]
+    composition_multiplier: float
+    dominant_threat_vector: str
+    mitigation_recommendations: list[str]
+    autonomy_certification: str      # L1-L5 recommendation
+
 
 # ── Engine ────────────────────────────────────────────────────────────────────
 
@@ -179,6 +221,7 @@ class CompositionalRiskEngine:
         tools: list[str] | None = None,
         memory_type: str = "session",
     ) -> SystemThreatProfile:
+        autonomy_level = normalize_autonomy_level(autonomy_level)
         tools = tools or []
         propensity_scores = propensity_scores or {}
 
@@ -294,6 +337,12 @@ class CompositionalRiskEngine:
                 "definitive risk certifications. Expert review is required for "
                 "deployment decisions on high-risk systems."
             ),
+            system_id=model_name,
+            overall_risk_level=self._normalize_overall_risk_level(risk_level),
+            component_risks={r.domain: r.weighted_risk for r in domain_risks},
+            composition_multiplier=round(auto_mult * tool_mult * mem_mult * combo_mult, 3),
+            mitigation_recommendations=mitigations,
+            autonomy_certification=self._extract_autonomy_certification(autonomy_rec),
         )
 
     @staticmethod
@@ -367,3 +416,62 @@ class CompositionalRiskEngine:
             mitigations.append("Consider reducing autonomy level — L4/L5 with this risk profile is inadvisable.")
         mitigations.append("Enable continuous monitoring (#79) with drift detection for deployed system.")
         return mitigations
+
+    @staticmethod
+    def _normalize_overall_risk_level(level: str) -> str:
+        if level == "moderate":
+            return "medium"
+        return level
+
+    @staticmethod
+    def _extract_autonomy_certification(autonomy_recommendation: str) -> str:
+        if autonomy_recommendation.startswith("L1"):
+            return "L1"
+        if autonomy_recommendation.startswith("L2"):
+            return "L2"
+        if autonomy_recommendation.startswith("L3"):
+            return "L3"
+        if autonomy_recommendation.startswith("L5"):
+            return "L5"
+        return "L4"
+
+
+class CompositionalRiskModel:
+    """
+    Compatibility model for issue #113 API contract.
+    """
+
+    def __init__(self, system_id: str = "system"):
+        self.system_id = system_id
+        self._engine = CompositionalRiskEngine()
+
+    def compute_system_risk(
+        self,
+        capability_scores: dict[str, float],
+        propensity_scores: dict[str, float],
+        autonomy_level: int,
+        tool_access: list[str],
+        memory_type: str,
+    ) -> SystemRiskProfile:
+        normalized_autonomy = normalize_autonomy_level(autonomy_level)
+        profile = self._engine.compute(
+            model_name=self.system_id,
+            domain_scores=capability_scores or {},
+            propensity_scores=propensity_scores or {},
+            autonomy_level=normalized_autonomy,
+            tools=tool_access or [],
+            memory_type=memory_type or "session",
+        )
+        return self.to_system_risk_profile(profile)
+
+    @staticmethod
+    def to_system_risk_profile(profile: SystemThreatProfile) -> SystemRiskProfile:
+        return SystemRiskProfile(
+            system_id=profile.system_id or profile.model_name,
+            overall_risk_level=profile.overall_risk_level,
+            component_risks=profile.component_risks,
+            composition_multiplier=profile.composition_multiplier,
+            dominant_threat_vector=profile.dominant_threat_vector,
+            mitigation_recommendations=profile.mitigation_recommendations,
+            autonomy_certification=profile.autonomy_certification,
+        )
