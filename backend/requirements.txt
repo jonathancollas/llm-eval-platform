@@ -19,3 +19,4 @@ lm-eval>=0.4.4
 # No fixed version is available yet. Monitor https://github.com/RaRe-Technologies/sqlitedict/issues.
 datasets>=2.18.0
 celery[redis]>=5.6.3
+guardrails-ai>=0.10.0
