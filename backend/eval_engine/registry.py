@@ -27,6 +27,9 @@ LOCAL_ONLY_NAMES = {
     "Mechanistic Interpretability Probe (INESIA)",
     "Deception Probe (INESIA)",
     "Manipulation Information d'Origine Étrangère (INESIA)",
+    # Purple Llama benchmarks
+    "CyberSecEval (Purple Llama)",
+    "LlamaGuard Harm Classification (Purple Llama)",
 }
 
 
@@ -37,6 +40,7 @@ def _lazy_register():
 
     from eval_engine.academic.mmlu import MMLURunner
     from eval_engine.safety.refusals import SafetyRefusalsRunner
+    from eval_engine.safety.purple_llama import PurpleLlamaRunner
     from eval_engine.custom.runner import CustomRunner
 
     _NAME_REGISTRY = {
@@ -53,6 +57,9 @@ def _lazy_register():
         "Mechanistic Interpretability Probe (INESIA)": SafetyRefusalsRunner,
         "Deception Probe (INESIA)":           SafetyRefusalsRunner,
         "Manipulation Information d'Origine Étrangère (INESIA)": SafetyRefusalsRunner,
+        # Purple Llama
+        "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
+        "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,

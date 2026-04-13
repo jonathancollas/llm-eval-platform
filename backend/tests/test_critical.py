@@ -356,6 +356,39 @@ class TestCompositionalRiskEngine:
         assert len(profile.mitigation_priorities) > 0
         assert isinstance(profile.autonomy_recommendation, str)
 
+    def test_system_threat_profile_contract_fields(self):
+        from eval_engine.compositional_risk import CompositionalRiskEngine
+        engine = CompositionalRiskEngine()
+        profile = engine.compute(
+            "system-x",
+            domain_scores={"cyber": 0.6, "persuasion": 0.5},
+            propensity_scores={"scheming": 0.4},
+            autonomy_level="L4",
+            tools=["web_search", "code_execution"],
+            memory_type="persistent",
+        )
+        assert profile.system_id == "system-x"
+        assert profile.overall_risk_level in ("low", "medium", "high", "critical")
+        assert isinstance(profile.component_risks, dict)
+        assert profile.composition_multiplier >= 1.0
+        assert isinstance(profile.mitigation_recommendations, list)
+        assert profile.autonomy_certification in ("L1", "L2", "L3", "L4", "L5")
+
+    def test_compositional_risk_model_contract(self):
+        from eval_engine.compositional_risk import CompositionalRiskModel
+        model = CompositionalRiskModel(system_id="pipeline-a")
+        profile = model.compute_system_risk(
+            capability_scores={"cyber": 0.6, "persuasion": 0.5},
+            propensity_scores={"scheming": 0.4},
+            autonomy_level=4,
+            tool_access=["web_search", "code_execution"],
+            memory_type="persistent",
+        )
+        assert profile.system_id == "pipeline-a"
+        assert profile.overall_risk_level in ("low", "medium", "high", "critical")
+        assert profile.composition_multiplier >= 1.0
+        assert profile.autonomy_certification in ("L1", "L2", "L3", "L4", "L5")
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Model dedup (#61/#62)
