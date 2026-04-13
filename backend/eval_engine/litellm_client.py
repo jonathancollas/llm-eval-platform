@@ -14,6 +14,7 @@ from litellm import acompletion
 from core.models import LLMModel, ModelProvider
 from core.security import decrypt_api_key
 from core.config import get_settings
+from core.lakera_guard import screen_prompt_with_lakera
 
 logger = logging.getLogger(__name__)
 litellm.set_verbose = False
@@ -100,6 +101,7 @@ async def complete(
     system_prompt: Optional[str] = None,
 ) -> CompletionResult:
     settings = get_settings()
+    await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})

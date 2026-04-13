@@ -386,6 +386,13 @@ BENCHMARK_CATALOG: list[dict] = [
      "description": "8 environnements pour évaluer les LLMs comme agents : code, jeux, web.", "metric": "success_rate", "num_samples": 20,
      "dataset_path": "frontier/loss_of_control.json", "tags": ["agentic", "multi-environnement"], "year": 2023},
 
+    # ══ REAL-WORLD INCIDENT REPLAY ═══════════════════════════════════════
+    {"key": "aiid_replay", "name": "AI Incident Database (AIID) Replay", "type": "safety", "domain": "safety",
+     "description": "Real-world AI failure replay benchmark built from AI Incident Database cases (AIID), adapted into refusal-vs-assist safety prompts.",
+     "metric": "safety_score", "num_samples": 10,
+     "dataset_path": "frontier/aiid_replay.json", "tags": ["real-world", "incident-replay", "AIID", "safety"], "year": 2026,
+     "source": "public", "risk_threshold": 0.85, "is_frontier": True},
+
     # ══ SÉCURITÉ / ALIGNMENT ════════════════════════════════════════════
     {"key": "safety_refusals", "name": "Safety Refusals", "type": "safety", "domain": "alignment",
      "description": "Refusal calibration — measures over-refusal and under-refusal sur 30 prompts.", "metric": "safety_score", "num_samples": 30,
