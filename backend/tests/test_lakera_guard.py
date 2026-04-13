@@ -81,6 +81,40 @@ async def test_lakera_guard_blocks_prompt_injection(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_lakera_guard_sends_configured_project_id(monkeypatch):
+    monkeypatch.setenv("LAKERA_GUARD_API_KEY", "test-key")
+    monkeypatch.setenv("LAKERA_GUARD_PROJECT_ID", "project-abc")
+
+    captured = {"json": None}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"flagged": False}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            captured["json"] = kwargs.get("json")
+            return FakeResponse()
+
+    monkeypatch.setattr("core.lakera_guard.httpx.AsyncClient", FakeAsyncClient)
+
+    await screen_prompt_with_lakera("hello")
+    assert captured["json"]["project_id"] == "project-abc"
+
+
+@pytest.mark.asyncio
 async def test_lakera_guard_fail_open_on_request_error(monkeypatch):
     monkeypatch.setenv("LAKERA_GUARD_API_KEY", "test-key")
     monkeypatch.setenv("LAKERA_GUARD_FAIL_CLOSED", "false")

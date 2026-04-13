@@ -25,12 +25,15 @@ async def screen_prompt_with_lakera(prompt: str, system_prompt: Optional[str] = 
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
+    payload: dict = {"messages": messages, "breakdown": True}
+    if settings.lakera_guard_project_id:
+        payload["project_id"] = settings.lakera_guard_project_id
 
     try:
         async with httpx.AsyncClient(timeout=settings.lakera_guard_timeout_seconds) as client:
             response = await client.post(
                 settings.lakera_guard_url,
-                json={"messages": messages, "breakdown": True},
+                json=payload,
                 headers={"Authorization": f"Bearer {settings.lakera_guard_api_key}"},
             )
             response.raise_for_status()
