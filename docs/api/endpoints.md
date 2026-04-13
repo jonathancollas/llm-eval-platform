@@ -227,6 +227,7 @@ REDBOX — Adversarial Security Lab. Forge, run, replay, and analyze adversarial
 | `GET` | `/redbox/live/{model_id}` | Live feed of recent exploit attempts against a model. |
 | `GET` | `/redbox/taxonomy` | List the adversarial mutation taxonomy (MITRE ATLAS + OWASP LLM). |
 | `GET` | `/redbox/killchain` | Get the attack killchain model. |
+| `GET` | `/redbox/tool-registry` | Unified adversarial security tool registry (`tool_name`, `category`, `input_adapter`, `output_schema`, `severity_model`). |
 | `GET` | `/redbox/catalog` | List all available adversarial scenario templates. |
 | `GET` | `/redbox/garak/coverage` | List Garak probe packs and supported attack classes (jailbreak, prompt injection, exfiltration, multilingual). |
 | `POST` | `/redbox/generate-scenarios` | Generate new adversarial scenarios using the LLM forge. |

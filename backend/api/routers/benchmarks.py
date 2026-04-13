@@ -802,6 +802,47 @@ BENCHMARK_SCIENCE = {
         "autonomy_levels": ["L1", "L2", "L3"],
         "confidence_bounds": "±12% at n=8",
     },
+    # ── Purple Llama (Meta) ────────────────────────────────────────────────────
+    "CyberSecEval (Purple Llama)": {
+        "threat_model": "Cybersecurity safety — three axes: (1) attack helpfulness (model assists offensive cyber ops), "
+                        "(2) insecure code generation (model produces CWE-vulnerable code), "
+                        "(3) false refusal rate (model over-refuses benign security tasks). "
+                        "Covers MITRE ATT&CK tactics, CWE Top 25, OWASP Top 10.",
+        "papers": [
+            {"title": "Purple Llama CyberSecEval: A Benchmark for Evaluating the Cybersecurity Risks of Large Language Models",
+             "authors": "Bhatt et al. (Meta)", "year": 2024, "url": "https://arxiv.org/abs/2312.04724"},
+            {"title": "CyberSecEval 2: A Wide-Ranging Cybersecurity Evaluation Suite for Large Language Models",
+             "authors": "Bhatt et al. (Meta)", "year": 2024, "url": "https://arxiv.org/abs/2404.13161"},
+        ],
+        "known_blind_spots": "Single-turn evaluation; advanced multi-step attack planning requires agentic evaluation. "
+                             "Code insecurity heuristics may miss novel CWE patterns.",
+        "scoring_method": "Three-metric readout: attack_helpfulness_rate (fraction of cyber-attack prompts assisted — lower is safer), "
+                          "insecure_code_rate (fraction of code-gen prompts producing CWE-vulnerable code — lower is safer), "
+                          "false_refusal_rate (fraction of benign security tasks incorrectly refused — lower is better UX). "
+                          "Overall safety_score = fraction of items where model made the correct decision.",
+        "autonomy_levels": ["L1", "L2", "L3"],
+        "confidence_bounds": "±7% at n=20",
+    },
+    "LlamaGuard Harm Classification (Purple Llama)": {
+        "threat_model": "Multi-category harm detection — 13 MLCommons AI Safety Taxonomy categories: "
+                        "S1 Violent Crimes, S2 Non-Violent Crimes, S3 Sex-Related Crimes, "
+                        "S4 Child Sexual Exploitation, S5 Defamation, S6 Specialised Advice, "
+                        "S7 Privacy, S8 Intellectual Property, S9 Indiscriminate Weapons (CBRN-E), "
+                        "S10 Hate, S11 Suicide & Self-Harm, S12 Sexual Content, S13 Elections.",
+        "papers": [
+            {"title": "Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations",
+             "authors": "Inan et al. (Meta)", "year": 2023, "url": "https://arxiv.org/abs/2312.06674"},
+            {"title": "Llama Guard 3: Meta's Responsible Use Guide",
+             "authors": "Meta AI", "year": 2024, "url": "https://ai.meta.com/research/publications/llama-guard-3/"},
+        ],
+        "known_blind_spots": "Culturally-specific harm framings may be underrepresented. "
+                             "Context-dependence (professional credentials) is approximated by prompt framing only.",
+        "scoring_method": "Binary classification per prompt (REFUSE/ASSIST). "
+                          "safety_score = fraction correct. Per-category breakdown (S1–S13) exposes per-risk-type weaknesses. "
+                          "Both correct refusals on harmful prompts and correct assistance on benign ones are scored.",
+        "autonomy_levels": ["L1", "L2"],
+        "confidence_bounds": "±6% at n=22",
+    },
 }
 
 

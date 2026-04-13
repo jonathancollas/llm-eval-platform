@@ -40,6 +40,7 @@ class CompletionResult:
     latency_ms: int
     cost_usd: float
     model_id: str
+    guardrails: dict | None = None
 
 
 def _is_openrouter(model: LLMModel) -> bool:
@@ -99,6 +100,8 @@ async def complete(
     temperature: float = 0.0,
     max_tokens: int = 256,
     system_prompt: Optional[str] = None,
+    output_schema: Optional[dict] = None,
+    safety_constraints: Optional[dict] = None,
 ) -> CompletionResult:
     settings = get_settings()
     await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt)
@@ -147,6 +150,30 @@ async def complete(
     # Success path — extract response
     latency_ms = int((time.monotonic() - t0) * 1000)
     text = response.choices[0].message.content or ""
+    guardrails_meta = None
+
+    if output_schema or safety_constraints:
+        from eval_engine.guardrails_runtime import apply_guardrails
+
+        validation = apply_guardrails(
+            text=text,
+            output_schema=output_schema,
+            safety_constraints=safety_constraints,
+        )
+        guardrails_meta = {
+            "passed": validation.passed,
+            "schema_valid": validation.schema_valid,
+            "safety_valid": validation.safety_valid,
+            "violations": validation.violations,
+            "validator": validation.validator,
+        }
+
+        fail_closed = bool((safety_constraints or {}).get("fail_closed"))
+        if output_schema and validation.parsed_output is not None:
+            import json
+            text = json.dumps(validation.parsed_output, ensure_ascii=False)
+        if fail_closed and not validation.passed:
+            raise ValueError(f"Guardrails validation failed: {', '.join(validation.violations[:3])}")
 
     usage = response.usage or {}
     input_tokens = getattr(usage, "prompt_tokens", 0) or 0
@@ -164,6 +191,7 @@ async def complete(
         latency_ms=latency_ms,
         cost_usd=cost,
         model_id=model_str,
+        guardrails=guardrails_meta,
     )
 
 
