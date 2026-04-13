@@ -823,6 +823,24 @@ def get_frontier_killchain():
     }
 
 
+@router.get("/tool-registry")
+def get_adversarial_tool_registry(category: Optional[str] = None):
+    """Unified registry of adversarial security tools."""
+    from eval_engine.adversarial_taxonomy import ADVERSARIAL_TOOL_CATEGORIES, ADVERSARIAL_TOOL_REGISTRY
+
+    tools = ADVERSARIAL_TOOL_REGISTRY
+    if category:
+        if category not in ADVERSARIAL_TOOL_CATEGORIES:
+            raise HTTPException(400, detail=f"Unknown category '{category}'.")
+        tools = [t for t in tools if t["category"] == category]
+
+    return {
+        "tools": tools,
+        "total": len(tools),
+        "categories": ADVERSARIAL_TOOL_CATEGORIES,
+    }
+
+
 @router.get("/catalog")
 def get_adversarial_catalog(
     category: Optional[str] = None,
