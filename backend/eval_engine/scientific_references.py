@@ -175,6 +175,31 @@ ADVERSARIAL_REFERENCES = {
              "url": "https://arxiv.org/abs/2412.04984", "contribution": "Demonstrated models can detect evaluation contexts and modify behavior."},
         ],
     },
+    "adversarial_ml": {
+        "papers": [
+            {"title": "Adversarial Robustness Toolbox v1.0.0", "authors": "Nicolae et al.", "year": 2018, "venue": "arXiv",
+             "url": "https://arxiv.org/abs/1807.01069",
+             "contribution": "IBM ART — unified Python library for adversarial attacks and defenses (evasion, poisoning, extraction, inference)."},
+            {"title": "Explaining and Harnessing Adversarial Examples", "authors": "Goodfellow et al.", "year": 2015, "venue": "ICLR 2015",
+             "url": "https://arxiv.org/abs/1412.6572",
+             "contribution": "Fast Gradient Sign Method (FGSM) — foundational evasion attack on neural networks."},
+            {"title": "Towards Deep Learning Models Resistant to Adversarial Attacks", "authors": "Madry et al.", "year": 2018, "venue": "ICLR 2018",
+             "url": "https://arxiv.org/abs/1706.06083",
+             "contribution": "PGD attack — strongest first-order adversary; gold standard for certified adversarial training."},
+            {"title": "Towards Evaluating the Robustness of Neural Networks", "authors": "Carlini & Wagner", "year": 2017, "venue": "IEEE S&P 2017",
+             "url": "https://arxiv.org/abs/1608.04644",
+             "contribution": "C&W attack — powerful optimization-based evasion attack that breaks many defenses."},
+            {"title": "Poison Frogs! Targeted Clean-Label Poisoning Attacks on Neural Networks", "authors": "Shafahi et al.", "year": 2018, "venue": "NeurIPS 2018",
+             "url": "https://arxiv.org/abs/1804.00792",
+             "contribution": "Clean-label poisoning — attacker injects data without changing labels, evading sanity checks."},
+            {"title": "Membership Inference Attacks against Machine Learning Models", "authors": "Shokri et al.", "year": 2017, "venue": "IEEE S&P 2017",
+             "url": "https://arxiv.org/abs/1610.05820",
+             "contribution": "Membership inference — privacy attack that determines whether a record was in the training set."},
+            {"title": "Stealing Machine Learning Models via Prediction APIs", "authors": "Tramèr et al.", "year": 2016, "venue": "USENIX Security 2016",
+             "url": "https://arxiv.org/abs/1609.02943",
+             "contribution": "Model extraction attack — clone a model from its API predictions using equation-solving or path-finding queries."},
+        ],
+    },
 }
 
 # ── LLM-as-Judge References ────────────────────────────────────────────────────
