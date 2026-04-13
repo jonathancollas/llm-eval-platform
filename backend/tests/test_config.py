@@ -48,7 +48,7 @@ def test_settings_generates_ephemeral_secret_key_when_missing():
     int(settings.secret_key, 16)
 
 
-def test_settings_accepts_valid_secret_key(monkeypatch):
+def test_settings_accepts_secret_key_meeting_minimum_length(monkeypatch):
     key = secrets.token_hex(32)
     monkeypatch.setenv("SECRET_KEY", key)
     assert Settings().secret_key == key
