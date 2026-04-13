@@ -89,26 +89,3 @@ DATABASE_URL=...
 REDIS_URL=...
 OLLAMA_BASE_URL=...
 ```
-
----
-
-## Included Benchmark Families
-
-- academic benchmarks
-- safety benchmarks
-- French benchmarks
-- frontier systemic risk benchmarks
-- custom JSON datasets
-- HuggingFace imports
-
-See `Architecture.md` for technical details.
-
----
-
-## License
-
-Dual license:
-
-- Etalab 2.0
-- Apache 2.0
-See `License.md` for technical details.
