@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     groq_api_key: str = ""
     openrouter_api_key: str = ""
+    lakera_guard_api_key: str = ""
+    lakera_guard_url: str = "https://api.lakera.ai/v2/guard"
+    lakera_guard_project_id: str = ""
+    lakera_guard_timeout_seconds: float = 5.0
+    lakera_guard_fail_closed: bool = False
 
     # ── Ollama ──────────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
