@@ -201,64 +201,67 @@ _DESTRUCTIVE_PATH_TOKENS = ("/cancel", "/rotate-key")
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next: Callable) -> Response:
     """
-    Mandatory auth + RBAC middleware.
-    Public: /api/health, /docs, /redoc, /openapi.json, OPTIONS preflight.
+    Access control middleware — DISABLED (commented out for single-user deployment).
+    All requests pass through without authentication.
+
+    # To re-enable, uncomment the block below and set ADMIN_API_KEY + tenant keys.
+    #
+    # public = (
+    #     request.method == "OPTIONS"
+    #     or request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json")
+    # )
+    # if public:
+    #     return await call_next(request)
+    #
+    # # Mandatory admin API key auth (fail closed when unset).
+    # key = request.headers.get("X-API-Key", "")
+    # if not key:
+    #     return JSONResponse(
+    #         status_code=401,
+    #         content={"detail": "Missing X-API-Key header. Set ADMIN_API_KEY and pass it as X-API-Key."},
+    #     )
+    # if not _ADMIN_API_KEY:
+    #     return JSONResponse(
+    #         status_code=503,
+    #         content={"detail": "Server misconfigured: ADMIN_API_KEY is not set."},
+    #     )
+    # if not _hmac.compare_digest(key, _ADMIN_API_KEY):
+    #     return JSONResponse(status_code=403, content={"detail": "Invalid API key."})
+    #
+    # role = get_request_role(request)
+    # if role not in VALID_ROLES:
+    #     return JSONResponse(
+    #         status_code=403,
+    #         content={"detail": "Invalid role. Allowed roles: admin, evaluator, viewer."},
+    #     )
+    # request.state.current_role = role
+    #
+    # # RBAC: viewer is read-only; tenant management is admin-only.
+    # if request.url.path.startswith("/api/tenants") and role != "admin":
+    #     return JSONResponse(status_code=403, content={"detail": "Admin role required."})
+    # if request.method in {"POST", "PUT", "PATCH", "DELETE"} and role == "viewer":
+    #     return JSONResponse(status_code=403, content={"detail": "Viewer role is read-only."})
+    #
+    # # Explicit confirmation for destructive operations.
+    # destructive_path = any(token in request.url.path for token in _DESTRUCTIVE_PATH_TOKENS)
+    # destructive = request.method == "DELETE" or destructive_path
+    # if destructive and request.headers.get("X-Confirm-Action", "").lower() != "true":
+    #     return JSONResponse(
+    #         status_code=400,
+    #         content={"detail": "Missing X-Confirm-Action: true header for destructive operation."},
+    #     )
+    #
+    # # Tenant is mandatory on data routes.
+    # if request.url.path.startswith("/api") and not request.url.path.startswith("/api/tenants"):
+    #     with Session(engine) as session:
+    #         try:
+    #             tenant = require_tenant(request, session)
+    #             request.state.current_tenant = tenant
+    #         except Exception as exc:
+    #             if hasattr(exc, "status_code"):
+    #                 return JSONResponse(status_code=exc.status_code, content={"detail": getattr(exc, "detail", "Unauthorized")})
+    #             raise
     """
-    public = (
-        request.method == "OPTIONS"
-        or request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json")
-    )
-    if public:
-        return await call_next(request)
-
-    # Mandatory admin API key auth (fail closed when unset).
-    key = request.headers.get("X-API-Key", "")
-    if not key:
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Missing X-API-Key header. Set ADMIN_API_KEY and pass it as X-API-Key."},
-        )
-    if not _ADMIN_API_KEY:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Server misconfigured: ADMIN_API_KEY is not set."},
-        )
-    if not _hmac.compare_digest(key, _ADMIN_API_KEY):
-        return JSONResponse(status_code=403, content={"detail": "Invalid API key."})
-
-    role = get_request_role(request)
-    if role not in VALID_ROLES:
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Invalid role. Allowed roles: admin, evaluator, viewer."},
-        )
-    request.state.current_role = role
-
-    # RBAC: viewer is read-only; tenant management is admin-only.
-    if request.url.path.startswith("/api/tenants") and role != "admin":
-        return JSONResponse(status_code=403, content={"detail": "Admin role required."})
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and role == "viewer":
-        return JSONResponse(status_code=403, content={"detail": "Viewer role is read-only."})
-
-    # Explicit confirmation for destructive operations.
-    destructive_path = any(token in request.url.path for token in _DESTRUCTIVE_PATH_TOKENS)
-    destructive = request.method == "DELETE" or destructive_path
-    if destructive and request.headers.get("X-Confirm-Action", "").lower() != "true":
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Missing X-Confirm-Action: true header for destructive operation."},
-        )
-
-    # Tenant is mandatory on data routes.
-    if request.url.path.startswith("/api") and not request.url.path.startswith("/api/tenants"):
-        with Session(engine) as session:
-            try:
-                tenant = require_tenant(request, session)
-                request.state.current_tenant = tenant
-            except Exception as exc:
-                if hasattr(exc, "status_code"):
-                    return JSONResponse(status_code=exc.status_code, content={"detail": getattr(exc, "detail", "Unauthorized")})
-                raise
     return await call_next(request)
 
 

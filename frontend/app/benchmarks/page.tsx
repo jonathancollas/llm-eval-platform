@@ -12,7 +12,7 @@ import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
 import { SecurityBenchmarkWizard } from "@/components/SecurityBenchmarkWizard";
 import { benchmarkTypeColor } from "@/lib/utils";
 import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles,
-         Search, ChevronLeft, ChevronRight, Eye, Shield } from "lucide-react";
+         Search, ChevronLeft, ChevronRight, Eye, Shield, GitFork, Quote } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
@@ -189,16 +189,49 @@ function ItemExplorer({ benchmarkId, onClose }: { benchmarkId: number; onClose: 
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 // ── Benchmark Card — scientific provenance ────────────────────────────────────
-function BenchmarkCard({ benchmarkId, benchmarkName }: { benchmarkId: number; benchmarkName: string }) {
+function BenchmarkCard({
+  benchmarkId,
+  benchmarkName,
+  onForked,
+}: {
+  benchmarkId: number;
+  benchmarkName: string;
+  onForked?: () => void;
+}) {
   const [card, setCard] = useState<any | null>(null);
+  const [lineage, setLineage] = useState<any | null>(null);
+  const [citations, setCitations] = useState<any | null>(null);
   const [open, setOpen] = useState(false);
+  const [forking, setForking] = useState(false);
 
-  const load = () => {
+  const load = async () => {
     if (card) { setOpen(o => !o); return; }
-    fetch(`${API_BASE}/benchmarks/${benchmarkId}/card`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { setCard(d); setOpen(true); })
-      .catch(() => {});
+    try {
+      const [cardRes, lineageRes, citationRes] = await Promise.all([
+        fetch(`${API_BASE}/benchmarks/${benchmarkId}/card`),
+        fetch(`${API_BASE}/benchmarks/${benchmarkId}/lineage`),
+        fetch(`${API_BASE}/benchmarks/${benchmarkId}/citations`),
+      ]);
+      setCard(cardRes.ok ? await cardRes.json() : null);
+      setLineage(lineageRes.ok ? await lineageRes.json() : null);
+      setCitations(citationRes.ok ? await citationRes.json() : null);
+      setOpen(true);
+    } catch {}
+  };
+
+  const handleFork = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setForking(true);
+    try {
+      await benchmarksApi.fork(benchmarkId, { fork_type: "extension", changes_description: "Forked from benchmark card" });
+      setCard(null);
+      setLineage(null);
+      setCitations(null);
+      onForked?.();
+      await load();
+    } finally {
+      setForking(false);
+    }
   };
 
   if (!card && !open) {
@@ -224,6 +257,69 @@ function BenchmarkCard({ benchmarkId, benchmarkName }: { benchmarkId: number; be
       </button>
       {open && card && (
         <div className="px-4 pb-4 space-y-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[10px] text-slate-500">
+              {benchmarkName}
+              {citations && <span className="ml-2 text-slate-400">· {citations.citation_count} citations</span>}
+            </div>
+            <button
+              onClick={handleFork}
+              disabled={forking}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <GitFork size={10} />
+              {forking ? "Forking..." : "Fork"}
+            </button>
+          </div>
+
+          {lineage && (
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-2">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Fork Lineage</div>
+              <div className="text-slate-700">
+                {lineage.parent ? (
+                  <div className="mb-1">Parent: <span className="font-medium">{lineage.parent.name}</span></div>
+                ) : (
+                  <div className="mb-1 text-slate-500">Parent: none (root benchmark)</div>
+                )}
+                {lineage.children?.length > 0 ? (
+                  <div className="space-y-0.5">
+                    {lineage.children.map((child: any) => (
+                      <div key={child.id} className="text-[11px] text-slate-600">
+                        └─ {child.name}
+                        {child.fork_type ? ` · ${child.fork_type}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-slate-500">No forks yet.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {citations && (
+            <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-2">
+              <div className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <Quote size={10} /> Citation Graph
+              </div>
+              <div className="text-[11px] text-slate-600 mb-1">
+                Influence score: <span className="font-semibold">{citations.influence_score}</span>
+              </div>
+              <div className="space-y-1">
+                {(citations.citations_by_year || []).map((entry: any) => {
+                  const max = Math.max(...(citations.citations_by_year || []).map((e: any) => e.count), 1);
+                  return (
+                    <div key={entry.year} className="flex items-center gap-2">
+                      <span className="w-10 text-[10px] text-slate-500">{entry.year}</span>
+                      <div className="h-2 rounded bg-blue-200" style={{ width: `${Math.max(8, Math.round((entry.count / max) * 120))}px` }} />
+                      <span className="text-[10px] text-slate-500">{entry.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Threat model */}
           {card.threat_model && (
             <div>
@@ -684,6 +780,9 @@ export default function BenchmarksPage() {
                         <Badge className="bg-red-700 text-white text-[9px] font-bold">🔴 BLOCKING</Badge>
                       )}
                       {b.has_dataset && <Badge className="bg-green-100 text-green-600">Dataset ✓</Badge>}
+                      <Badge className="bg-blue-100 text-blue-700 border border-blue-200 text-[10px]">
+                        <Quote size={10} className="inline mr-1" />{b.citation_count ?? 0}
+                      </Badge>
                     </div>
                     <p className="text-xs text-slate-500 truncate">{b.description}</p>
                   </div>
@@ -704,7 +803,7 @@ export default function BenchmarksPage() {
                     <p className="text-slate-600 text-xs mb-3">{b.description}</p>
 
                     {/* ── Benchmark Card (scientific provenance) ────────── */}
-                    <BenchmarkCard benchmarkId={b.id} benchmarkName={b.name} />
+                    <BenchmarkCard benchmarkId={b.id} benchmarkName={b.name} onForked={load} />
 
                     {/* ── Tag manager ─────────────────────────────────── */}
                     <div className="mb-3">

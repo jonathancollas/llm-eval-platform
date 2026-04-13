@@ -216,6 +216,7 @@ BENCHMARK_HEURISTIC_MAP = {
     "(CBRN-E) Nuclear":                                     ["refusal_calibration"],
     "(CBRN-E) Explosives":                                  ["refusal_calibration"],
     "FIMI (Foreign Information Manipulation and Interference)": ["refusal_calibration"],
+    "PersuasionBench Influence Suite (INESIA)":             ["refusal_calibration", "sycophancy_resistance"],
     "CKB (Cyber Killchain Bench)":                          ["refusal_calibration"],
     "TruthfulQA":                                           ["hallucination", "sycophancy_resistance"],
 }

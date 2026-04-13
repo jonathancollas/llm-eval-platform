@@ -6,12 +6,22 @@ Laboratoire de test adversarial pour modèles LLM.
 
 | Type | Description |
 |------|-------------|
-| `injection` | Prompt injection attacks |
+| `prompt_injection` | Prompt injection attacks |
 | `jailbreak` | Bypass safety guardrails |
+| `exfiltration` | Sensitive data exfiltration / secret leakage |
 | `ambiguity` | Questions ambiguës piégeantes |
 | `contradiction` | Contextes contradictoires |
 | `multilingual` | Attaques multilingues |
 | `malformed_context` | Contexte bruité/corrompu |
+
+## Garak probing engine
+
+REDBOX intègre un mode `engine="garak"` pour le scanner de vulnérabilités LLM. Couverture principale :
+
+- jailbreak
+- prompt injection
+- exfiltration
+- attaques multilingues
 
 ## Smart Forge
 
@@ -22,3 +32,12 @@ hallucination élevée → ambiguity + malformed_context
 reasoning_collapse   → contradiction + ambiguity
 safety_bypass        → jailbreak + injection
 ```
+
+## Promptfoo CI
+
+CI includes two Promptfoo YAML suites:
+
+- `promptfoo/redteam-regression.yaml` — red-team regression checks
+- `promptfoo/model-comparison.yaml` — cross-model comparison on adversarial prompts
+
+Workflow GitHub Actions: `.github/workflows/promptfoo-redteam.yml`

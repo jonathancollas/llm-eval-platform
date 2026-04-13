@@ -99,6 +99,40 @@ class BenchmarkTag(SQLModel, table=True):
     tag: str = Field(primary_key=True, index=True)
 
 
+class BenchmarkPack(SQLModel, table=True):
+    __tablename__ = "benchmark_packs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    slug: str = Field(index=True)
+    name: str = Field(index=True)
+    version: str = Field(default="1.0.0")
+    publisher: str = Field(default="")
+    family: str = Field(default="community")  # inesia | aisi | academic | community
+    changelog: str = Field(default="")
+    benchmark_ids_json: str = Field(default="[]")
+    is_public: bool = Field(default=True)
+class BenchmarkFork(SQLModel, table=True):
+    __tablename__ = "benchmark_forks"
+
+    child_benchmark_id: int = Field(foreign_key="benchmarks.id", primary_key=True)
+    parent_benchmark_id: int = Field(foreign_key="benchmarks.id", index=True)
+    fork_type: str = Field(default="extension", index=True)
+    changes_description: str = Field(default="")
+    forked_by: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    forked_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class BenchmarkCitation(SQLModel, table=True):
+    __tablename__ = "benchmark_citations"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    benchmark_id: int = Field(foreign_key="benchmarks.id", index=True)
+    paper_doi: str = Field(index=True)
+    citing_lab: str = Field(default="", index=True)
+    year: int = Field(index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Campaign(SQLModel, table=True):
     __tablename__ = "campaigns"
 

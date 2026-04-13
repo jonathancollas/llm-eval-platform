@@ -441,6 +441,8 @@ function DashboardContent() {
   const [genome, setGenome] = useState<GenomeData | null>(null);
   const [failedData, setFailedData] = useState<FailedItemsData | null>(null);
   const [insights, setInsights] = useState<any>(null);
+  const [compositionalRisk, setCompositionalRisk] = useState<any>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -466,6 +468,80 @@ function DashboardContent() {
       setInsights(ins);
     }).finally(() => setLoading(false));
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId || !data) {
+      setCompositionalRisk(null);
+      return;
+    }
+
+    const domainScores: Record<string, number> = {};
+    const setDomain = (key: string, score: number) => {
+      const capped = Math.max(0, Math.min(1, score));
+      domainScores[key] = Math.max(domainScores[key] ?? 0, capped);
+    };
+
+    for (const cell of data.heatmap) {
+      if (cell.score == null) continue;
+      const benchmark = cell.benchmark_name.toLowerCase();
+      const risk = 1 - cell.score;
+      if (/(cyber|mitre|attack|ckb)/.test(benchmark)) setDomain("cyber", risk);
+      if (/(cbrn|bio|nuclear|radiological|chemical)/.test(benchmark)) setDomain("cbrn", risk);
+      if (/(fimi|disarm|persuasion|information|influence)/.test(benchmark)) setDomain("persuasion", risk);
+      if (/(scheming|sandbag|shutdown|sycophancy|alignment)/.test(benchmark)) {
+        setDomain("scheming", risk);
+        setDomain("sycophancy", risk * 0.8);
+      }
+      if (/(agentic|autonomy|goal drift|scope creep|failure mode)/.test(benchmark)) {
+        setDomain("goal_drift", risk);
+        setDomain("scope_creep", risk * 0.9);
+        setDomain("error_compounding", risk * 0.85);
+      }
+    }
+
+    if (Object.keys(domainScores).length === 0) {
+      setCompositionalRisk(null);
+      return;
+    }
+
+    const campaign = campaigns.find(c => c.id === selectedId);
+    const desc = campaign?.description ?? "";
+    const autonomyLevel = (desc.match(/Autonomy:\s*(L[1-5])/i)?.[1] ?? "L2").toUpperCase();
+    const memoryType = /Memory:\s*enabled/i.test(desc) ? "persistent" : "session";
+    const toolText = desc.match(/Tools:\s*([^|]+)/i)?.[1] ?? "";
+    const toolMap: Record<string, string> = {
+      "web search": "web_search",
+      "code execution": "code_execution",
+      "file system": "file_system",
+      "email/calendar": "email",
+      "database": "database",
+      "external apis": "external_apis",
+      "browser automation": "browser",
+    };
+    const tools = toolText
+      .split(",")
+      .map(t => t.trim().toLowerCase())
+      .map(t => toolMap[t])
+      .filter(Boolean);
+
+    setRiskLoading(true);
+    fetch(`${API_BASE}/science/compositional-risk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model_name: data.campaign_name,
+        domain_scores: domainScores,
+        propensity_scores: {},
+        autonomy_level: autonomyLevel,
+        tools,
+        memory_type: memoryType,
+      }),
+    })
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then((json) => setCompositionalRisk(json))
+      .catch(() => setCompositionalRisk(null))
+      .finally(() => setRiskLoading(false));
+  }, [selectedId, data, campaigns]);
 
   const signalCount = insights?.signals?.length ?? 0;
 
@@ -559,6 +635,47 @@ function DashboardContent() {
             {/* Tab content */}
             {tab === "overview" && (
               <div className="space-y-6">
+                {(riskLoading || compositionalRisk?.system_threat_profile) && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-medium text-slate-900 text-sm">System Threat Profile</h3>
+                      {riskLoading ? (
+                        <span className="text-xs text-slate-400">Computing…</span>
+                      ) : (
+                        <span className={`text-[11px] px-2 py-0.5 rounded border font-bold ${
+                          compositionalRisk?.system_threat_profile?.overall_risk_level === "critical" ? "bg-red-100 text-red-700 border-red-200" :
+                          compositionalRisk?.system_threat_profile?.overall_risk_level === "high" ? "bg-orange-100 text-orange-700 border-orange-200" :
+                          compositionalRisk?.system_threat_profile?.overall_risk_level === "medium" ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
+                          "bg-green-100 text-green-700 border-green-200"
+                        }`}>
+                          {(compositionalRisk?.system_threat_profile?.overall_risk_level ?? "low").toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    {!riskLoading && compositionalRisk?.system_threat_profile && (
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <div className="text-slate-400">Dominant vector</div>
+                          <div className="font-medium text-slate-800 mt-0.5">{compositionalRisk.system_threat_profile.dominant_threat_vector}</div>
+                        </div>
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <div className="text-slate-400">Composite score</div>
+                          <div className="font-medium text-slate-800 mt-0.5">
+                            {Math.round((compositionalRisk?.scores?.composite_risk_score ?? 0) * 100)}%
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <div className="text-slate-400">Composition ×</div>
+                          <div className="font-medium text-slate-800 mt-0.5">{compositionalRisk.system_threat_profile.composition_multiplier}x</div>
+                        </div>
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <div className="text-slate-400">Autonomy cert</div>
+                          <div className="font-medium text-slate-800 mt-0.5">{compositionalRisk.system_threat_profile.autonomy_certification}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-6">
                   <RadarSection radar={data.radar} />
                   <WinRateSection winRates={data.win_rates} />

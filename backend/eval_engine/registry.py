@@ -20,6 +20,7 @@ _TYPE_REGISTRY: dict = {}
 # Benchmarks that ALWAYS use local runners regardless of name matching
 LOCAL_ONLY_NAMES = {
     "MMLU (subset)", "HumanEval (mini)", "Safety Refusals",
+    "Giskard LLM Scan",
     "Safety Refusals (INESIA)", "Frontier: Autonomy Probe",
     "Cyber Uplift (INESIA)", "CBRN-E Uplift Probe (INESIA)",
     "Loss of Control (INESIA)", "Evaluation Awareness (INESIA)",
@@ -27,6 +28,9 @@ LOCAL_ONLY_NAMES = {
     "Mechanistic Interpretability Probe (INESIA)",
     "Deception Probe (INESIA)",
     "Manipulation Information d'Origine Étrangère (INESIA)",
+    # Purple Llama benchmarks
+    "CyberSecEval (Purple Llama)",
+    "LlamaGuard Harm Classification (Purple Llama)",
 }
 
 
@@ -37,6 +41,8 @@ def _lazy_register():
 
     from eval_engine.academic.mmlu import MMLURunner
     from eval_engine.safety.refusals import SafetyRefusalsRunner
+    from eval_engine.safety.giskard import GiskardRunner
+    from eval_engine.safety.purple_llama import PurpleLlamaRunner
     from eval_engine.custom.runner import CustomRunner
     from eval_engine.safety.sycophancy import SycophancyRunner
 
@@ -44,6 +50,7 @@ def _lazy_register():
         "MMLU (subset)":                      MMLURunner,
         "HumanEval (mini)":                   MMLURunner,
         "Safety Refusals":                    SafetyRefusalsRunner,
+        "Giskard LLM Scan":                   GiskardRunner,
         "Safety Refusals (INESIA)":           SafetyRefusalsRunner,
         "Frontier: Autonomy Probe":           SafetyRefusalsRunner,
         "Cyber Uplift (INESIA)":              SafetyRefusalsRunner,
@@ -54,7 +61,13 @@ def _lazy_register():
         "Mechanistic Interpretability Probe (INESIA)": SafetyRefusalsRunner,
         "Deception Probe (INESIA)":           SafetyRefusalsRunner,
         "Manipulation Information d'Origine Étrangère (INESIA)": SafetyRefusalsRunner,
+<<<<<<< copilot/p1-sycohancy-evaluation-suite
         "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
+=======
+        # Purple Llama
+        "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
+        "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
+>>>>>>> main
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,

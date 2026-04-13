@@ -14,6 +14,7 @@ from litellm import acompletion
 from core.models import LLMModel, ModelProvider
 from core.security import decrypt_api_key
 from core.config import get_settings
+from core.lakera_guard import screen_prompt_with_lakera
 
 logger = logging.getLogger(__name__)
 litellm.set_verbose = False
@@ -39,6 +40,12 @@ class CompletionResult:
     latency_ms: int
     cost_usd: float
     model_id: str
+    injection_detected: bool = False
+    embedding_score: float = 0.0
+    memory_score: float = 0.0
+    rebuff_heuristic_score: float = 0.0
+    rebuff_model_score: float = 0.0
+    guardrails: dict | None = None
 
 
 def _is_openrouter(model: LLMModel) -> bool:
@@ -92,14 +99,78 @@ def _build_kwargs(model: LLMModel, temperature: float, max_tokens: int) -> dict:
     return kwargs
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@dataclass
+class RebuffDetection:
+    injection_detected: bool = False
+    embedding_score: float = 0.0
+    memory_score: float = 0.0
+    heuristic_score: float = 0.0
+    model_score: float = 0.0
+
+
+def _to_rebuff_detection(response) -> RebuffDetection:
+    vector_score = getattr(response, "vectorScore", {}) or {}
+    return RebuffDetection(
+        injection_detected=bool(getattr(response, "injectionDetected", False)),
+        embedding_score=_safe_float(vector_score.get("topScore", 0.0)),
+        memory_score=_safe_float(vector_score.get("countOverMax", 0.0)),
+        heuristic_score=_safe_float(getattr(response, "heuristicScore", 0.0)),
+        model_score=_safe_float(getattr(response, "modelScore", 0.0)),
+    )
+
+
+async def _run_rebuff_detection(prompt: str) -> RebuffDetection:
+    settings = get_settings()
+    if not settings.rebuff_enabled or not settings.rebuff_api_token:
+        return RebuffDetection()
+
+    try:
+        from rebuff import Rebuff
+    except Exception:
+        logger.warning("Rebuff enabled but package is unavailable; continuing without injection scoring.")
+        return RebuffDetection()
+
+    detector = Rebuff(api_token=settings.rebuff_api_token, api_url=settings.rebuff_api_url)
+    try:
+        response = await asyncio.to_thread(
+            detector.detect_injection,
+            user_input=prompt,
+            max_heuristic_score=settings.rebuff_max_heuristic_score,
+            max_vector_score=settings.rebuff_max_vector_score,
+            max_model_score=settings.rebuff_max_model_score,
+            check_heuristic=settings.rebuff_check_heuristic,
+            check_vector=settings.rebuff_check_vector,
+            check_llm=settings.rebuff_check_llm,
+        )
+    except Exception as e:
+        logger.warning("Rebuff detection failed: %s", _sanitize_error(str(e)[:200]))
+        return RebuffDetection()
+
+    if hasattr(response, "error"):
+        logger.warning("Rebuff API failure: %s", _sanitize_error(str(getattr(response, "message", ""))[:200]))
+        return RebuffDetection()
+
+    return _to_rebuff_detection(response)
+
+
 async def complete(
     model: LLMModel,
     prompt: str,
     temperature: float = 0.0,
     max_tokens: int = 256,
     system_prompt: Optional[str] = None,
+    output_schema: Optional[dict] = None,
+    safety_constraints: Optional[dict] = None,
 ) -> CompletionResult:
     settings = get_settings()
+    await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt)
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -107,6 +178,9 @@ async def complete(
 
     model_str = _build_litellm_model_str(model)
     kwargs = _build_kwargs(model, temperature, max_tokens)
+    rebuff_detection = await _run_rebuff_detection(prompt)
+    if rebuff_detection.injection_detected:
+        logger.warning("Rebuff flagged potential prompt injection for model %s", model_str)
 
     t0 = time.monotonic()
     max_retries = 3
@@ -145,6 +219,30 @@ async def complete(
     # Success path — extract response
     latency_ms = int((time.monotonic() - t0) * 1000)
     text = response.choices[0].message.content or ""
+    guardrails_meta = None
+
+    if output_schema or safety_constraints:
+        from eval_engine.guardrails_runtime import apply_guardrails
+
+        validation = apply_guardrails(
+            text=text,
+            output_schema=output_schema,
+            safety_constraints=safety_constraints,
+        )
+        guardrails_meta = {
+            "passed": validation.passed,
+            "schema_valid": validation.schema_valid,
+            "safety_valid": validation.safety_valid,
+            "violations": validation.violations,
+            "validator": validation.validator,
+        }
+
+        fail_closed = bool((safety_constraints or {}).get("fail_closed"))
+        if output_schema and validation.parsed_output is not None:
+            import json
+            text = json.dumps(validation.parsed_output, ensure_ascii=False)
+        if fail_closed and not validation.passed:
+            raise ValueError(f"Guardrails validation failed: {', '.join(validation.violations[:3])}")
 
     usage = response.usage or {}
     input_tokens = getattr(usage, "prompt_tokens", 0) or 0
@@ -162,6 +260,12 @@ async def complete(
         latency_ms=latency_ms,
         cost_usd=cost,
         model_id=model_str,
+        injection_detected=rebuff_detection.injection_detected,
+        embedding_score=rebuff_detection.embedding_score,
+        memory_score=rebuff_detection.memory_score,
+        rebuff_heuristic_score=rebuff_detection.heuristic_score,
+        rebuff_model_score=rebuff_detection.model_score,
+        guardrails=guardrails_meta,
     )
 
 
