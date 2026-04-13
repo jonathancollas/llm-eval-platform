@@ -6,7 +6,7 @@ import json
 import platform
 import sys
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -236,7 +236,7 @@ async def cancel_campaign(
         # Task was actively running in this process and has now been cancelled.
         campaign.status = JobStatus.CANCELLED
         campaign.error_message = "Cancelled by user."
-        campaign.completed_at = datetime.utcnow()
+        campaign.completed_at = datetime.now(timezone.utc)
         session.add(campaign)
         session.commit()
     else:
@@ -245,7 +245,7 @@ async def cancel_campaign(
         if campaign.status == JobStatus.RUNNING:
             campaign.status = JobStatus.CANCELLED
             campaign.error_message = "Cancelled by user."
-            campaign.completed_at = datetime.utcnow()
+            campaign.completed_at = datetime.now(timezone.utc)
             session.add(campaign)
             session.commit()
         else:

@@ -538,9 +538,9 @@ def check_benchmark_validity(
 
 class CompositionalRiskRequest(BaseModel):
     model_name: str
-    domain_scores: dict = {}       # capability scores per domain
-    propensity_scores: dict = {}   # propensity scores per domain
-    autonomy_level: str = "L2"
+    domain_scores: dict[str, float] = {}       # capability scores per domain
+    propensity_scores: dict[str, float] = {}   # propensity scores per domain
+    autonomy_level: int | str = "L2"
     tools: list[str] = []
     memory_type: str = "session"
 
@@ -555,16 +555,25 @@ def compute_compositional_risk(payload: CompositionalRiskRequest):
 
     Reference: INESIA PDF Priority 3 — compositional and emergent risk.
     """
-    from eval_engine.compositional_risk import CompositionalRiskEngine
+    from eval_engine.compositional_risk import (
+        CompositionalRiskEngine,
+        CompositionalRiskModel,
+        normalize_autonomy_level,
+    )
     engine = CompositionalRiskEngine()
+    try:
+        auto_level = normalize_autonomy_level(payload.autonomy_level)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     profile = engine.compute(
         model_name=payload.model_name,
         domain_scores=payload.domain_scores,
         propensity_scores=payload.propensity_scores,
-        autonomy_level=payload.autonomy_level,
+        autonomy_level=auto_level,
         tools=payload.tools,
         memory_type=payload.memory_type,
     )
+    contract_profile = CompositionalRiskModel.to_system_risk_profile(profile)
     return {
         "model_name": profile.model_name,
         "autonomy_level": profile.autonomy_level,
@@ -595,6 +604,15 @@ def compute_compositional_risk(payload: CompositionalRiskRequest):
         ],
         "key_concerns": profile.key_concerns,
         "mitigation_priorities": profile.mitigation_priorities,
+        "system_threat_profile": {
+            "system_id": contract_profile.system_id,
+            "overall_risk_level": contract_profile.overall_risk_level,
+            "component_risks": contract_profile.component_risks,
+            "composition_multiplier": contract_profile.composition_multiplier,
+            "dominant_threat_vector": contract_profile.dominant_threat_vector,
+            "mitigation_recommendations": contract_profile.mitigation_recommendations,
+            "autonomy_certification": contract_profile.autonomy_certification,
+        },
         "caveat": profile.caveat,
         "references": [
             "INESIA PDF Priority 3 — Compositional and emergent risk",
