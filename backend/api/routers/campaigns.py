@@ -219,7 +219,7 @@ async def run_campaign(
 
 
 @router.post("/{campaign_id}/cancel", response_model=CampaignRead)
-def cancel_campaign(
+async def cancel_campaign(
     campaign_id: int,
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(require_tenant),

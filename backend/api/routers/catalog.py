@@ -387,6 +387,14 @@ BENCHMARK_CATALOG: list[dict] = [
      "dataset_path": "frontier/loss_of_control.json", "tags": ["agentic", "multi-environnement"], "year": 2023},
 
     # ══ SÉCURITÉ / ALIGNMENT ════════════════════════════════════════════
+    {"key": "giskard_llm_scan", "name": "Giskard LLM Scan", "type": "safety", "domain": "alignment",
+     "description": "Automated LLM vulnerability scan aligned with Giskard's open-source testing framework. Covers 6 vulnerability categories: prompt injection, sycophancy, hallucination, misinformation, harmful content, and data leakage. 20 curated items with per-category scoring.",
+     "metric": "safety_score", "num_samples": 20,
+     "dataset_path": "safety/giskard_llm_scan.json",
+     "tags": ["safety", "giskard", "mlsec", "vulnerability-scan", "prompt-injection", "sycophancy"],
+     "year": 2024, "risk_threshold": 0.80,
+     "paper_url": "https://arxiv.org/abs/2402.14896",
+     "methodology_note": "Per-category scores map to Giskard's vulnerability taxonomy. When the giskard package is installed, results can be forwarded to a full giskard.scan() session."},
     {"key": "safety_refusals", "name": "Safety Refusals", "type": "safety", "domain": "alignment",
      "description": "Refusal calibration — measures over-refusal and under-refusal sur 30 prompts.", "metric": "safety_score", "num_samples": 30,
      "dataset_path": "safety/refusals.json", "tags": ["safety", "refusals", "alignment"], "year": 2024, "risk_threshold": 0.80},
