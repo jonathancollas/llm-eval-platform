@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
 
+    # ── Llama Guard (runtime safety classifier) ──────────────────────────────────
+    llama_guard_enabled: bool = False
+    llama_guard_model_id: str = "llama-guard3:8b"
+    llama_guard_timeout_seconds: float = 10.0
+
     # ── Eval defaults ────────────────────────────────────────────────────────────
     default_max_samples: int = 50
     llm_timeout_seconds: float = 60.0       # Timeout per LLM call (was hardcoded in utils.py)
