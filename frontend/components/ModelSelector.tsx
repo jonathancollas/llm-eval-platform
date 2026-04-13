@@ -7,22 +7,25 @@ import { Check, Download, CheckCircle2 } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
-type ModelIdType = "model_id" | "db_id";
-type SelectedFor<T extends ModelIdType> = T extends "model_id" ? string[] : number[];
-
 interface ModelSelectorBaseProps {
   mode: "single" | "multi";
   label?: string;
   maxHeight?: string;
 }
 
-type ModelSelectorProps<T extends ModelIdType = "db_id"> = ModelSelectorBaseProps & {
-  selected: SelectedFor<T>;
-  onChange: (selected: SelectedFor<T>) => void;
-  idType: T;
-};
+type ModelSelectorProps =
+  | (ModelSelectorBaseProps & {
+      selected: number[];
+      onChange: (selected: number[]) => void;
+      idType?: "db_id";
+    })
+  | (ModelSelectorBaseProps & {
+      selected: string[];
+      onChange: (selected: string[]) => void;
+      idType: "model_id";
+    });
 
-export function ModelSelector<T extends ModelIdType = "db_id">({ mode, selected, onChange, idType, label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps<T>) {
+export function ModelSelector({ mode, selected, onChange, idType = "db_id", label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps) {
   const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "free" | "local" | "open">("all");
@@ -83,15 +86,30 @@ export function ModelSelector<T extends ModelIdType = "db_id">({ mode, selected,
     });
   }, [loadModels]);
 
-  const getId = (m: LLMModelSlim): SelectedFor<T>[number] =>
-    (idType === "model_id" ? ((m as any).model_id || m.name) : m.id) as SelectedFor<T>[number];
-  const selectedValues = selected as Array<SelectedFor<T>[number]>;
-  const isSelected = (m: LLMModelSlim) => selectedValues.includes(getId(m));
+  const getModelId = (m: LLMModelSlim) => ((m as any).model_id || m.name) as string;
+  const isSelected = (m: LLMModelSlim) => {
+    if (idType === "model_id") {
+      const modelSelected = selected as string[];
+      return modelSelected.includes(getModelId(m));
+    }
+    const dbSelected = selected as number[];
+    return dbSelected.includes(m.id);
+  };
 
   const toggle = (m: LLMModelSlim) => {
-    const id = getId(m);
-    if (mode === "single") onChange([id] as SelectedFor<T>);
-    else onChange((isSelected(m) ? selectedValues.filter(x => x !== id) : [...selectedValues, id]) as SelectedFor<T>);
+    if (idType === "model_id") {
+      const id = getModelId(m);
+      const modelSelected = selected as string[];
+      const onModelChange = onChange as (selected: string[]) => void;
+      if (mode === "single") onModelChange([id]);
+      else onModelChange(isSelected(m) ? modelSelected.filter(x => x !== id) : [...modelSelected, id]);
+      return;
+    }
+    const id = m.id;
+    const dbSelected = selected as number[];
+    const onDbChange = onChange as (selected: number[]) => void;
+    if (mode === "single") onDbChange([id]);
+    else onDbChange(isSelected(m) ? dbSelected.filter(x => x !== id) : [...dbSelected, id]);
   };
 
   const handleDownload = async (model: LLMModelSlim, e: React.MouseEvent) => {
