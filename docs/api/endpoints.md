@@ -218,7 +218,7 @@ REDBOX — Adversarial Security Lab. Forge, run, replay, and analyze adversarial
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/redbox/forge` | Generate adversarial variants from a seed prompt using LLM + rules. |
+| `POST` | `/redbox/forge` | Generate adversarial variants from a seed prompt using `native` or `garak` engine modes. |
 | `POST` | `/redbox/run` | Run adversarial variants against a model and record exploits. |
 | `GET` | `/redbox/exploits` | List recorded exploits with optional filters. |
 | `GET` | `/redbox/heatmap` | Attack surface heatmap: model × mutation_type breach rates. |
@@ -228,6 +228,7 @@ REDBOX — Adversarial Security Lab. Forge, run, replay, and analyze adversarial
 | `GET` | `/redbox/taxonomy` | List the adversarial mutation taxonomy (MITRE ATLAS + OWASP LLM). |
 | `GET` | `/redbox/killchain` | Get the attack killchain model. |
 | `GET` | `/redbox/catalog` | List all available adversarial scenario templates. |
+| `GET` | `/redbox/garak/coverage` | List Garak probe packs and supported attack classes (jailbreak, prompt injection, exfiltration, multilingual). |
 | `POST` | `/redbox/generate-scenarios` | Generate new adversarial scenarios using the LLM forge. |
 
 
