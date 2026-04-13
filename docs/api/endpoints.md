@@ -33,6 +33,9 @@ Benchmarks — CRUD + dataset upload + HuggingFace import + fork/card/versions.
 | `DELETE` | `/benchmarks/{benchmark_id}` | Delete a benchmark. |
 | `GET` | `/benchmarks/{benchmark_id}/items` | Browse dataset items for a benchmark (paginated + search). |
 | `POST` | `/benchmarks/import-huggingface` | Import a dataset from HuggingFace Hub and create a benchmark. |
+| `POST` | `/benchmarks/packs` | Publish a benchmark pack version with changelog and benchmark membership. |
+| `GET` | `/benchmarks/packs` | List published benchmark packs (filterable by family). |
+| `GET` | `/benchmarks/packs/{slug}` | Get benchmark pack details with full version/changelog history. |
 | `GET` | `/benchmarks/sources` | List available benchmark source types. |
 | `POST` | `/benchmarks/{benchmark_id}/fork` | Fork a benchmark into a new custom variant. |
 | `GET` | `/benchmarks/{benchmark_id}/lineage` | Get benchmark parent/child fork lineage tree. |
@@ -49,12 +52,19 @@ Campaign lifecycle — CRUD + run/cancel + live tracking + manifest.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/campaigns/` | List all campaigns. |
+| `GET` | `/campaigns/shared/available` | List campaigns shared with the current tenant. |
 | `POST` | `/campaigns/` | Create a new campaign (N models × M benchmarks). |
 | `GET` | `/campaigns/{campaign_id}` | Get campaign details including all run summaries. |
+| `POST` | `/campaigns/{campaign_id}/share` | Update campaign visibility and collaborator access control list. |
+| `GET` | `/campaigns/{campaign_id}/comments` | List campaign comments and peer reviews. |
+| `POST` | `/campaigns/{campaign_id}/comments` | Add a collaboration comment to a campaign. |
+| `POST` | `/campaigns/{campaign_id}/reviews` | Submit peer review decision for a campaign. |
 | `POST` | `/campaigns/{campaign_id}/run` | Start execution of a campaign. |
 | `POST` | `/campaigns/{campaign_id}/cancel` | Cancel a running campaign. |
 | `DELETE` | `/campaigns/{campaign_id}` | Delete a campaign and all its results. |
 | `GET` | `/campaigns/{campaign_id}/manifest` | Download the reproducibility manifest for a campaign. |
+| `GET` | `/campaigns/{campaign_id}/bundle/export` | Export a campaign as a portable collaboration bundle. |
+| `POST` | `/campaigns/bundle/import` | Import a campaign bundle into the current tenant. |
 
 
 ## Catalog

@@ -50,6 +50,15 @@ class BenchmarkRead(BaseModel):
     created_at: datetime
 
 
+class BenchmarkPackPublish(BaseModel):
+    name: str = Field(..., min_length=2, max_length=200)
+    slug: str = Field(..., min_length=2, max_length=100)
+    version: str = Field(default="1.0.0", min_length=1, max_length=40)
+    publisher: str = Field(default="", max_length=200)
+    family: str = Field(default="community", pattern="^(inesia|aisi|academic|community)$")
+    changelog: str = Field(default="", max_length=4000)
+    benchmark_ids: list[int] = Field(..., min_length=1, max_length=500)
+    is_public: bool = True
 class ForkBenchmarkRequest(BaseModel):
     new_name: Optional[str] = None
     fork_type: str = "extension"  # extension | multilingual | agentic_variant | adversarial_hardening
@@ -86,6 +95,19 @@ def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
     )
 
 
+def _pack_payload(pack: BenchmarkPack) -> dict:
+    return {
+        "id": pack.id,
+        "slug": pack.slug,
+        "name": pack.name,
+        "version": pack.version,
+        "publisher": pack.publisher,
+        "family": pack.family,
+        "changelog": pack.changelog,
+        "benchmark_ids": json.loads(pack.benchmark_ids_json),
+        "is_public": pack.is_public,
+        "created_at": pack.created_at.isoformat(),
+    }
 def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
     try:
         cfg = json.loads(bench.config_json or "{}")
@@ -113,6 +135,69 @@ def list_benchmarks(
     if type:
         query = query.where(Benchmark.type == type)
     return [_to_read(session, b) for b in session.exec(query).all()]
+
+
+@router.post("/packs", status_code=status.HTTP_201_CREATED)
+def publish_benchmark_pack(payload: BenchmarkPackPublish, session: Session = Depends(get_session)):
+    bench_ids = list(dict.fromkeys(payload.benchmark_ids))
+    missing = [bid for bid in bench_ids if not session.get(Benchmark, bid)]
+    if missing:
+        raise HTTPException(404, detail=f"Benchmarks not found: {missing}")
+
+    existing = session.exec(
+        select(BenchmarkPack).where(BenchmarkPack.slug == payload.slug, BenchmarkPack.version == payload.version)
+    ).first()
+    if existing:
+        raise HTTPException(409, detail="This benchmark pack version already exists.")
+
+    pack = BenchmarkPack(
+        slug=payload.slug,
+        name=payload.name,
+        version=payload.version,
+        publisher=payload.publisher,
+        family=payload.family,
+        changelog=payload.changelog,
+        benchmark_ids_json=json.dumps(bench_ids),
+        is_public=payload.is_public,
+    )
+    session.add(pack)
+    session.commit()
+    session.refresh(pack)
+    return _pack_payload(pack)
+
+
+@router.get("/packs")
+def list_benchmark_packs(
+    family: Optional[str] = None,
+    include_private: bool = False,
+    session: Session = Depends(get_session),
+):
+    query = select(BenchmarkPack)
+    if family:
+        query = query.where(BenchmarkPack.family == family)
+    if not include_private:
+        query = query.where(BenchmarkPack.is_public == True)  # noqa: E712
+    packs = session.exec(query.order_by(BenchmarkPack.created_at.desc())).all()
+    return {"packs": [_pack_payload(p) for p in packs]}
+
+
+@router.get("/packs/{slug}")
+def get_benchmark_pack(slug: str, session: Session = Depends(get_session)):
+    versions = session.exec(
+        select(BenchmarkPack).where(BenchmarkPack.slug == slug).order_by(BenchmarkPack.created_at.desc())
+    ).all()
+    if not versions:
+        raise HTTPException(404, detail="Benchmark pack not found.")
+    latest = versions[0]
+    return {
+        "slug": slug,
+        "name": latest.name,
+        "latest_version": latest.version,
+        "family": latest.family,
+        "publisher": latest.publisher,
+        "versions": [_pack_payload(v) for v in versions],
+        "changelog": [{"version": v.version, "changelog": v.changelog, "created_at": v.created_at.isoformat()} for v in versions],
+    }
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkRead)
