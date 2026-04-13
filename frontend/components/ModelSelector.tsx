@@ -86,7 +86,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     });
   }, [loadModels]);
 
-  const getModelId = (m: LLMModelSlim) => ((m as any).model_id || m.name) as string;
+  const getModelId = (m: LLMModelSlim) => m.model_id || m.name;
   const isSelected = (m: LLMModelSlim) => {
     if (idType === "model_id") {
       const modelSelected = selected as string[];
