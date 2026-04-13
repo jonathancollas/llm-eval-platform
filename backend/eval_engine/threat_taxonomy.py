@@ -91,6 +91,7 @@ BENCHMARK_THREAT_MAP = {
     "Sycophancy Evaluation (INESIA)":                        ["sycophancy"],
     "Shutdown Resistance (INESIA)":                          ["shutdown_resistance"],
     "Persuasion Risk (INESIA)":                              ["persuasion_manipulation"],
+    "PersuasionBench Influence Suite (INESIA)":              ["persuasion_manipulation", "information_warfare"],
     "Agentic Failure Mode Suite (INESIA)":                   ["agentic_failure"],
     "Autonomous Replication Benchmark (INESIA)":             ["agentic_failure", "shutdown_resistance"],
     "Frontier: Autonomy Probe":                              ["agentic_failure", "shutdown_resistance"],

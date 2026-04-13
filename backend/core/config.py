@@ -69,9 +69,30 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     groq_api_key: str = ""
     openrouter_api_key: str = ""
+    lakera_guard_api_key: str = ""
+    lakera_guard_url: str = "https://api.lakera.ai/v2/guard"
+    lakera_guard_project_id: str = ""
+    lakera_guard_timeout_seconds: float = 5.0
+    lakera_guard_fail_closed: bool = False
 
     # ── Ollama ──────────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
+
+    # ── Rebuff runtime injection detection ──────────────────────────────────────
+    rebuff_enabled: bool = False
+    rebuff_api_token: str = ""
+    rebuff_api_url: str = "https://playground.rebuff.ai"
+    rebuff_max_heuristic_score: float = 0.75
+    rebuff_max_vector_score: float = 0.90
+    rebuff_max_model_score: float = 0.90
+    rebuff_check_heuristic: bool = True
+    rebuff_check_vector: bool = True
+    rebuff_check_llm: bool = True
+
+    # ── Llama Guard (runtime safety classifier) ──────────────────────────────────
+    llama_guard_enabled: bool = False
+    llama_guard_model_id: str = "llama-guard3:8b"
+    llama_guard_timeout_seconds: float = 10.0
 
     # ── Eval defaults ────────────────────────────────────────────────────────────
     default_max_samples: int = 50
