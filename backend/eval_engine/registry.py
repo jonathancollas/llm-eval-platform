@@ -61,13 +61,10 @@ def _lazy_register():
         "Mechanistic Interpretability Probe (INESIA)": SafetyRefusalsRunner,
         "Deception Probe (INESIA)":           SafetyRefusalsRunner,
         "Manipulation Information d'Origine Étrangère (INESIA)": SafetyRefusalsRunner,
-<<<<<<< copilot/p1-sycohancy-evaluation-suite
-        "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
-=======
         # Purple Llama
         "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
         "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
->>>>>>> main
+        "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,
