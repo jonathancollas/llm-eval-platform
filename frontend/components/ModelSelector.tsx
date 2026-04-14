@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModelSlim } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
-import { Check, Download, CheckCircle2 } from "lucide-react";
+import { Check, Download, CheckCircle2, ExternalLink } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
@@ -215,7 +215,12 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
           // Show Download for all open-weight models — Ollama name from suggestions or derive from model_id
           const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
           const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
-          const canDownload = !isLocal && !!downloadTarget && ((m as any).is_open_weight || !!ollamaName);
+          const isOpenWeight = !!(m as any).is_open_weight;
+          const canDownload = !isLocal && !!downloadTarget && (isOpenWeight || !!ollamaName);
+          const canBrowse = !isLocal && !downloadTarget && isOpenWeight;
+          const ollamaSearchSlug = encodeURIComponent(
+            (normalizeOpenRouterId((m as any).model_id || "")).split("/").pop()?.toLowerCase() || m.name.toLowerCase()
+          );
           const status = pullStatus[m.id];
 
           return (
@@ -245,6 +250,14 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                   className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 transition-colors font-medium">
                   <Download size={11} /> Run locally
                 </button>
+              )}
+              {/* Browse catalogue fallback — open-weight but no known Ollama target */}
+              {canBrowse && !status && (
+                <a href={`https://ollama.com/search?q=${ollamaSearchSlug}`} target="_blank" rel="noopener noreferrer"
+                  title="Search for this model on Ollama catalogue"
+                  className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors font-medium">
+                  <ExternalLink size={11} /> Browse catalogue
+                </a>
               )}
               {status === "pulling" && (
                 <div className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-purple-100 text-purple-600">
