@@ -209,6 +209,15 @@ def _cancel_local_task(task_id: str) -> bool:
     return is_alive
 
 
+def _cancel_local_task_by_campaign_id(campaign_id: int) -> bool:
+    with _local_tasks_lock:
+        handle = _local_tasks_by_campaign.get(campaign_id)
+        if not handle:
+            return False
+        task_id = handle.task_id
+    return _cancel_local_task(task_id)
+
+
 def submit_campaign(campaign_id: int) -> str:
     """Submit a campaign for durable execution on Celery workers."""
     using_celery = True
@@ -236,10 +245,14 @@ def submit_campaign(campaign_id: int) -> str:
                 celery_app.control.revoke(task_id, terminate=True)
             except Exception as revoke_error:
                 logger.warning(f"[job_queue] Failed to revoke orphan task {task_id}: {revoke_error}")
+            logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}: {e}")
+            raise RuntimeError("Failed to persist worker task metadata.") from e
         else:
             _cancel_local_task(task_id)
-        logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}: {e}")
-        raise RuntimeError("Failed to persist worker task metadata.") from e
+            logger.warning(
+                f"[job_queue] Local fallback active but could not persist worker task metadata "
+                f"for campaign {campaign_id}: {e}"
+            )
     return task_id
 
 
@@ -257,7 +270,7 @@ def cancel_campaign(campaign_id: int) -> bool:
         return False
 
     if not task_id:
-        return False
+        return _cancel_local_task_by_campaign_id(campaign_id)
 
     try:
         celery_app.control.revoke(task_id, terminate=True)
