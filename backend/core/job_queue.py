@@ -74,14 +74,14 @@ async def _run_with_heartbeat(campaign_id: int) -> None:
 
 
 redis_url = settings.redis_url or DEFAULT_REDIS_URL
-celery_app = Celery("llm_eval_platform", broker=redis_url, backend=redis_url)
+celery_app = Celery("llm_eval_platform", broker=redis_url, backend=None)
 celery_app.conf.update(
-    task_track_started=True,
+    task_track_started=False,
+    task_ignore_result=True,
     broker_connection_retry_on_startup=True,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_serializer="json",
-    result_serializer="json",
     accept_content=["json"],
 )
 
