@@ -28,8 +28,12 @@ type ModelSelectorProps =
 const INSTRUCT_SUFFIX_PATTERN = /-instruct.*/;
 const IT_SUFFIX_PATTERN = /-it$/;
 const normalizeOpenRouterId = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
-const deriveOllamaTarget = (openrouterId: string) =>
-  openrouterId.split("/").pop()?.replace(INSTRUCT_SUFFIX_PATTERN, "").replace(IT_SUFFIX_PATTERN, "")?.trim() || "";
+const deriveOllamaTarget = (openrouterId: string) => {
+  const lastSegment = openrouterId.split("/").pop() || "";
+  const withoutInstruct = lastSegment.replace(INSTRUCT_SUFFIX_PATTERN, "");
+  const normalized = withoutInstruct.replace(IT_SUFFIX_PATTERN, "").trim();
+  return normalized;
+};
 
 export function ModelSelector({ mode, selected, onChange, idType = "db_id", label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps) {
   const [models, setModels] = useState<LLMModelSlim[]>([]);
@@ -253,7 +257,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                 </div>
               )}
               {status === "error" && (
-                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600 max-w-56 truncate" title={pullErrorDetail[m.id] || "Download failed."}>
+                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600 max-w-56 truncate" title={pullErrorDetail[m.id] || "Download failed."} aria-label={pullErrorDetail[m.id] || "Download failed."}>
                   {pullErrorDetail[m.id] || "Download failed."}
                 </div>
               )}
