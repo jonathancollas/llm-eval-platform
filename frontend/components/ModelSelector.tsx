@@ -112,17 +112,18 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     else onDbChange(isSelected(m) ? dbSelected.filter(x => x !== id) : [...dbSelected, id]);
   };
 
-  const stripOpenRouterPrefix = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
+  const normalizeOpenRouterId = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
+  const INSTRUCT_SUFFIX_PATTERN = /-instruct.*/;
+  const IT_SUFFIX_PATTERN = /-it$/;
   const deriveOllamaTarget = (openrouterId: string) =>
-    openrouterId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "")?.trim() || "";
+    openrouterId.split("/").pop()?.replace(INSTRUCT_SUFFIX_PATTERN, "").replace(IT_SUFFIX_PATTERN, "")?.trim() || "";
 
   const handleDownload = async (model: LLMModelSlim, e: React.MouseEvent) => {
     e.stopPropagation();
-    const orId = stripOpenRouterPrefix((model as any).model_id || "");
+    const orId = normalizeOpenRouterId((model as any).model_id || "");
     const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
     const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
     if (!downloadTarget) {
-      setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
       return;
     }
     setPulling(model.id);
@@ -199,7 +200,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
         {filtered.map(m => {
           const sel = isSelected(m);
           const isLocal = (m as any).provider === "ollama";
-          const orId = stripOpenRouterPrefix((m as any).model_id || "");
+          const orId = normalizeOpenRouterId((m as any).model_id || "");
           // Show Download for all open-weight models — Ollama name from suggestions or derive from model_id
           const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
           const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
