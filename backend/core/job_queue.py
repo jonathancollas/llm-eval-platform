@@ -74,14 +74,15 @@ async def _run_with_heartbeat(campaign_id: int) -> None:
 
 
 redis_url = settings.redis_url or DEFAULT_REDIS_URL
-celery_app = Celery("llm_eval_platform", broker=redis_url, backend=redis_url)
+celery_app = Celery("llm_eval_platform", broker=redis_url)
 celery_app.conf.update(
-    task_track_started=True,
+    task_track_started=False,
+    task_ignore_result=True,
+    task_store_errors_even_if_ignored=True,
     broker_connection_retry_on_startup=True,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_serializer="json",
-    result_serializer="json",
     accept_content=["json"],
 )
 
@@ -127,7 +128,7 @@ def _run_async_blocking(coro) -> None:
 
 def submit_campaign(campaign_id: int) -> str:
     """Submit a campaign for durable execution on Celery workers."""
-    task = execute_campaign_task.delay(campaign_id)
+    task = execute_campaign_task.apply_async(args=(campaign_id,), ignore_result=True)
     try:
         from core.models import Campaign
         with _get_session() as session:
