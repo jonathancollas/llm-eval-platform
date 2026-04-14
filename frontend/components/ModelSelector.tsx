@@ -133,10 +133,8 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
       } else {
         // No backend mapping — attempt direct Ollama pull using model name heuristic
         const guessedName = orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "") ?? orId;
-        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull`, {
+        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull?model_name=${encodeURIComponent(guessedName)}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model_name: guessedName }),
         });
         const data = await ollamaRes.json();
         if (data.status === "pulled" || data.status === "pulling") {
