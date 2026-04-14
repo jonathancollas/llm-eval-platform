@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { modelsApi } from "@/lib/api";
 import type { LLMModelSlim } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
-import { Check, Download, CheckCircle2 } from "lucide-react";
+import { Check, Download, CheckCircle2, ExternalLink } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
@@ -25,6 +25,16 @@ type ModelSelectorProps =
       idType: "model_id";
     });
 
+const INSTRUCT_SUFFIX_PATTERN = /-instruct.*/;
+const IT_SUFFIX_PATTERN = /-it$/;
+const normalizeOpenRouterId = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
+const deriveOllamaTarget = (openrouterId: string) => {
+  const lastSegment = openrouterId.split("/").pop() || "";
+  const withoutInstruct = lastSegment.replace(INSTRUCT_SUFFIX_PATTERN, "");
+  const normalized = withoutInstruct.replace(IT_SUFFIX_PATTERN, "").trim();
+  return normalized;
+};
+
 export function ModelSelector({ mode, selected, onChange, idType = "db_id", label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps) {
   const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +42,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
   const [search, setSearch] = useState("");
   const [pulling, setPulling] = useState<number | null>(null);
   const [pullStatus, setPullStatus] = useState<Record<number, "pulling" | "done" | "error">>({});
+  const [pullErrorDetail, setPullErrorDetail] = useState<Record<number, string>>({});
   const [ollamaSuggestions, setOllamaSuggestions] = useState<Record<string, string>>({});
 
   const loadModels = useCallback(() => {
@@ -114,9 +125,16 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
 
   const handleDownload = async (model: LLMModelSlim, e: React.MouseEvent) => {
     e.stopPropagation();
-    const orId = ((model as any).model_id || "").replace("openrouter/", "").replace(":free", "");
+    const orId = normalizeOpenRouterId((model as any).model_id || "");
     const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
+    const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
+    if (!downloadTarget) {
+      setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+      setPullErrorDetail(prev => ({ ...prev, [model.id]: "Missing model ID for Ollama download." }));
+      return;
+    }
     setPulling(model.id);
+    setPullErrorDetail(prev => ({ ...prev, [model.id]: "" }));
     setPullStatus(prev => ({ ...prev, [model.id]: "pulling" }));
 
     try {
@@ -129,11 +147,11 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
           setTimeout(() => loadModels(), 1500);
         } else {
           setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+          setPullErrorDetail(prev => ({ ...prev, [model.id]: data.detail || "Unable to pull model from Ollama." }));
         }
       } else {
         // No backend mapping — attempt direct Ollama pull using model name heuristic
-        const guessedName = orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "") ?? orId;
-        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull?model_name=${encodeURIComponent(guessedName)}`, {
+        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull?model_name=${encodeURIComponent(downloadTarget)}`, {
           method: "POST",
         });
         const data = await ollamaRes.json();
@@ -142,10 +160,12 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
           setTimeout(() => loadModels(), 1500);
         } else {
           setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+          setPullErrorDetail(prev => ({ ...prev, [model.id]: data.detail || "Unable to pull model from Ollama." }));
         }
       }
     } catch {
       setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+      setPullErrorDetail(prev => ({ ...prev, [model.id]: "Unable to reach backend or Ollama." }));
     } finally {
       setPulling(null);
     }
@@ -191,11 +211,16 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
         {filtered.map(m => {
           const sel = isSelected(m);
           const isLocal = (m as any).provider === "ollama";
-          const orId = ((m as any).model_id || "").replace("openrouter/", "").replace(":free", "");
+          const orId = normalizeOpenRouterId((m as any).model_id || "");
           // Show Download for all open-weight models — Ollama name from suggestions or derive from model_id
           const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
-          const canDownload = !isLocal && ((m as any).is_open_weight || !!ollamaName);
-          const downloadTarget = ollamaName || orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "");
+          const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
+          const isOpenWeight = !!(m as any).is_open_weight;
+          const canDownload = !isLocal && !!downloadTarget && (isOpenWeight || !!ollamaName);
+          const canBrowse = !isLocal && !downloadTarget && isOpenWeight;
+          const ollamaSearchSlug = encodeURIComponent(
+            (normalizeOpenRouterId((m as any).model_id || "")).split("/").pop()?.toLowerCase() || m.name.toLowerCase()
+          );
           const status = pullStatus[m.id];
 
           return (
@@ -226,6 +251,14 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                   <Download size={11} /> Run locally
                 </button>
               )}
+              {/* Browse catalogue fallback — open-weight but no known Ollama target */}
+              {canBrowse && !status && (
+                <a href={`https://ollama.com/search?q=${ollamaSearchSlug}`} target="_blank" rel="noopener noreferrer"
+                  title="Search for this model on Ollama catalogue"
+                  className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors font-medium">
+                  <ExternalLink size={11} /> Browse catalogue
+                </a>
+              )}
               {status === "pulling" && (
                 <div className="shrink-0 flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-md bg-purple-100 text-purple-600">
                   <Spinner size={10} /> Downloading…
@@ -237,8 +270,8 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                 </div>
               )}
               {status === "error" && (
-                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600">
-                  Failed — is Ollama running?
+                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600 max-w-56 truncate" title={pullErrorDetail[m.id] || "Download failed."} aria-label={pullErrorDetail[m.id] || "Download failed."}>
+                  {pullErrorDetail[m.id] || "Download failed."}
                 </div>
               )}
             </div>
