@@ -25,6 +25,12 @@ type ModelSelectorProps =
       idType: "model_id";
     });
 
+const INSTRUCT_SUFFIX_PATTERN = /-instruct.*/;
+const IT_SUFFIX_PATTERN = /-it$/;
+const normalizeOpenRouterId = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
+const deriveOllamaTarget = (openrouterId: string) =>
+  openrouterId.split("/").pop()?.replace(INSTRUCT_SUFFIX_PATTERN, "").replace(IT_SUFFIX_PATTERN, "")?.trim() || "";
+
 export function ModelSelector({ mode, selected, onChange, idType = "db_id", label = "Select model", maxHeight = "max-h-64" }: ModelSelectorProps) {
   const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +38,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
   const [search, setSearch] = useState("");
   const [pulling, setPulling] = useState<number | null>(null);
   const [pullStatus, setPullStatus] = useState<Record<number, "pulling" | "done" | "error">>({});
+  const [pullErrorDetail, setPullErrorDetail] = useState<Record<number, string>>({});
   const [ollamaSuggestions, setOllamaSuggestions] = useState<Record<string, string>>({});
 
   const loadModels = useCallback(() => {
@@ -112,21 +119,18 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     else onDbChange(isSelected(m) ? dbSelected.filter(x => x !== id) : [...dbSelected, id]);
   };
 
-  const normalizeOpenRouterId = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
-  const INSTRUCT_SUFFIX_PATTERN = /-instruct.*/;
-  const IT_SUFFIX_PATTERN = /-it$/;
-  const deriveOllamaTarget = (openrouterId: string) =>
-    openrouterId.split("/").pop()?.replace(INSTRUCT_SUFFIX_PATTERN, "").replace(IT_SUFFIX_PATTERN, "")?.trim() || "";
-
   const handleDownload = async (model: LLMModelSlim, e: React.MouseEvent) => {
     e.stopPropagation();
     const orId = normalizeOpenRouterId((model as any).model_id || "");
     const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
     const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
     if (!downloadTarget) {
+      setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+      setPullErrorDetail(prev => ({ ...prev, [model.id]: "Missing model ID for Ollama download." }));
       return;
     }
     setPulling(model.id);
+    setPullErrorDetail(prev => ({ ...prev, [model.id]: "" }));
     setPullStatus(prev => ({ ...prev, [model.id]: "pulling" }));
 
     try {
@@ -139,6 +143,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
           setTimeout(() => loadModels(), 1500);
         } else {
           setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+          setPullErrorDetail(prev => ({ ...prev, [model.id]: data.detail || "Unable to pull model from Ollama." }));
         }
       } else {
         // No backend mapping — attempt direct Ollama pull using model name heuristic
@@ -151,10 +156,12 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
           setTimeout(() => loadModels(), 1500);
         } else {
           setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+          setPullErrorDetail(prev => ({ ...prev, [model.id]: data.detail || "Unable to pull model from Ollama." }));
         }
       }
     } catch {
       setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+      setPullErrorDetail(prev => ({ ...prev, [model.id]: "Unable to reach backend or Ollama." }));
     } finally {
       setPulling(null);
     }
@@ -246,8 +253,8 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
                 </div>
               )}
               {status === "error" && (
-                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600">
-                  Failed — is Ollama running?
+                <div className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-md bg-red-100 text-red-600 max-w-56 truncate" title={pullErrorDetail[m.id] || "Download failed."}>
+                  {pullErrorDetail[m.id] || "Download failed."}
                 </div>
               )}
             </div>
