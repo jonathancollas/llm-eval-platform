@@ -610,7 +610,7 @@ async def pull_ollama_model(
     model_name: Optional[str] = None,
     payload: Optional[OllamaPullRequest] = None,
 ):
-    """Trigger ollama pull for a model. Returns immediately — pull runs async."""
+    """Trigger ollama pull for a model. Query `model_name` takes precedence over JSON body."""
     requested_model_name = model_name or (payload.model_name if payload else None)
     if not requested_model_name:
         raise HTTPException(status_code=422, detail="model_name is required")
@@ -635,6 +635,13 @@ async def pull_ollama_model(
             "status": "error",
             "model": requested_model_name,
             "detail": f"Unable to reach Ollama at {settings.ollama_base_url}. Verify Ollama is running and accessible.",
+        }
+    except Exception:
+        logger.exception("Unexpected Ollama pull failure for model '%s'", requested_model_name)
+        return {
+            "status": "error",
+            "model": requested_model_name,
+            "detail": "Unexpected error while pulling model.",
         }
 
 
@@ -664,6 +671,13 @@ async def pull_and_register_ollama_model(
             "status": "pull_failed",
             "model": ollama_name,
             "detail": f"Unable to reach Ollama at {settings.ollama_base_url}. Verify Ollama is running and accessible.",
+        }
+    except Exception:
+        logger.exception("Unexpected Ollama pull-and-register failure for model '%s'", ollama_name)
+        return {
+            "status": "pull_failed",
+            "model": ollama_name,
+            "detail": "Unexpected error while pulling model.",
         }
 
     # Register in DB
