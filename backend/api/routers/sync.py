@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 import httpx
@@ -85,6 +85,10 @@ class StartupStatus(BaseModel):
     total_models: int = 0
     openrouter_synced: bool = False
     error: Optional[str] = None
+
+
+class OllamaPullRequest(BaseModel):
+    model_name: str
 
 
 # ── Reusable sync functions (called from lifespan AND from API routes) ─────────
@@ -602,24 +606,31 @@ async def get_ollama_suggestions(session: Session = Depends(get_session)):
 
 
 @router.post("/ollama/pull")
-async def pull_ollama_model(model_name: str):
+async def pull_ollama_model(
+    model_name: Optional[str] = None,
+    payload: Optional[OllamaPullRequest] = None,
+):
     """Trigger ollama pull for a model. Returns immediately — pull runs async."""
+    requested_model_name = model_name or (payload.model_name if payload else None)
+    if not requested_model_name:
+        raise HTTPException(status_code=422, detail="model_name is required")
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             # Ollama pull API — streams progress but we just fire and check
             resp = await client.post(
                 f"{settings.ollama_base_url}/api/pull",
-                json={"name": model_name, "stream": False},
+                json={"name": requested_model_name, "stream": False},
                 timeout=600.0,  # Models can be large
             )
             if resp.status_code == 200:
-                return {"status": "pulled", "model": model_name}
+                return {"status": "pulled", "model": requested_model_name}
             else:
-                return {"status": "error", "model": model_name, "detail": resp.text[:200]}
+                return {"status": "error", "model": requested_model_name, "detail": resp.text[:200]}
     except httpx.TimeoutException:
-        return {"status": "pulling", "model": model_name, "message": "Pull started but not yet complete. Large models take time."}
+        return {"status": "pulling", "model": requested_model_name, "message": "Pull started but not yet complete. Large models take time."}
     except Exception as e:
-        return {"status": "error", "model": model_name, "detail": str(e)[:200]}
+        return {"status": "error", "model": requested_model_name, "detail": str(e)[:200]}
 
 
 @router.post("/ollama/pull-and-register")

@@ -61,7 +61,11 @@ export const ollamaApi = {
     ),
   import: () => apiFetch<{ added: number; available: boolean }>("/sync/ollama/import", { method: "POST" }),
   pull: (modelName: string) => apiFetch<{ status: string; model: string }>(`/sync/ollama/pull?model_name=${encodeURIComponent(modelName)}`, { method: "POST", timeoutMs: 300000 }),
-  pullAndRegister: (modelName: string) => apiFetch<{ status: string; model_name: string }>("/sync/ollama/pull-and-register", { method: "POST", body: JSON.stringify({ model_name: modelName }), timeoutMs: 300000 }),
+  pullAndRegister: (openrouterModelId: string) =>
+    apiFetch<{ status: string; ollama_model: string; openrouter_model: string; registered: boolean }>(
+      `/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(openrouterModelId)}`,
+      { method: "POST", timeoutMs: 300000 }
+    ),
 };
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
