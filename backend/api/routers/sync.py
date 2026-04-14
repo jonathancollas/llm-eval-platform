@@ -611,7 +611,7 @@ async def pull_ollama_model(
     payload: Optional[OllamaPullRequest] = None,
 ):
     """Trigger ollama pull for a model. Returns immediately — pull runs async."""
-    requested_model_name = model_name or (payload.model_name if payload else None)
+    requested_model_name = model_name or (getattr(payload, "model_name", None) if payload else None)
     if not requested_model_name:
         raise HTTPException(status_code=422, detail="model_name is required")
 
@@ -629,8 +629,13 @@ async def pull_ollama_model(
                 return {"status": "error", "model": requested_model_name, "detail": resp.text[:200]}
     except httpx.TimeoutException:
         return {"status": "pulling", "model": requested_model_name, "message": "Pull started but not yet complete. Large models take time."}
-    except Exception as e:
-        return {"status": "error", "model": requested_model_name, "detail": str(e)[:200]}
+    except Exception:
+        logger.exception("Ollama pull failed for model '%s'", requested_model_name)
+        return {
+            "status": "error",
+            "model": requested_model_name,
+            "detail": "Unable to reach Ollama. Verify Ollama is running and accessible.",
+        }
 
 
 @router.post("/ollama/pull-and-register")
@@ -653,8 +658,13 @@ async def pull_and_register_ollama_model(
                 json={"name": ollama_name, "stream": False},
                 timeout=600.0,
             )
-    except Exception as e:
-        return {"status": "pull_failed", "model": ollama_name, "detail": str(e)[:200]}
+    except Exception:
+        logger.exception("Ollama pull-and-register failed for model '%s'", ollama_name)
+        return {
+            "status": "pull_failed",
+            "model": ollama_name,
+            "detail": "Unable to reach Ollama. Verify Ollama is running and accessible.",
+        }
 
     # Register in DB
     existing = session.exec(
