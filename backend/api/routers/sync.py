@@ -634,7 +634,7 @@ async def pull_ollama_model(
         return {
             "status": "error",
             "model": requested_model_name,
-            "detail": "Unable to reach Ollama. Verify Ollama is running and accessible.",
+            "detail": f"Unable to reach Ollama at {settings.ollama_base_url}. Verify Ollama is running and accessible.",
         }
 
 
@@ -663,7 +663,7 @@ async def pull_and_register_ollama_model(
         return {
             "status": "pull_failed",
             "model": ollama_name,
-            "detail": "Unable to reach Ollama. Verify Ollama is running and accessible.",
+            "detail": f"Unable to reach Ollama at {settings.ollama_base_url}. Verify Ollama is running and accessible.",
         }
 
     # Register in DB
