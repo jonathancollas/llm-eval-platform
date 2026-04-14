@@ -4,9 +4,11 @@ Durable campaign job queue via Celery + Redis.
 import asyncio
 import logging
 import threading
+from dataclasses import dataclass
 from queue import SimpleQueue
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
 from celery import Celery
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,6 +21,19 @@ settings = get_settings()
 HEARTBEAT_INTERVAL_S = 30
 STALE_THRESHOLD_S    = 120
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
+
+
+@dataclass
+class _LocalTaskHandle:
+    task_id: str
+    thread: Optional[threading.Thread] = None
+    loop: Optional[asyncio.AbstractEventLoop] = None
+    task: Optional[asyncio.Task] = None
+
+
+_local_tasks_lock = threading.Lock()
+_local_tasks_by_campaign: dict[int, _LocalTaskHandle] = {}
+_local_campaign_by_task_id: dict[str, int] = {}
 
 
 def _get_session():
@@ -125,26 +140,107 @@ def _run_async_blocking(coro) -> None:
         raise errors.get()
 
 
+def _register_local_task(campaign_id: int, handle: _LocalTaskHandle) -> None:
+    with _local_tasks_lock:
+        _local_tasks_by_campaign[campaign_id] = handle
+        _local_campaign_by_task_id[handle.task_id] = campaign_id
+
+
+def _unregister_local_task(campaign_id: int) -> None:
+    with _local_tasks_lock:
+        handle = _local_tasks_by_campaign.pop(campaign_id, None)
+        if handle:
+            _local_campaign_by_task_id.pop(handle.task_id, None)
+
+
+def _submit_campaign_local(campaign_id: int) -> str:
+    task_id = uuid4().hex
+    handle = _LocalTaskHandle(task_id=task_id)
+
+    def _runner() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            with _local_tasks_lock:
+                current = _local_tasks_by_campaign.get(campaign_id)
+                if current and current.task_id == task_id:
+                    current.loop = loop
+            task = loop.create_task(_run_with_heartbeat(campaign_id))
+            with _local_tasks_lock:
+                current = _local_tasks_by_campaign.get(campaign_id)
+                if current and current.task_id == task_id:
+                    current.task = task
+            try:
+                loop.run_until_complete(task)
+            except asyncio.CancelledError:
+                logger.info(f"[job_queue] Local campaign task {campaign_id} cancelled")
+            except Exception:
+                logger.exception(f"[job_queue] Local campaign task {campaign_id} failed")
+        finally:
+            _unregister_local_task(campaign_id)
+            loop.close()
+
+    thread = threading.Thread(
+        target=_runner,
+        name=f"local-campaign-{campaign_id}-{task_id[:8]}",
+        daemon=True,
+    )
+    handle.thread = thread
+    _register_local_task(campaign_id, handle)
+    thread.start()
+    return task_id
+
+
+def _cancel_local_task(task_id: str) -> bool:
+    with _local_tasks_lock:
+        campaign_id = _local_campaign_by_task_id.get(task_id)
+        if campaign_id is None:
+            return False
+        handle = _local_tasks_by_campaign.get(campaign_id)
+        if not handle:
+            return False
+        loop = handle.loop
+        task = handle.task
+        is_alive = handle.thread.is_alive() if handle.thread else False
+
+    if loop and task and not task.done():
+        loop.call_soon_threadsafe(task.cancel)
+        return True
+    return is_alive
+
+
 def submit_campaign(campaign_id: int) -> str:
     """Submit a campaign for durable execution on Celery workers."""
-    task = execute_campaign_task.delay(campaign_id)
+    using_celery = True
+    try:
+        task_id = execute_campaign_task.delay(campaign_id).id
+    except Exception as e:
+        using_celery = False
+        logger.warning(
+            f"[job_queue] Celery enqueue failed for campaign {campaign_id}; "
+            f"falling back to local execution: {e}"
+        )
+        task_id = _submit_campaign_local(campaign_id)
     try:
         from core.models import Campaign
         with _get_session() as session:
             c = session.get(Campaign, campaign_id)
             if c:
-                c.worker_task_id = task.id
+                c.worker_task_id = task_id
                 c.last_heartbeat_at = datetime.utcnow()
                 session.add(c)
                 session.commit()
     except (OSError, SQLAlchemyError) as e:
-        try:
-            celery_app.control.revoke(task.id, terminate=True)
-        except Exception as revoke_error:
-            logger.warning(f"[job_queue] Failed to revoke orphan task {task.id}: {revoke_error}")
+        if using_celery:
+            try:
+                celery_app.control.revoke(task_id, terminate=True)
+            except Exception as revoke_error:
+                logger.warning(f"[job_queue] Failed to revoke orphan task {task_id}: {revoke_error}")
+        else:
+            _cancel_local_task(task_id)
         logger.warning(f"[job_queue] Could not persist worker task ID for campaign {campaign_id}: {e}")
         raise RuntimeError("Failed to persist worker task metadata.") from e
-    return task.id
+    return task_id
 
 
 def cancel_campaign(campaign_id: int) -> bool:
@@ -163,8 +259,12 @@ def cancel_campaign(campaign_id: int) -> bool:
     if not task_id:
         return False
 
-    celery_app.control.revoke(task_id, terminate=True)
-    return True
+    try:
+        celery_app.control.revoke(task_id, terminate=True)
+        return True
+    except Exception as e:
+        logger.warning(f"[job_queue] Celery revoke failed for campaign {campaign_id}: {e}")
+        return _cancel_local_task(task_id)
 
 
 def is_running(campaign_id: int) -> bool:
