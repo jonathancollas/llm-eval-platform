@@ -112,10 +112,19 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
     else onDbChange(isSelected(m) ? dbSelected.filter(x => x !== id) : [...dbSelected, id]);
   };
 
+  const stripOpenRouterPrefix = (value: string) => value.replace(/^openrouter\//, "").replace(/:free$/, "");
+  const deriveOllamaTarget = (openrouterId: string) =>
+    openrouterId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "")?.trim() || "";
+
   const handleDownload = async (model: LLMModelSlim, e: React.MouseEvent) => {
     e.stopPropagation();
-    const orId = ((model as any).model_id || "").replace("openrouter/", "").replace(":free", "");
+    const orId = stripOpenRouterPrefix((model as any).model_id || "");
     const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
+    const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
+    if (!downloadTarget) {
+      setPullStatus(prev => ({ ...prev, [model.id]: "error" }));
+      return;
+    }
     setPulling(model.id);
     setPullStatus(prev => ({ ...prev, [model.id]: "pulling" }));
 
@@ -132,8 +141,7 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
         }
       } else {
         // No backend mapping — attempt direct Ollama pull using model name heuristic
-        const guessedName = orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "") ?? orId;
-        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull?model_name=${encodeURIComponent(guessedName)}`, {
+        const ollamaRes = await fetch(`${API_BASE}/sync/ollama/pull?model_name=${encodeURIComponent(downloadTarget)}`, {
           method: "POST",
         });
         const data = await ollamaRes.json();
@@ -191,11 +199,11 @@ export function ModelSelector({ mode, selected, onChange, idType = "db_id", labe
         {filtered.map(m => {
           const sel = isSelected(m);
           const isLocal = (m as any).provider === "ollama";
-          const orId = ((m as any).model_id || "").replace("openrouter/", "").replace(":free", "");
+          const orId = stripOpenRouterPrefix((m as any).model_id || "");
           // Show Download for all open-weight models — Ollama name from suggestions or derive from model_id
           const ollamaName = ollamaSuggestions[orId] || ollamaSuggestions[orId + ":free"];
-          const canDownload = !isLocal && ((m as any).is_open_weight || !!ollamaName);
-          const downloadTarget = ollamaName || orId.split("/").pop()?.replace(/-instruct.*/, "").replace(/-it$/, "");
+          const downloadTarget = (ollamaName || deriveOllamaTarget(orId)).trim();
+          const canDownload = !isLocal && !!downloadTarget && ((m as any).is_open_weight || !!ollamaName);
           const status = pullStatus[m.id];
 
           return (
