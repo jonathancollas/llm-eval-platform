@@ -85,7 +85,7 @@ def test_path_traversal_filename_returns_400(client, benchmark_id):
     files = {"file": ("../../escape.json", b'[{"prompt":"p","answer":"a"}]', "application/json")}
     response = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert response.status_code == 400
-    assert "Invalid file path" in response.json()["detail"]
+    assert "Invalid filename" in response.json()["detail"]
 
 
 def test_wrong_mime_type_returns_415(client, benchmark_id):

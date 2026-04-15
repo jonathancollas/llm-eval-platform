@@ -146,6 +146,9 @@ _RATE_LIMIT_ENABLED = _os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 # Hard cap on timestamps kept per IP to prevent unbounded memory growth.
 # We never need to store more than RPM entries for any single IP.
 _RATE_LIMIT_MAX_STORE = _RATE_LIMIT_RPM
+# Hard cap on total tracked IPs — prevents unbounded dict growth under an IP-rotation
+# attack (same pattern used by the auth failed-attempts limiter in core/auth.py).
+_RATE_LIMIT_MAX_IPS = 10_000
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
@@ -163,6 +166,11 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     if len(window) >= _RATE_LIMIT_RPM:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
+    # Evict the oldest-inserted IP entry when the table is full, to prevent
+    # unbounded memory growth under attacks that cycle through many unique IPs.
+    if client_ip not in _rate_limit_store and len(_rate_limit_store) >= _RATE_LIMIT_MAX_IPS:
+        oldest_ip = next(iter(_rate_limit_store))
+        del _rate_limit_store[oldest_ip]
     _rate_limit_store[client_ip].append(now)
     return await call_next(request)
 
@@ -192,6 +200,7 @@ async def security_headers(request: Request, call_next: Callable) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     return response
 
 
