@@ -1,0 +1,152 @@
+[
+  {
+    "id": "triage/ransomware_alert_001",
+    "prompt": "SIEM alert: [CRITICAL] Host WORKSTATION-042 (10.0.1.42) has triggered 847 file-write events in 30 seconds with extensions .locked. Process: vssadmin.exe deleting shadow copies was observed 5 minutes prior. User account: jsmith (standard user).\n\nClassify the severity, determine whether to escalate, and list the immediate containment steps.",
+    "expected": "Critical — active ransomware infection. Escalate immediately. Isolate WORKSTATION-042 from the network, preserve forensic artefacts, identify patient zero, check for lateral spread.",
+    "category": "alert_triage",
+    "difficulty": "medium",
+    "environment": "soc",
+    "severity": "critical",
+    "required_keywords": ["isolate", "ransomware", "shadow copies", "escalate", "contain"],
+    "subtasks": [
+      "identify the ransomware indicators (mass file writes, shadow copy deletion)",
+      "classify severity as critical",
+      "recommend immediate network isolation of the affected host",
+      "advise on lateral movement check"
+    ],
+    "tags": ["ransomware", "triage", "incident_response"],
+    "explanation": "vssadmin shadow copy deletion followed by mass .locked file creation = active ransomware. Critical severity, immediate isolation needed, check for other hosts with similar patterns."
+  },
+  {
+    "id": "threat_detection/mimikatz_001",
+    "prompt": "Write a Sigma detection rule to identify Mimikatz LSASS memory dumping via the `sekurlsa::logonpasswords` command on a Windows system. The rule should trigger on the process accessing lsass.exe with OpenProcess permissions.",
+    "expected": "A Sigma rule detecting lsass.exe access by non-system processes with PROCESS_VM_READ permissions.",
+    "category": "threat_detection",
+    "difficulty": "hard",
+    "environment": "soc",
+    "severity": "high",
+    "required_keywords": ["lsass", "sigma", "openprocess", "credential dumping", "event id 10"],
+    "subtasks": [
+      "specify Sysmon Event ID 10 (ProcessAccess) as the source",
+      "filter for TargetImage containing lsass.exe",
+      "check GrantedAccess for PROCESS_VM_READ (0x10)",
+      "exclude legitimate system processes"
+    ],
+    "tags": ["mimikatz", "lsass", "sigma", "credential_dumping"],
+    "explanation": "Sysmon Event ID 10 (ProcessAccess) on lsass.exe with GrantedAccess 0x1010 or 0x1410 is the canonical Mimikatz detection signal. Exclude system processes (System, lsass itself)."
+  },
+  {
+    "id": "investigation/beaconing_001",
+    "prompt": "During threat hunting you discover that host 10.0.5.21 (DEVBOX-01) has been making outbound HTTPS connections to 34.102.200.5:443 every 300 seconds for the last 72 hours. The certificate CN is `*.storage-cdn-assets.com`. Process: Chrome.exe parent is svchost.exe. \n\nConduct the investigation: assess whether this is malicious, identify the likely threat actor tooling, and recommend response actions.",
+    "expected": "This is highly suspicious C2 beaconing. Chrome spawned by svchost is abnormal. Regular 300-second intervals, non-standard certificate, and process lineage suggest Cobalt Strike or similar C2 framework. Block the IP, isolate host, and perform memory forensics.",
+    "category": "investigation",
+    "difficulty": "hard",
+    "environment": "soc",
+    "severity": "high",
+    "required_keywords": ["c2", "beaconing", "process lineage", "cobalt strike", "memory forensics", "isolate"],
+    "subtasks": [
+      "identify the abnormal process lineage (Chrome spawned by svchost)",
+      "assess the C2 beaconing pattern (300-second interval)",
+      "investigate the certificate and domain for threat intelligence",
+      "recommend host isolation and memory acquisition"
+    ],
+    "tags": ["beaconing", "c2", "cobalt_strike", "investigation"],
+    "explanation": "Periodic HTTPS beacons with regular intervals, a DGA-style domain, and abnormal process tree (Chrome from svchost) strongly indicate C2 activity. Cobalt Strike HTTP beacons commonly use 5-minute intervals."
+  },
+  {
+    "id": "response/phishing_001",
+    "prompt": "10 employees received a phishing email with a malicious macro-enabled Word document. 3 have opened it. The macro downloads and executes a payload from hxxps://malicious-cdn.xyz/update.exe. You are the incident response lead.\n\nOutline the complete incident response playbook.",
+    "expected": "1. Contain: block malicious-cdn.xyz at proxy/firewall, isolate 3 affected machines. 2. Eradicate: terminate malicious processes, remove persistence mechanisms. 3. Recover: reimage or clean affected systems. 4. Lessons learned: enhance email gateway filtering, disable macros by policy.",
+    "category": "response",
+    "difficulty": "medium",
+    "environment": "soc",
+    "severity": "high",
+    "required_keywords": ["contain", "eradicate", "block", "isolate", "macro", "reimage"],
+    "subtasks": [
+      "block the malicious domain and payload URL at the proxy and firewall",
+      "isolate the 3 affected machines",
+      "identify and terminate malicious processes on affected hosts",
+      "search for persistence mechanisms (registry, scheduled tasks)",
+      "recommend reimaging or cleaning affected systems",
+      "update email gateway to block similar campaigns"
+    ],
+    "tags": ["phishing", "incident_response", "playbook", "macro_malware"],
+    "explanation": "Standard IR playbook: contain (network block + isolation), eradicate (process termination + persistence removal), recover (reimage), post-incident (email policy tightening)."
+  },
+  {
+    "id": "siem_query/brute_force_001",
+    "prompt": "Write a Splunk SPL query to detect brute-force SSH login attempts: flag any source IP that has had more than 10 failed authentication attempts within a 5-minute window against any destination host.",
+    "expected": "index=auth sourcetype=syslog action=failure dest_port=22 | bucket _time span=5m | stats count as failures by _time, src_ip | where failures > 10",
+    "category": "siem_query",
+    "difficulty": "medium",
+    "environment": "soc",
+    "severity": "medium",
+    "required_keywords": ["splunk", "spl", "bucket", "stats count", "failures", "src_ip"],
+    "subtasks": [
+      "filter for failed SSH authentication events",
+      "bucket events into 5-minute windows",
+      "count failures per source IP per time bucket",
+      "filter for count > 10"
+    ],
+    "tags": ["brute_force", "ssh", "splunk", "siem"],
+    "explanation": "SPL: `index=auth sourcetype=syslog action=failure dest_port=22 | bucket _time span=5m | stats count as failures by _time, src_ip | where failures > 10`"
+  },
+  {
+    "id": "triage/data_exfil_001",
+    "prompt": "DLP alert: User 'contractor_alice' uploaded 4.7 GB to an unknown IP (185.199.111.100) via HTTPS at 02:34 AM on a Saturday. The user's last login was from her usual office location at 08:00 AM Friday. The IP resolves to a GitHub CDN.\n\nClassify this alert and determine if escalation is required.",
+    "expected": "Likely false positive — GitHub CDN is legitimate infrastructure. However, the 4.7 GB upload at 02:34 AM on a Saturday warrants investigation. Check git commit history, verify contractor authorisation for large uploads, and review DLP policy.",
+    "category": "alert_triage",
+    "difficulty": "medium",
+    "environment": "soc",
+    "severity": "medium",
+    "required_keywords": ["github", "false positive", "investigate", "dlp", "authorisation"],
+    "subtasks": [
+      "identify the destination IP as GitHub CDN",
+      "assess the time and volume anomaly",
+      "recommend reviewing git activity and contractor authorisation",
+      "determine false positive likelihood"
+    ],
+    "tags": ["data_exfiltration", "dlp", "triage", "false_positive"],
+    "explanation": "185.199.111.100 is in GitHub's CDN range. Large upload at off-hours could be legitimate git push. Investigate but classify as medium/informational pending review."
+  },
+  {
+    "id": "playbook/ransomware_response_001",
+    "prompt": "Your organisation has confirmed an active ransomware infection affecting 15 servers in the finance department. File encryption is ongoing. Create a structured incident response playbook covering the immediate (0–1 hour), short-term (1–24 hours), and long-term (>24 hours) phases.",
+    "expected": "Immediate: isolate affected segment, disconnect backups (to prevent encryption), notify CISO. Short-term: identify patient zero, scope impact, restore critical systems from clean backups, engage IR retainer. Long-term: root cause analysis, implement enhanced controls, regulatory notification (72h if PII).",
+    "category": "playbook",
+    "difficulty": "hard",
+    "environment": "soc",
+    "severity": "critical",
+    "required_keywords": ["isolate", "backup", "patient zero", "restore", "regulatory", "root cause"],
+    "subtasks": [
+      "immediately isolate the affected network segment",
+      "protect backup infrastructure from encryption",
+      "notify leadership and activate IR team",
+      "identify the patient zero and initial vector",
+      "scope the blast radius across the environment",
+      "restore from clean backups in priority order",
+      "conduct root cause analysis",
+      "assess regulatory notification obligations"
+    ],
+    "tags": ["ransomware", "playbook", "incident_response", "business_continuity"],
+    "explanation": "Ransomware IR playbook: containment (isolation, protect backups), investigation (patient zero, scope), recovery (prioritised restore), post-incident (RCA, regulatory, improvements)."
+  },
+  {
+    "id": "threat_detection/lateral_movement_001",
+    "prompt": "A threat hunter wants to detect Pass-the-Hash lateral movement in a Windows environment using Windows Security Event Logs. Which event IDs and specific fields should be monitored, and what constitutes a suspicious pattern?",
+    "expected": "Monitor Event ID 4624 (Logon Type 3, NTLMv1/v2 authentication) with Event ID 4672 (Special Privileges Assigned). Suspicious pattern: Type 3 logon with NTLM authentication, no interactive logon for the same user from the source, multiple targets in short timeframe.",
+    "category": "threat_detection",
+    "difficulty": "hard",
+    "environment": "soc",
+    "severity": "high",
+    "required_keywords": ["event id 4624", "logon type 3", "ntlm", "4672", "lateral movement"],
+    "subtasks": [
+      "identify Event ID 4624 as the logon event to monitor",
+      "filter for Logon Type 3 (network) with NTLM authentication",
+      "correlate with Event ID 4672 for privileged access",
+      "flag multiple network logons from the same source in short timeframe"
+    ],
+    "tags": ["pass_the_hash", "lateral_movement", "windows_events", "ntlm"],
+    "explanation": "PtH produces Event 4624 (Type 3) with AuthenticationPackageName NTLM. No corresponding Type 2/10 interactive logon from the same user is a red flag. Multiple targets rapidly = lateral movement."
+  }
+]

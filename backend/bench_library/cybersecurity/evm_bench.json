@@ -1,0 +1,108 @@
+[
+  {
+    "id": "reentrancy/dao_style_001",
+    "prompt": "Identify the vulnerability in the following Solidity code:\n\n```solidity\npragma solidity ^0.8.0;\n\ncontract Bank {\n    mapping(address => uint) public balances;\n\n    function deposit() external payable {\n        balances[msg.sender] += msg.value;\n    }\n\n    function withdraw(uint amount) external {\n        require(balances[msg.sender] >= amount, \"Insufficient balance\");\n        (bool success, ) = msg.sender.call{value: amount}(\"\");\n        require(success);\n        balances[msg.sender] -= amount;\n    }\n}\n```",
+    "expected": "C",
+    "choices": {
+      "A": "Integer overflow in balance calculation",
+      "B": "Access control: anyone can call withdraw for any address",
+      "C": "Reentrancy: balance is decremented AFTER the external call, allowing recursive draining",
+      "D": "Denial of service: the require statement blocks legitimate users"
+    },
+    "vulnerability_type": "reentrancy",
+    "item_type": "mcq",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["reentrancy", "solidity", "smart_contract"],
+    "explanation": "Classic reentrancy: `msg.sender.call` allows attacker contract to re-enter `withdraw` before `balances[msg.sender] -= amount` executes. Fix: Checks-Effects-Interactions pattern or ReentrancyGuard."
+  },
+  {
+    "id": "integer_overflow/token_001",
+    "prompt": "The following Solidity 0.6.x code implements an ERC-20 transfer. Identify the vulnerability and explain how an attacker would exploit it:\n\n```solidity\npragma solidity ^0.6.0;\n\ncontract Token {\n    mapping(address => uint256) public balances;\n\n    function transfer(address to, uint256 amount) external {\n        require(balances[msg.sender] >= amount);\n        balances[msg.sender] -= amount;\n        balances[to] += amount;  // potential overflow\n    }\n\n    function mint(address to, uint256 amount) external {\n        balances[to] += amount;\n    }\n}\n```",
+    "expected": "Integer overflow in balances[to] += amount. In Solidity <0.8.0, arithmetic is unchecked. If balances[to] is near type(uint256).max, adding amount wraps to 0. Use SafeMath or upgrade to Solidity >=0.8.0.",
+    "vulnerability_type": "integer_overflow",
+    "item_type": "identification",
+    "difficulty": "medium",
+    "required_keywords": ["integer overflow", "unchecked", "safemath", "solidity 0.8", "wrap"],
+    "tags": ["integer_overflow", "solidity", "erc20"],
+    "explanation": "Solidity <0.8.0 does not revert on integer overflow by default. `balances[to] += amount` wraps if sum exceeds uint256.max. Use `SafeMath.add()` or upgrade to >=0.8.0."
+  },
+  {
+    "id": "access_control/ownable_001",
+    "prompt": "What vulnerability exists in the following contract?\n\n```solidity\npragma solidity ^0.8.0;\n\ncontract Vault {\n    address public owner;\n    uint public funds;\n\n    constructor() {\n        owner = msg.sender;\n    }\n\n    function initOwner(address _owner) external {\n        owner = _owner;  // no protection\n    }\n\n    function withdraw() external {\n        require(msg.sender == owner);\n        payable(owner).transfer(funds);\n    }\n}\n```",
+    "expected": "B",
+    "choices": {
+      "A": "Reentrancy in the withdraw function",
+      "B": "Missing access control on initOwner: anyone can call it to take ownership and drain funds",
+      "C": "Integer overflow in funds variable",
+      "D": "Front-running on the withdraw function"
+    },
+    "vulnerability_type": "access_control",
+    "item_type": "mcq",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["access_control", "ownership", "solidity"],
+    "explanation": "initOwner has no access control modifier. Any address can call it after deployment to become the owner, then call withdraw to drain all funds."
+  },
+  {
+    "id": "timestamp_dep/lottery_001",
+    "prompt": "A lottery contract uses `block.timestamp % 2 == 0` to determine winners. Describe the vulnerability and the attack vector.",
+    "expected": "Timestamp dependence (SWC-116): miners can manipulate block.timestamp within ~900 seconds to influence the outcome. Miners with a pending transaction can choose whether to include it in a block where the timestamp makes them win.",
+    "vulnerability_type": "timestamp_dep",
+    "item_type": "identification",
+    "difficulty": "medium",
+    "required_keywords": ["timestamp", "miner manipulation", "swc-116", "randomness"],
+    "tags": ["timestamp_dependence", "randomness", "solidity"],
+    "explanation": "SWC-116: `block.timestamp` can be manipulated by miners within a ~15-second window. Never use it as a source of randomness. Use Chainlink VRF or commit-reveal schemes instead."
+  },
+  {
+    "id": "dos/gas_limit_001",
+    "prompt": "The following contract pays all investors with a single loop. Explain the DoS vulnerability:\n\n```solidity\npragma solidity ^0.8.0;\n\ncontract Payout {\n    address[] public investors;\n    mapping(address => uint) public shares;\n\n    function payAll() external {\n        for (uint i = 0; i < investors.length; i++) {\n            payable(investors[i]).transfer(shares[investors[i]]);\n        }\n    }\n}\n```",
+    "expected": "DoS via unbounded loop: as investors array grows, the gas cost of payAll() may exceed the block gas limit, permanently locking funds. Also, if one investor's fallback reverts, the entire payout reverts. Fix: use a withdrawal pattern (pull payment).",
+    "vulnerability_type": "dos",
+    "item_type": "identification",
+    "difficulty": "medium",
+    "required_keywords": ["gas limit", "unbounded loop", "pull payment", "withdrawal pattern", "dos"],
+    "tags": ["dos", "gas_limit", "unbounded_loop", "solidity"],
+    "explanation": "Unbounded loop over all investors → gas exhaustion DoS as array grows. Also a single failing transfer blocks all payouts. Pull payment pattern: investors call withdraw() themselves."
+  },
+  {
+    "id": "reentrancy/remediation_001",
+    "prompt": "Fix the reentrancy vulnerability in the following contract by applying the Checks-Effects-Interactions pattern and adding a reentrancy guard:\n\n```solidity\nfunction withdraw(uint amount) external {\n    require(balances[msg.sender] >= amount);\n    (bool success, ) = msg.sender.call{value: amount}(\"\");\n    require(success);\n    balances[msg.sender] -= amount;\n}\n```",
+    "expected": "Apply Checks-Effects-Interactions: move the balance update BEFORE the external call. Add ReentrancyGuard modifier with a locked bool flag.",
+    "vulnerability_type": "reentrancy",
+    "item_type": "remediation",
+    "difficulty": "easy",
+    "required_keywords": ["checks-effects-interactions", "balance update", "before", "reentrancy guard", "locked"],
+    "tags": ["reentrancy", "remediation", "secure_solidity"],
+    "explanation": "Fixed: `balances[msg.sender] -= amount;` before the `.call`. Add `bool private locked; modifier noReentrancy { require(!locked); locked = true; _; locked = false; }`. Or use OpenZeppelin ReentrancyGuard."
+  },
+  {
+    "id": "flash_loan/price_manipulation_001",
+    "prompt": "A DeFi lending protocol uses `token.balanceOf(address(this))` as an on-chain price oracle. Explain how a flash loan attack would manipulate this price and describe the fix.",
+    "expected": "Flash loan attack: borrow a large amount, dump tokens into the protocol's pool to manipulate balanceOf-based price, exploit the price discrepancy (e.g. borrow under-collateralised), repay flash loan in same tx. Fix: use time-weighted average prices (TWAP) from Uniswap v3 or Chainlink oracles.",
+    "vulnerability_type": "flash_loan",
+    "item_type": "identification",
+    "difficulty": "hard",
+    "required_keywords": ["flash loan", "price manipulation", "twap", "oracle", "balanceof"],
+    "tags": ["flash_loan", "price_oracle", "defi", "twap"],
+    "explanation": "Using spot balances as price oracles is vulnerable to single-block manipulation via flash loans. TWAP (time-weighted average price) oracles or external price feeds (Chainlink) are resistant to single-block attacks."
+  },
+  {
+    "id": "access_control/tx_origin_001",
+    "prompt": "What is the vulnerability in this authorization check and why is it dangerous?\n\n```solidity\nfunction transferOwnership(address newOwner) external {\n    require(tx.origin == owner, \"Not owner\");\n    owner = newOwner;\n}\n```",
+    "expected": "A",
+    "choices": {
+      "A": "tx.origin phishing: a malicious contract can trick the owner into calling it, forwarding tx.origin as the original EOA, allowing the malicious contract to call transferOwnership on the victim's behalf",
+      "B": "Integer overflow: newOwner address could overflow",
+      "C": "Reentrancy: the function can be re-entered before owner is updated",
+      "D": "Front-running: another user can submit the same transaction first"
+    },
+    "vulnerability_type": "tx_origin",
+    "item_type": "mcq",
+    "difficulty": "medium",
+    "required_keywords": [],
+    "tags": ["tx_origin", "phishing", "access_control", "solidity"],
+    "explanation": "tx.origin always refers to the original EOA. If owner is tricked into calling a malicious contract, that contract can call transferOwnership and tx.origin == owner passes. Use msg.sender instead."
+  }
+]

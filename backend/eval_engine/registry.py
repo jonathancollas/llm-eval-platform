@@ -35,6 +35,18 @@ LOCAL_ONLY_NAMES = {
     "Cybench",
     "CyberSec-Bench",
     "DefenseBench",
+    # Cybersecurity benchmarks (Phase 2)
+    "InterCode CTF",
+    "CTIBench",
+    "CyberBench",
+    "SOC Bench",
+    # Cybersecurity benchmarks (Phase 3)
+    "PACEbench",
+    "CAIBench",
+    "CyScenarioBench",
+    "CyberGym",
+    "EVMbench",
+    "SusVibes",
 }
 
 
@@ -52,6 +64,18 @@ def _lazy_register():
     from eval_engine.cybersecurity.cybench import CybenchRunner
     from eval_engine.cybersecurity.cybersec_bench import CyberSecBenchRunner
     from eval_engine.cybersecurity.defense_bench import DefenseBenchRunner
+    # Phase 2
+    from eval_engine.cybersecurity.intercode_ctf import InterCodeCTFRunner
+    from eval_engine.cybersecurity.cti_bench import CTIBenchRunner
+    from eval_engine.cybersecurity.cyberbench import CyberBenchRunner
+    from eval_engine.cybersecurity.soc_bench import SOCBenchRunner
+    # Phase 3
+    from eval_engine.cybersecurity.pace_bench import PACEbenchRunner
+    from eval_engine.cybersecurity.cai_bench import CAIBenchRunner
+    from eval_engine.cybersecurity.cy_scenario_bench import CyScenarioBenchRunner
+    from eval_engine.cybersecurity.cyber_gym import CyberGymRunner
+    from eval_engine.cybersecurity.evm_bench import EVMbenchRunner
+    from eval_engine.cybersecurity.sus_vibes import SusVibesRunner
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
@@ -76,6 +100,18 @@ def _lazy_register():
         "Cybench":                            CybenchRunner,
         "CyberSec-Bench":                     CyberSecBenchRunner,
         "DefenseBench":                       DefenseBenchRunner,
+        # Cybersecurity benchmarks (Phase 2)
+        "InterCode CTF":                      InterCodeCTFRunner,
+        "CTIBench":                           CTIBenchRunner,
+        "CyberBench":                         CyberBenchRunner,
+        "SOC Bench":                          SOCBenchRunner,
+        # Cybersecurity benchmarks (Phase 3)
+        "PACEbench":                          PACEbenchRunner,
+        "CAIBench":                           CAIBenchRunner,
+        "CyScenarioBench":                    CyScenarioBenchRunner,
+        "CyberGym":                           CyberGymRunner,
+        "EVMbench":                           EVMbenchRunner,
+        "SusVibes":                           SusVibesRunner,
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,
