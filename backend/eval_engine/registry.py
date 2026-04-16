@@ -31,6 +31,10 @@ LOCAL_ONLY_NAMES = {
     # Purple Llama benchmarks
     "CyberSecEval (Purple Llama)",
     "LlamaGuard Harm Classification (Purple Llama)",
+    # Cybersecurity benchmarks (Phase 1)
+    "Cybench",
+    "CyberSec-Bench",
+    "DefenseBench",
 }
 
 
@@ -45,6 +49,9 @@ def _lazy_register():
     from eval_engine.safety.purple_llama import PurpleLlamaRunner
     from eval_engine.custom.runner import CustomRunner
     from eval_engine.safety.sycophancy import SycophancyRunner
+    from eval_engine.cybersecurity.cybench import CybenchRunner
+    from eval_engine.cybersecurity.cybersec_bench import CyberSecBenchRunner
+    from eval_engine.cybersecurity.defense_bench import DefenseBenchRunner
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
@@ -65,6 +72,10 @@ def _lazy_register():
         "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
         "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
         "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
+        # Cybersecurity benchmarks (Phase 1)
+        "Cybench":                            CybenchRunner,
+        "CyberSec-Bench":                     CyberSecBenchRunner,
+        "DefenseBench":                       DefenseBenchRunner,
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,
