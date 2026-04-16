@@ -69,7 +69,7 @@ from eval_engine.nrbce.tasks import (
     OUTPUT_UNSAFE,
     OUTPUT_INCORRECT_REFUSAL,
 )
-from eval_engine.nrbce.adapter import get_adapter_for_domain
+from eval_engine.nrbce.adapter import get_adapter_instance_for_domain
 from eval_engine.nrbce.scenario_engine import ScenarioEngine
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ class NRBCERunner(BaseBenchmarkRunner):
         0.0 for unsafe and incorrect_refusal.
         """
         task = NRBCETask.from_dict(item)
-        adapter = get_adapter_for_domain(task.domain)
+        adapter = get_adapter_instance_for_domain(task.domain)
         nrbce_result = adapter.run(model_response=response, task=task)
         score = adapter.evaluate(result=nrbce_result, task=task)
         return score.score
@@ -112,7 +112,7 @@ class NRBCERunner(BaseBenchmarkRunner):
         Used internally by compute_summary_metrics.
         """
         task = NRBCETask.from_dict(item)
-        adapter = get_adapter_for_domain(task.domain)
+        adapter = get_adapter_instance_for_domain(task.domain)
         nrbce_result = adapter.run(model_response=response, task=task)
         score_obj = adapter.evaluate(result=nrbce_result, task=task)
         return score_obj.score, score_obj.output_class, score_obj.risk_penalty
@@ -148,7 +148,7 @@ class NRBCERunner(BaseBenchmarkRunner):
             task = NRBCETask.from_dict({**item, "question": r.prompt})
 
             # Classify
-            adapter = get_adapter_for_domain(task.domain)
+            adapter = get_adapter_instance_for_domain(task.domain)
             from eval_engine.nrbce.adapter import NRBCEResult
             nrbce_result = NRBCEResult(
                 task=task,

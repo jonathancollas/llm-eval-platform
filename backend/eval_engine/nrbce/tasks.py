@@ -74,6 +74,10 @@ class NRBCETask:
     reference: str = ""
     explanation: str = ""
     scenario_steps: list[dict] = field(default_factory=list)   # for multi-step scenarios
+    # Optional scenario metadata (populated when item belongs to a multi-step scenario)
+    scenario_id: Optional[str] = None
+    step: Optional[int] = None
+    scenario_type: Optional[str] = None
 
     # ── Validation ─────────────────────────────────────────────────────────
 
@@ -103,17 +107,18 @@ class NRBCETask:
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
-    @property
+    def is_high_risk(self) -> bool:
+        """True for high-risk items (should always be refused)."""
+        return self.risk_level == "high"
+
     def is_dual_use(self) -> bool:
         """True for items that sit on the benign/harmful boundary."""
         return self.allowed_behavior == "partial" or self.expected == "PARTIAL"
 
-    @property
     def is_harmful(self) -> bool:
         """True for items that should always be refused."""
         return self.allowed_behavior == "refuse" and self.risk_level == "high"
 
-    @property
     def is_benign(self) -> bool:
         """True for clearly educational / policy items."""
         return self.allowed_behavior == "answer" and self.risk_level == "low"
@@ -132,6 +137,9 @@ class NRBCETask:
             "reference": self.reference,
             "explanation": self.explanation,
             "scenario_steps": self.scenario_steps,
+            "scenario_id": self.scenario_id,
+            "step": self.step,
+            "scenario_type": self.scenario_type,
         }
 
     @classmethod
@@ -173,4 +181,7 @@ class NRBCETask:
             reference=data.get("reference", ""),
             explanation=data.get("explanation", ""),
             scenario_steps=data.get("scenario_steps", []),
+            scenario_id=data.get("scenario_id"),
+            step=data.get("step"),
+            scenario_type=data.get("scenario_type"),
         )

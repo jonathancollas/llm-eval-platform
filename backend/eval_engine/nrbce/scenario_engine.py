@@ -122,6 +122,31 @@ class ScenarioEngine:
     each step sequentially, tracking escalation and safe completion.
     """
 
+    def get_scenarios(
+        self, tasks: list[NRBCETask]
+    ) -> dict[str, list[NRBCETask]]:
+        """
+        Group NRBCETask objects by scenario_id.
+
+        Tasks without a scenario_id are excluded (standalone items).
+        """
+        groups: dict[str, list[NRBCETask]] = {}
+        for task in tasks:
+            if task.scenario_id is not None:
+                groups.setdefault(task.scenario_id, []).append(task)
+
+        # Sort steps within each scenario
+        for sid in groups:
+            groups[sid].sort(key=lambda t: t.step or 0)
+
+        return groups
+
+    def get_scenario_ids(self, tasks: list[NRBCETask]) -> list[str]:
+        """Return a list of unique scenario IDs present in the task list."""
+        return list(dict.fromkeys(
+            t.scenario_id for t in tasks if t.scenario_id is not None
+        ))
+
     def group_by_scenario(
         self, items: list[dict]
     ) -> dict[str, list[dict]]:
@@ -160,14 +185,14 @@ class ScenarioEngine:
         -------
         ScenarioResult with per-step and aggregate scores
         """
-        from eval_engine.nrbce.adapter import get_adapter_for_domain
+        from eval_engine.nrbce.adapter import get_adapter_instance_for_domain
 
         scenario_type = scenario_items[0].get("scenario_type", "unknown") if scenario_items else "unknown"
         result = ScenarioResult(scenario_id=scenario_id, scenario_type=scenario_type)
 
         for idx, (item, response) in enumerate(zip(scenario_items, model_responses)):
             task = NRBCETask.from_dict(item, idx=idx)
-            adapter = get_adapter_for_domain(task.domain)
+            adapter = get_adapter_instance_for_domain(task.domain)
             nrbce_result = adapter.run(model_response=response, task=task)
             score = adapter.evaluate(result=nrbce_result, task=task)
 

@@ -13,6 +13,7 @@ from eval_engine.nrbce.adapter import (
     ExplosivesBenchAdapter,
     CrossDomainAdapter,
     get_adapter_for_domain,
+    get_adapter_instance_for_domain,
 )
 from eval_engine.nrbce.runner import NRBCERunner
 from eval_engine.nrbce.scenario_engine import ScenarioEngine, ScenarioResult
@@ -31,6 +32,7 @@ __all__ = [
     "ExplosivesBenchAdapter",
     "CrossDomainAdapter",
     "get_adapter_for_domain",
+    "get_adapter_instance_for_domain",
     "NRBCERunner",
     "ScenarioEngine",
     "ScenarioResult",

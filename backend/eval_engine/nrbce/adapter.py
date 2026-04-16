@@ -381,7 +381,11 @@ _ADAPTER_MAP: dict[str, type[NRBCEBenchmarkAdapter]] = {
 }
 
 
-def get_adapter_for_domain(domain: str) -> NRBCEBenchmarkAdapter:
-    """Return the correct domain adapter for the given domain string."""
-    cls = _ADAPTER_MAP.get(domain, CrossDomainAdapter)
-    return cls()
+def get_adapter_for_domain(domain: str) -> type[NRBCEBenchmarkAdapter]:
+    """Return the adapter class for the given domain string."""
+    return _ADAPTER_MAP.get(domain, CrossDomainAdapter)
+
+
+def get_adapter_instance_for_domain(domain: str) -> NRBCEBenchmarkAdapter:
+    """Return an instantiated adapter for the given domain string."""
+    return get_adapter_for_domain(domain)()
