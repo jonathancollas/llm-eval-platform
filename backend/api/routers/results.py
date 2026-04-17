@@ -345,6 +345,7 @@ def get_campaign_live_feed(
                 "current_item_index": None, "current_item_total": None, "current_item_label": None}
 
     run_ids = [r.id for r in runs]
+    run_map = {r.id: r for r in runs}
     completed_runs = sum(1 for r in runs if r.status == "completed")
 
     # Get latest results
@@ -360,7 +361,7 @@ def get_campaign_live_feed(
     bench_cache = {}
     items = []
     for r in results:
-        run = next((x for x in runs if x.id == r.run_id), None)
+        run = run_map.get(r.run_id)
         if not run:
             continue
         if run.model_id not in model_cache:
