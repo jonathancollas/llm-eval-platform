@@ -44,7 +44,7 @@ class RunRequest(BaseModel):
     model_id: int
     variants: list[ForgeVariant]
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=512, ge=10, le=4096)
+    max_tokens: int = Field(default=2048, ge=10, le=4096)
 
 class ReplayRequest(BaseModel):
     model_id: int

@@ -70,7 +70,7 @@ class InferenceAdapter(ABC):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         """Generate a completion. Returns AdapterResult with text + metadata."""
         ...
@@ -106,7 +106,7 @@ class LiteLLMAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         from litellm import acompletion
 
@@ -166,7 +166,7 @@ class AnthropicAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import anthropic
         from core.config import get_settings
@@ -223,7 +223,7 @@ class OllamaAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import httpx
 
@@ -301,7 +301,7 @@ class HuggingFaceAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import httpx
 
