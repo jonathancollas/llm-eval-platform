@@ -32,6 +32,11 @@ from api.routers import events as events_router
 from eval_engine.event_pipeline import register_default_subscribers
 from api.routers import monitoring
 from api.routers import science
+from api.routers import statistics as statistics_router
+from api.routers import plugins as plugins_router
+from api.routers import capability as capability_router
+from api.routers import scenarios as scenarios_router
+from api.routers import forecasting as forecasting_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -293,6 +298,8 @@ tenant_scoped_routers = [
     redbox.router, judge.router, agents.router, policy.router,
     research.router, evidence.router, deep_analysis.router,
     multiagent.router, events_router.router, monitoring.router, science.router,
+    statistics_router.router, plugins_router.router, capability_router.router,
+    scenarios_router.router, forecasting_router.router,
 ]
 for router in tenant_scoped_routers:
     app.include_router(router, prefix="/api", dependencies=[Depends(require_tenant)])
