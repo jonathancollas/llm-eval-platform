@@ -22,12 +22,12 @@ export interface SyncState {
 }
 
 export function useSync(): SyncState {
-  const [synced, setSynced]                       = useState(false);
-  const [benchmarksAdded, setBenchmarks]           = useState(0);
-  const [modelsAdded, setModels]                   = useState(0);
-  const [hfBenchmarksDiscovered, setHfDiscovered]  = useState(0);
-  const [syncing, setSyncing]                      = useState(false);
-  const pollRef                                    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [synced, setSynced] = useState(false);
+  const [benchmarksAdded, setBenchmarks] = useState(0);
+  const [modelsAdded, setModels] = useState(0);
+  const [hfBenchmarksDiscovered, setHfDiscovered] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // Skip if synced recently (localStorage TTL cache)
