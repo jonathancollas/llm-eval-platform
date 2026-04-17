@@ -1,5 +1,6 @@
 "use client";
 import { useState, useCallback, useMemo, memo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { campaignsApi } from "@/lib/api";
 import type { Campaign, LLMModelSlim, Benchmark } from "@/lib/api";
 import { useCampaigns, useModels, useBenchmarks } from "@/lib/useApi";
@@ -593,6 +594,7 @@ const LiveFeed=memo(function LiveFeed({campaignId}:{campaignId:number}){
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function CampaignsPage(){
+  const router = useRouter();
   // ── State — minimal, no duplication of SWR data ────────────────────────────
   const[showWizard,setShowWizard]=useState(false);
   const[wizardMode,setWizardMode]=useState<"quick"|"system">("quick");
@@ -665,8 +667,8 @@ export default function CampaignsPage(){
 
   return(
     <div>
-      <PageHeader title="Evaluations" description="Multi-model × multi-benchmark evaluations — static or system-in-context."
-        action={!showWizard&&<button onClick={()=>setShowWizard(true)} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700"><Plus size={14}/> New Evaluation</button>}
+      <PageHeader title="Run History" description="All evaluation runs — view results, re-run, or clone into Evaluation Studio."
+        action={!showWizard&&<button onClick={()=>router.push("/evaluate")} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700"><Plus size={14}/> New Evaluation</button>}
       />
 
       {showWizard&&(
@@ -810,12 +812,13 @@ export default function CampaignsPage(){
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {c.status==="completed"&&!running&&(
-                    <>
-                      <Link href={`/dashboard?campaign=${c.id}`} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><BarChart2 size={13}/> Results</Link>
-                      <ManifestButton campaignId={c.id} />
-                      <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
-                    </>
-                  )}
+                     <>
+                       <Link href={`/dashboard?campaign=${c.id}`} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><BarChart2 size={13}/> Results</Link>
+                       <ManifestButton campaignId={c.id} />
+                       <button onClick={()=>router.push(`/evaluate?clone=${c.id}`)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><Copy size={13}/> Clone</button>
+                       <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
+                     </>
+                   )}
                   {(c.status==="pending"||c.status==="failed")&&!running&&<button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700"><Play size={13}/> Run</button>}
                   {running&&<button onClick={()=>handleCancel(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100"><Square size={13}/> Cancel</button>}
                   {runningId===c.id&&c.status!=="running"&&<div className="flex items-center gap-1.5 text-xs text-slate-400"><Spinner size={13}/> Starting…</div>}

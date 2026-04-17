@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import Link from "next/link";
 import { Cpu, Library, Rocket, BarChart3, Trophy, ArrowRight,
-         Dna, Gavel, Lock, Radio, FlaskConical } from "lucide-react";
+         Dna, Gavel, Lock, Radio, FlaskConical, List, LineChart, Layers, Search } from "lucide-react";
 
 interface Stats {
   models: number;
@@ -14,16 +14,20 @@ interface Stats {
 }
 
 const QUICK_LINKS = [
-  { href: "/models",      icon: Cpu,         label: "Model Registry",     desc: "Catalogue, access types, Ollama download",           color: "text-blue-600" },
-  { href: "/benchmarks",  icon: Library,     label: "Benchmarks",         desc: "INESIA + public · taxonomy · source classification",  color: "text-violet-600" },
-  { href: "/campaigns",   icon: Rocket,      label: "Evaluations",        desc: "Run static or system-in-context evaluations",                color: "text-slate-700" },
-  { href: "/dashboard",   icon: BarChart3,   label: "Dashboard",          desc: "Heatmaps, radar, capability / propensity scores",     color: "text-green-600" },
-  { href: "/leaderboard", icon: Trophy,      label: "Leaderboard",        desc: "Rankings by domain",                                 color: "text-amber-600" },
-  { href: "/genome",      icon: Dna,         label: "Genomia",            desc: "Structural behavioral diagnostic · beyond the score", color: "text-cyan-600" },
-  { href: "/judge",       icon: Gavel,       label: "LLM-as-Judge",       desc: "Multi-judge · calibration · bias detection",         color: "text-slate-600" },
-  { href: "/redbox",      icon: Lock,        label: "The Red Room",       desc: "Adversarial evaluation lab — restricted access",      color: "text-red-600" },
-  { href: "/telemetry",   icon: Radio,       label: "Monitoring",         desc: "Continuous post-deployment safety monitoring",        color: "text-purple-600" },
-  { href: "/methodology", icon: FlaskConical, label: "Methodology Center", desc: "Scientific foundations · papers · heuristics",       color: "text-teal-600" },
+  { href: "/evaluate",    icon: Rocket,       label: "Evaluation Studio",   desc: "Launch a new evaluation — capability, safety, compliance",      color: "text-slate-700"   },
+  { href: "/campaigns",   icon: List,         label: "Run History",         desc: "All evaluation runs · re-run · clone into Studio",              color: "text-slate-500"   },
+  { href: "/models",      icon: Cpu,          label: "Model Registry",      desc: "Catalogue, access types, Ollama download",                      color: "text-blue-600"    },
+  { href: "/benchmarks",  icon: Library,      label: "Benchmarks",          desc: "INESIA + public · taxonomy · source classification",            color: "text-violet-600"  },
+  { href: "/dashboard",   icon: BarChart3,    label: "Dashboard",           desc: "Heatmaps, radar, capability / propensity scores",               color: "text-green-600"   },
+  { href: "/leaderboard", icon: Trophy,       label: "Leaderboard",         desc: "Rankings by domain",                                            color: "text-amber-600"   },
+  { href: "/genome",      icon: Dna,          label: "Genomia",             desc: "Structural behavioral diagnostic · beyond the score",           color: "text-cyan-600"    },
+  { href: "/capability",  icon: Search,       label: "Capability Intel",    desc: "7-domain taxonomy · model profiles · coverage gaps",            color: "text-indigo-600"  },
+  { href: "/forecasting", icon: LineChart,    label: "Forecasting",         desc: "Scaling law fitting · capability extrapolation · frontier",     color: "text-purple-600"  },
+  { href: "/judge",       icon: Gavel,        label: "LLM-as-Judge",        desc: "Multi-judge · calibration · bias detection",                    color: "text-slate-600"   },
+  { href: "/scenarios",   icon: Layers,       label: "Scenarios",           desc: "Structured agentic task templates · trajectory evaluation",     color: "text-teal-600"    },
+  { href: "/redbox",      icon: Lock,         label: "The Red Room",        desc: "Adversarial evaluation lab — restricted access",                color: "text-red-600"     },
+  { href: "/telemetry",   icon: Radio,        label: "Monitoring",          desc: "Continuous post-deployment safety monitoring",                  color: "text-purple-600"  },
+  { href: "/methodology", icon: FlaskConical, label: "Methodology Center",  desc: "Scientific foundations · papers · heuristics",                  color: "text-teal-600"    },
 ];
 
 function AnimatedCount({ value }: { value: number }) {
