@@ -9,7 +9,7 @@ import os
 import secrets
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -323,3 +323,359 @@ def test_compute_genome_run_without_results(client, db_engine):
 
     assert resp.status_code == 200
     assert resp.json()["profiles_created"] >= 1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NEW TEST ADDITIONS: compare_campaigns, explain_regression, get_run_signals,
+# compute_hybrid_genome
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── compare_campaigns ─────────────────────────────────────────────────────────
+
+def test_compare_campaigns_baseline_not_found(client):
+    resp = client.get("/genome/regression/compare?baseline_id=99999&candidate_id=99999")
+    assert resp.status_code == 404
+
+
+def test_compare_campaigns_success(client, seeded, db_engine):
+    """Two distinct completed campaigns → compare returns score_delta + probable_causes."""
+    baseline_cid = seeded["campaign_id"]
+
+    with Session(db_engine) as s:
+        model = LLMModel(
+            name="Compare-Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="compare/model-v2",
+        )
+        s.add(model)
+        bench = Benchmark(
+            name="Compare-Bench",
+            type=BenchmarkType.ACADEMIC,
+            metric="accuracy",
+        )
+        s.add(bench)
+        s.flush()
+
+        candidate_campaign = Campaign(
+            name="Candidate Campaign",
+            model_ids=json.dumps([model.id]),
+            benchmark_ids=json.dumps([bench.id]),
+            status=JobStatus.COMPLETED,
+        )
+        s.add(candidate_campaign)
+        s.flush()
+
+        run = EvalRun(
+            campaign_id=candidate_campaign.id,
+            model_id=model.id,
+            benchmark_id=bench.id,
+            status=JobStatus.COMPLETED,
+            score=0.70,
+            total_latency_ms=800,
+            num_items=3,
+        )
+        s.add(run)
+        s.commit()
+        candidate_cid = candidate_campaign.id
+
+    resp = client.get(
+        f"/genome/regression/compare?baseline_id={baseline_cid}&candidate_id={candidate_cid}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "baseline" in data
+    assert "candidate" in data
+    assert "score_delta" in data
+    assert "regression_detected" in data
+    assert "probable_causes" in data
+    assert data["baseline"]["id"] == baseline_cid
+    assert data["candidate"]["id"] == candidate_cid
+
+
+def test_compare_campaigns_no_regression(client, seeded, db_engine):
+    """Campaigns with similar scores → regression_detected=False."""
+    baseline_cid = seeded["campaign_id"]
+
+    with Session(db_engine) as s:
+        model = LLMModel(
+            name="NoReg-Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="noreg/model-1",
+        )
+        s.add(model)
+        bench = Benchmark(
+            name="NoReg-Bench",
+            type=BenchmarkType.ACADEMIC,
+            metric="accuracy",
+        )
+        s.add(bench)
+        s.flush()
+
+        similar_campaign = Campaign(
+            name="Similar Campaign",
+            model_ids=json.dumps([model.id]),
+            benchmark_ids=json.dumps([bench.id]),
+            status=JobStatus.COMPLETED,
+        )
+        s.add(similar_campaign)
+        s.flush()
+
+        # Score very close to baseline (0.85) → no regression
+        run = EvalRun(
+            campaign_id=similar_campaign.id,
+            model_id=model.id,
+            benchmark_id=bench.id,
+            status=JobStatus.COMPLETED,
+            score=0.84,
+            total_latency_ms=1000,
+            num_items=3,
+        )
+        s.add(run)
+        s.commit()
+        similar_cid = similar_campaign.id
+
+    resp = client.get(
+        f"/genome/regression/compare?baseline_id={baseline_cid}&candidate_id={similar_cid}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["regression_detected"] is False
+
+
+# ── explain_regression ────────────────────────────────────────────────────────
+
+def test_explain_regression_no_regression(client, seeded, db_engine):
+    """When no regression is detected, explanation says 'No significant regression'."""
+    baseline_cid = seeded["campaign_id"]
+
+    with Session(db_engine) as s:
+        model = LLMModel(
+            name="NoReg-Explain-Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="noreg/explain-model",
+        )
+        s.add(model)
+        bench = Benchmark(
+            name="NoReg-Explain-Bench",
+            type=BenchmarkType.ACADEMIC,
+            metric="accuracy",
+        )
+        s.add(bench)
+        s.flush()
+
+        similar = Campaign(
+            name="Similar For Explain",
+            model_ids=json.dumps([model.id]),
+            benchmark_ids=json.dumps([bench.id]),
+            status=JobStatus.COMPLETED,
+        )
+        s.add(similar)
+        s.flush()
+        run = EvalRun(
+            campaign_id=similar.id,
+            model_id=model.id,
+            benchmark_id=bench.id,
+            status=JobStatus.COMPLETED,
+            score=0.84,
+            total_latency_ms=1000,
+            num_items=3,
+        )
+        s.add(run)
+        s.commit()
+        similar_cid = similar.id
+
+    resp = client.post(
+        f"/genome/regression/explain?baseline_id={baseline_cid}&candidate_id={similar_cid}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "explanation" in data
+    assert "No significant regression" in data["explanation"]
+
+
+def test_explain_regression_no_api_key(client, seeded, db_engine):
+    """Regression detected but no Anthropic key → explanation has 'ANTHROPIC_API_KEY required'."""
+    baseline_cid = seeded["campaign_id"]
+
+    with Session(db_engine) as s:
+        model = LLMModel(
+            name="Regressed-Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="reg/model-v1",
+        )
+        s.add(model)
+        bench = Benchmark(
+            name="Regressed-Bench",
+            type=BenchmarkType.ACADEMIC,
+            metric="accuracy",
+        )
+        s.add(bench)
+        s.flush()
+        regressed = Campaign(
+            name="Regressed Campaign",
+            model_ids=json.dumps([model.id]),
+            benchmark_ids=json.dumps([bench.id]),
+            status=JobStatus.COMPLETED,
+        )
+        s.add(regressed)
+        s.flush()
+        # Low score → significant regression vs baseline 0.85
+        run = EvalRun(
+            campaign_id=regressed.id,
+            model_id=model.id,
+            benchmark_id=bench.id,
+            status=JobStatus.COMPLETED,
+            score=0.5,
+            total_latency_ms=1000,
+            num_items=3,
+        )
+        s.add(run)
+        s.commit()
+        regressed_cid = regressed.id
+
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key = ""
+    with patch("core.config.get_settings", return_value=mock_settings):
+        resp = client.post(
+            f"/genome/regression/explain?baseline_id={baseline_cid}&candidate_id={regressed_cid}"
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "explanation" in data
+    assert "ANTHROPIC_API_KEY required" in data["explanation"]
+
+
+def test_explain_regression_with_api_key(client, seeded, db_engine):
+    """Regression detected + Anthropic key → explanation generated via mocked Anthropic."""
+    baseline_cid = seeded["campaign_id"]
+
+    with Session(db_engine) as s:
+        model = LLMModel(
+            name="Regressed-API-Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="reg/api-model-v1",
+        )
+        s.add(model)
+        bench = Benchmark(
+            name="Regressed-API-Bench",
+            type=BenchmarkType.ACADEMIC,
+            metric="accuracy",
+        )
+        s.add(bench)
+        s.flush()
+        regressed = Campaign(
+            name="Regressed API Campaign",
+            model_ids=json.dumps([model.id]),
+            benchmark_ids=json.dumps([bench.id]),
+            status=JobStatus.COMPLETED,
+        )
+        s.add(regressed)
+        s.flush()
+        run = EvalRun(
+            campaign_id=regressed.id,
+            model_id=model.id,
+            benchmark_id=bench.id,
+            status=JobStatus.COMPLETED,
+            score=0.4,
+            total_latency_ms=1000,
+            num_items=3,
+        )
+        s.add(run)
+        s.commit()
+        regressed_cid = regressed.id
+
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key = "sk-test-key"
+
+    mock_msg = MagicMock()
+    mock_msg.content = [MagicMock(text="Root cause: model degradation.")]
+
+    mock_anthropic_client = MagicMock()
+    mock_anthropic_client.messages.create = AsyncMock(return_value=mock_msg)
+
+    with patch("core.config.get_settings", return_value=mock_settings), \
+         patch("anthropic.AsyncAnthropic", return_value=mock_anthropic_client):
+        resp = client.post(
+            f"/genome/regression/explain?baseline_id={baseline_cid}&candidate_id={regressed_cid}"
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "explanation" in data
+
+
+# ── get_run_signals ───────────────────────────────────────────────────────────
+
+def test_get_run_signals_not_found(client):
+    resp = client.get("/genome/signals/99999")
+    assert resp.status_code == 404
+
+
+def test_get_run_signals_success(client, seeded):
+    run_id = seeded["run_id"]
+    resp = client.get(f"/genome/signals/{run_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["run_id"] == run_id
+    assert "items" in data
+    assert "total" in data
+    assert isinstance(data["items"], list)
+
+
+# ── compute_hybrid_genome ─────────────────────────────────────────────────────
+
+def test_compute_hybrid_genome_no_api_key(client, seeded):
+    """No anthropic_api_key → 422."""
+    cid = seeded["campaign_id"]
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key = ""
+    with patch("core.config.get_settings", return_value=mock_settings):
+        resp = client.post(f"/genome/campaigns/{cid}/compute-hybrid")
+    assert resp.status_code == 422
+
+
+def test_compute_hybrid_genome_campaign_not_found(client):
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key = "sk-test"
+    with patch("core.config.get_settings", return_value=mock_settings):
+        resp = client.post("/genome/campaigns/99999/compute-hybrid")
+    assert resp.status_code == 404
+
+
+def test_compute_hybrid_genome_not_completed(client, db_engine):
+    with Session(db_engine) as s:
+        pending = Campaign(
+            name="Hybrid Pending Campaign",
+            model_ids="[]",
+            benchmark_ids="[]",
+            status=JobStatus.PENDING,
+        )
+        s.add(pending)
+        s.commit()
+        cid = pending.id
+
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key = "sk-test"
+    with patch("core.config.get_settings", return_value=mock_settings):
+        resp = client.post(f"/genome/campaigns/{cid}/compute-hybrid")
+    assert resp.status_code == 400
+
+
+def test_compute_hybrid_genome_success(client, seeded):
+    cid = seeded["campaign_id"]
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key = "sk-test"
+
+    with patch("core.config.get_settings", return_value=mock_settings), \
+         patch("genome_router.classify_run_hybrid",
+               new=AsyncMock(return_value={"hallucination": 0.1})), \
+         patch("genome_router.classify_run",
+               return_value={"hallucination": 0.1}), \
+         patch("genome_router.aggregate_genome",
+               return_value={"hallucination": 0.1}):
+        resp = client.post(f"/genome/campaigns/{cid}/compute-hybrid")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "profiles_created" in data
+    assert data["method"] == "hybrid_rules_llm"
+    assert "total_runs" in data
