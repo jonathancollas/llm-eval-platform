@@ -524,12 +524,10 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
 def _compute_genome_for_campaign(campaign_id: int, session: Session) -> None:
     from sqlmodel import select as _sel_inner
     """Compute and store Failure Genome profiles after campaign completes."""
-    from core.models import FailureProfile, ModelFingerprint
+    from core.models import FailureProfile
     from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
     from eval_engine.failure_genome.ontology import FAILURE_GENOME_VERSION
-    from core.utils import safe_json_load
     import json as _json
-    from datetime import datetime as _dt
 
     runs = session.exec(_sel_inner(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     for run in runs:

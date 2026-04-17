@@ -309,7 +309,6 @@ class HarnessRunner(BaseBenchmarkRunner):
         from lm_eval import evaluator
         from eval_engine.litellm_client import _build_litellm_model_str, _build_kwargs
         from lm_eval.models.openai_completions import LocalCompletionsAPI
-        from core.security import decrypt_api_key
         from core.config import get_settings
 
         settings = get_settings()
