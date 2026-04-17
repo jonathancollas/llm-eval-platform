@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Cpu, Library, Rocket, Activity, Trophy, Info,
+import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
          Menu, X } from "lucide-react";
@@ -11,17 +11,16 @@ import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
 
 const NAV_FOUNDATION = [
-  { href: "/",           label: "Overview",       icon: Activity },
-  { href: "/models",     label: "Models",          icon: Cpu },
-  { href: "/benchmarks", label: "Benchmarks",      icon: Library },
+  { href: "/",            label: "Overview",    icon: Activity },
+  { href: "/models",      label: "Models",      icon: Cpu },
+  { href: "/benchmarks",  label: "Benchmarks",  icon: Library },
+  { href: "/dashboard",   label: "Dashboard",   icon: BarChart3 },
+  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 
 const NAV_PHASE1 = [
-  { href: "/evaluate",    label: "New Evaluation",   icon: Rocket },
-  { href: "/campaigns",   label: "Campaigns",        icon: List },
-  { href: "/dashboard",   label: "Dashboard",        icon: BarChart3 },
-  { href: "/leaderboard", label: "Leaderboard",      icon: Trophy },
-  { href: "/policy",      label: "Compliance",       icon: Shield },
+  { href: "/campaigns", label: "Evaluations", icon: List },
+  { href: "/policy",    label: "Compliance",  icon: Shield },
 ];
 
 // Renamed: "Dynamic & Behavioral Eval" → "Behavioral Eval"
