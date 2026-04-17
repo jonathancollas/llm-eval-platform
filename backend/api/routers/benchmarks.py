@@ -268,7 +268,7 @@ async def upload_dataset(
     original_name = file.filename or "dataset.json"
     safe_name = Path(original_name).name
     if original_name != safe_name:
-        raise HTTPException(status_code=400, detail="Invalid filename.")
+        raise HTTPException(status_code=400, detail="Invalid file path")
     # Remove any remaining path separators and dangerous characters
     safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:
