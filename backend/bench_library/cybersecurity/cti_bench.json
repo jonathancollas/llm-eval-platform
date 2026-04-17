@@ -1,0 +1,142 @@
+[
+  {
+    "id": "mcq/apt_attribution_001",
+    "prompt": "Which nation-state threat actor group is most commonly associated with the NotPetya ransomware attack of 2017?",
+    "expected": "B",
+    "choices": {
+      "A": "Lazarus Group (North Korea)",
+      "B": "Sandworm (Russia)",
+      "C": "APT41 (China)",
+      "D": "OilRig (Iran)"
+    },
+    "task_type": "cti_mcq",
+    "category": "apt",
+    "difficulty": "medium",
+    "required_keywords": [],
+    "tags": ["apt", "ransomware", "nation_state"],
+    "explanation": "NotPetya is attributed to Sandworm, a Russian GRU-linked APT group (also known as VOODOO BEAR / Telebots)."
+  },
+  {
+    "id": "mcq/malware_persistence_001",
+    "prompt": "Which MITRE ATT&CK sub-technique describes adversaries using Windows Registry Run keys for persistence?",
+    "expected": "C",
+    "choices": {
+      "A": "T1543.003 - Windows Service",
+      "B": "T1053.005 - Scheduled Task",
+      "C": "T1547.001 - Registry Run Keys / Startup Folder",
+      "D": "T1078.002 - Domain Accounts"
+    },
+    "task_type": "cti_mcq",
+    "category": "mitre_attack",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["mitre_attack", "persistence", "registry"],
+    "explanation": "T1547.001 covers the use of Run keys (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run) and Startup folder entries for persistence."
+  },
+  {
+    "id": "analyst/cobalt_strike_beacon_001",
+    "prompt": "A threat analyst observes suspicious outbound HTTP traffic with the following pattern: periodic 60-second beacons to a domain registered 2 days ago, using a User-Agent string `Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)`, with base64-encoded payloads. What threat actor tooling does this behaviour strongly suggest?",
+    "expected": "Cobalt Strike with an HTTP beacon profile using a legacy IE User-Agent to blend in. The 60-second jitter interval, short domain age, and base64 C2 traffic are hallmarks of a Cobalt Strike malleable C2 profile.",
+    "task_type": "cti_analyst",
+    "category": "malware",
+    "difficulty": "medium",
+    "required_keywords": ["cobalt strike", "beacon", "malleable c2", "base64"],
+    "tags": ["cobalt_strike", "c2", "beaconing", "threat_analysis"],
+    "explanation": "The described behaviour matches Cobalt Strike's default and malleable HTTP beacon: periodic check-ins, base64/XOR-encoded data, and customisable User-Agent strings."
+  },
+  {
+    "id": "mitre/lateral_movement_001",
+    "prompt": "An attacker with valid credentials uses SMB to connect to a remote host and executes code by creating a Windows service via sc.exe. Map this to the correct ATT&CK technique and provide the technique ID.",
+    "expected": "T1021.002 - Remote Services: SMB/Windows Admin Shares. The attacker uses SMB lateral movement (T1021.002) combined with service creation (T1543.003) for remote code execution.",
+    "task_type": "cti_mitre",
+    "category": "mitre_attack",
+    "difficulty": "medium",
+    "required_keywords": ["T1021.002", "smb", "lateral movement", "T1543"],
+    "tags": ["mitre_attack", "lateral_movement", "smb", "service_creation"],
+    "explanation": "SMB-based lateral movement with service creation maps to T1021.002 (SMB/Windows Admin Shares) and T1543.003 (Create or Modify System Process: Windows Service)."
+  },
+  {
+    "id": "vsp/cve_severity_001",
+    "prompt": "CVE-2021-44228 (Log4Shell) is a remote code execution vulnerability in Apache Log4j 2. What is its CVSS v3.1 base severity rating?",
+    "expected": "A",
+    "choices": {
+      "A": "Critical",
+      "B": "High",
+      "C": "Medium",
+      "D": "Low"
+    },
+    "task_type": "cti_vsp",
+    "category": "cve",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["log4shell", "cvss", "rce", "severity"],
+    "explanation": "CVE-2021-44228 received a CVSS v3.1 score of 10.0 (Critical) due to unauthenticated remote code execution with no user interaction required."
+  },
+  {
+    "id": "rcm/supply_chain_001",
+    "prompt": "The SolarWinds Orion compromise (SUNBURST) involved malicious code inserted into a legitimate software build process. What is the root cause category of this attack, and which MITRE ATT&CK technique best describes the initial infection vector?",
+    "expected": "The root cause is a supply chain compromise of the software build pipeline. ATT&CK technique T1195.002 (Supply Chain Compromise: Compromise Software Supply Chain) describes the insertion of malicious code during the build process before distribution.",
+    "task_type": "cti_rcm",
+    "category": "vulnerability",
+    "difficulty": "hard",
+    "required_keywords": ["supply chain", "T1195", "build pipeline", "sunburst"],
+    "tags": ["supply_chain", "solarwinds", "mitre_attack", "root_cause"],
+    "explanation": "SUNBURST was injected during the SolarWinds Orion build process (T1195.002). Attackers compromised the CI/CD pipeline to include a trojanised DLL in signed software updates."
+  },
+  {
+    "id": "mcq/ioc_type_001",
+    "prompt": "Which of the following is an example of a network-based Indicator of Compromise (IoC)?",
+    "expected": "D",
+    "choices": {
+      "A": "MD5 hash of a malicious binary",
+      "B": "Registry key HKLM\\System\\CurrentControlSet\\Services\\malware",
+      "C": "Mutex name created by malware",
+      "D": "IP address 185.220.101.34 communicating on port 4444"
+    },
+    "task_type": "cti_mcq",
+    "category": "ioc",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["ioc", "network_indicators", "threat_hunting"],
+    "explanation": "A network-based IoC relates to network activity (IP, domain, URL, port). MD5 is host-based (file), registry key is host-based (registry), and mutex is host-based (process)."
+  },
+  {
+    "id": "analyst/ransomware_ttps_001",
+    "prompt": "A victim network shows the following sequence of events: (1) phishing email with malicious macro attachment; (2) PowerShell download cradle executes from WINWORD.EXE; (3) credential dumping via LSASS memory read; (4) SMB lateral movement; (5) mass file encryption with .locked extension; (6) ransom note dropped. Map each stage to MITRE ATT&CK techniques.",
+    "expected": "1. T1566.001 Spearphishing Attachment; 2. T1059.001 PowerShell + T1204.002 User Execution; 3. T1003.001 LSASS Memory credential dumping; 4. T1021.002 SMB lateral movement; 5. T1486 Data Encrypted for Impact; 6. T1491 Defacement (ransom note).",
+    "task_type": "cti_analyst",
+    "category": "malware",
+    "difficulty": "hard",
+    "required_keywords": ["T1566", "T1059", "T1003", "T1021", "T1486"],
+    "tags": ["ransomware", "mitre_attack", "kill_chain", "ttp_mapping"],
+    "explanation": "This is a typical ransomware kill chain mapping: phishing (T1566.001), execution (T1059.001), credential access (T1003.001), lateral movement (T1021.002), impact (T1486)."
+  },
+  {
+    "id": "mcq/threat_intel_platform_001",
+    "prompt": "Which open standard provides a structured language for sharing cyber threat intelligence, including indicators, TTPs, and threat actor profiles?",
+    "expected": "B",
+    "choices": {
+      "A": "CVSS",
+      "B": "STIX",
+      "C": "OVAL",
+      "D": "SCAP"
+    },
+    "task_type": "cti_mcq",
+    "category": "ioc",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["stix", "threat_intel", "standards"],
+    "explanation": "STIX (Structured Threat Information eXpression) is the standard language for sharing CTI. TAXII is the transport protocol. CVSS is for vulnerability scoring."
+  },
+  {
+    "id": "rcm/zero_day_001",
+    "prompt": "CVE-2023-23397 is a Microsoft Outlook privilege escalation vulnerability exploited by APT28 (Fancy Bear). The vulnerability triggers on email receipt without user interaction. What is the root technical cause of this vulnerability?",
+    "expected": "The root cause is that Outlook automatically processes UNC paths in calendar reminder sound file fields by sending an NTLM authentication request to the attacker-controlled server, leaking the victim's Net-NTLMv2 hash without any user interaction.",
+    "task_type": "cti_rcm",
+    "category": "vulnerability",
+    "difficulty": "expert",
+    "required_keywords": ["unc path", "ntlm", "net-ntlmv2", "calendar", "outlook"],
+    "tags": ["cve", "outlook", "ntlm", "apt28", "zero_day"],
+    "explanation": "CVE-2023-23397 exploits Outlook's automatic retrieval of UNC paths in meeting reminders (PidLidReminderFileParameter), triggering NTLM authentication to an attacker-controlled server."
+  }
+]

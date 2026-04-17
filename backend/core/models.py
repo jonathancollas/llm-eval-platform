@@ -111,6 +111,8 @@ class BenchmarkPack(SQLModel, table=True):
     changelog: str = Field(default="")
     benchmark_ids_json: str = Field(default="[]")
     is_public: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 class BenchmarkFork(SQLModel, table=True):
     __tablename__ = "benchmark_forks"
 
@@ -455,7 +457,7 @@ class ExperimentManifest(SQLModel, table=True):
     # Execution parameters
     seed: int                   = Field(default=42)
     temperature: float          = Field(default=0.0)
-    max_tokens: int             = Field(default=256)
+    max_tokens: int             = Field(default=2048)
     # Environment
     platform_version: str       = Field(default="")         # Mercury version
     litellm_version: str        = Field(default="")

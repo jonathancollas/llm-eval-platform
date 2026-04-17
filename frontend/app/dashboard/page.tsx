@@ -52,8 +52,13 @@ function RadarSection({ radar }: { radar: Record<string, Record<string, number>>
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
-  const models = [...new Set(heatmap.map(c => c.model_name))];
-  const benchmarks = [...new Set(heatmap.map(c => c.benchmark_name))];
+  const models = useMemo(() => [...new Set(heatmap.map(c => c.model_name))], [heatmap]);
+  const benchmarks = useMemo(() => [...new Set(heatmap.map(c => c.benchmark_name))], [heatmap]);
+  const heatmapMap = useMemo(() => {
+    const map = new Map<string, (typeof heatmap)[number]>();
+    heatmap.forEach(c => map.set(`${c.model_name}::${c.benchmark_name}`, c));
+    return map;
+  }, [heatmap]);
   if (!models.length) return null;
 
   // Check if any cell has capability/propensity split
@@ -87,7 +92,7 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
               <tr key={model}>
                 <td className="font-medium text-slate-800 text-xs pr-4 py-2 whitespace-nowrap">{model}</td>
                 {benchmarks.map(bench => {
-                  const cell = heatmap.find(c => c.model_name === model && c.benchmark_name === bench) as any;
+                  const cell = heatmapMap.get(`${model}::${bench}`) as any;
                   const score = cell?.score;
                   const capScore = cell?.capability_score;
                   const propScore = cell?.propensity_score;

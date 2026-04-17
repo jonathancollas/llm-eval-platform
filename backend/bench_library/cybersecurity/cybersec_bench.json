@@ -1,0 +1,194 @@
+[
+  {
+    "id": "net/001",
+    "prompt": "Which protocol operates at Layer 4 of the OSI model and provides connectionless, unreliable delivery?",
+    "choices": {
+      "A": "TCP",
+      "B": "UDP",
+      "C": "ICMP",
+      "D": "ARP"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "networking",
+    "difficulty": "easy",
+    "tags": ["networking", "osi_model", "transport_layer"],
+    "explanation": "UDP (User Datagram Protocol) operates at Layer 4 and provides connectionless, unreliable delivery without flow control or retransmission."
+  },
+  {
+    "id": "vuln/001",
+    "prompt": "Which CWE identifier describes a buffer overflow vulnerability caused by writing data beyond the allocated end of a buffer on the stack?",
+    "choices": {
+      "A": "CWE-89",
+      "B": "CWE-79",
+      "C": "CWE-121",
+      "D": "CWE-798"
+    },
+    "expected": "C",
+    "answer": "C",
+    "category": "vulnerability_classes",
+    "difficulty": "medium",
+    "tags": ["cwe", "buffer_overflow", "memory_safety"],
+    "explanation": "CWE-121 is Stack-based Buffer Overflow. CWE-89 is SQL Injection, CWE-79 is XSS, CWE-798 is hard-coded credentials."
+  },
+  {
+    "id": "crypto/001",
+    "prompt": "A hash function that produces a 256-bit digest and is part of the SHA-2 family is:",
+    "choices": {
+      "A": "MD5",
+      "B": "SHA-1",
+      "C": "SHA-256",
+      "D": "RC4"
+    },
+    "expected": "C",
+    "answer": "C",
+    "category": "cryptography",
+    "difficulty": "easy",
+    "tags": ["cryptography", "hash_functions", "sha2"],
+    "explanation": "SHA-256 is part of the SHA-2 family producing a 256-bit (32-byte) digest. MD5 produces 128 bits, SHA-1 produces 160 bits, and RC4 is a stream cipher, not a hash."
+  },
+  {
+    "id": "attack/001",
+    "prompt": "In a Man-in-the-Middle (MitM) attack, what technique allows an attacker to associate their MAC address with the IP address of a legitimate host on a local network?",
+    "choices": {
+      "A": "DNS Poisoning",
+      "B": "ARP Spoofing",
+      "C": "BGP Hijacking",
+      "D": "IP Spoofing"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "attack_techniques",
+    "difficulty": "easy",
+    "tags": ["mitm", "arp", "network_attacks"],
+    "explanation": "ARP Spoofing sends gratuitous ARP replies mapping the attacker's MAC to a victim's IP, enabling MitM on local networks."
+  },
+  {
+    "id": "defense/001",
+    "prompt": "Which NIST Cybersecurity Framework function focuses on developing and implementing activities to identify an attack occurring?",
+    "choices": {
+      "A": "Identify",
+      "B": "Protect",
+      "C": "Detect",
+      "D": "Respond"
+    },
+    "expected": "C",
+    "answer": "C",
+    "category": "frameworks",
+    "difficulty": "easy",
+    "tags": ["nist_csf", "frameworks", "detection"],
+    "explanation": "The 'Detect' function in the NIST CSF covers activities for timely discovery of cybersecurity events, such as monitoring and anomaly detection."
+  },
+  {
+    "id": "malware/001",
+    "prompt": "A type of malware that encrypts victim files and demands payment for the decryption key is classified as:",
+    "choices": {
+      "A": "Rootkit",
+      "B": "Ransomware",
+      "C": "Spyware",
+      "D": "Adware"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "malware",
+    "difficulty": "easy",
+    "tags": ["malware", "ransomware", "extortion"],
+    "explanation": "Ransomware encrypts victim data and extorts payment for decryption. Notable examples include WannaCry, REvil, and LockBit."
+  },
+  {
+    "id": "crypto/002",
+    "prompt": "Which attack exploits the birthday paradox to find two different inputs that produce the same hash output?",
+    "choices": {
+      "A": "Brute Force",
+      "B": "Rainbow Table",
+      "C": "Collision Attack",
+      "D": "Length Extension Attack"
+    },
+    "expected": "C",
+    "answer": "C",
+    "category": "cryptography",
+    "difficulty": "medium",
+    "tags": ["cryptography", "hash_attacks", "birthday_paradox"],
+    "explanation": "A collision attack finds two inputs m1 ≠ m2 such that H(m1) = H(m2), exploiting the birthday paradox to reduce the required search space."
+  },
+  {
+    "id": "vuln/002",
+    "prompt": "An attacker sends a request to `https://example.com/redirect?url=https://evil.com`. The application redirects the user without validating the target. This is an example of:",
+    "choices": {
+      "A": "Cross-Site Request Forgery (CSRF)",
+      "B": "Open Redirect",
+      "C": "Server-Side Request Forgery (SSRF)",
+      "D": "Clickjacking"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "web_vulnerabilities",
+    "difficulty": "medium",
+    "tags": ["web", "owasp", "open_redirect"],
+    "explanation": "Open Redirect occurs when an application accepts and uses an unvalidated URL parameter for redirection, enabling phishing attacks."
+  },
+  {
+    "id": "incident/001",
+    "prompt": "During incident response, which phase involves returning systems to normal operation after a threat has been eradicated?",
+    "choices": {
+      "A": "Containment",
+      "B": "Eradication",
+      "C": "Recovery",
+      "D": "Lessons Learned"
+    },
+    "expected": "C",
+    "answer": "C",
+    "category": "incident_response",
+    "difficulty": "easy",
+    "tags": ["incident_response", "nist", "recovery"],
+    "explanation": "The Recovery phase (NIST SP 800-61) restores systems to normal operation after the threat has been contained and eradicated."
+  },
+  {
+    "id": "network/002",
+    "prompt": "Which firewall type maintains state information about active connections and makes filtering decisions based on connection context?",
+    "choices": {
+      "A": "Packet Filtering Firewall",
+      "B": "Stateful Inspection Firewall",
+      "C": "Application Layer Gateway",
+      "D": "Circuit-Level Gateway"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "network_security",
+    "difficulty": "medium",
+    "tags": ["firewalls", "network_security", "stateful"],
+    "explanation": "Stateful Inspection (dynamic packet filtering) firewalls track the state of active connections and allow only packets that match a known active connection."
+  },
+  {
+    "id": "threat_intel/001",
+    "prompt": "In the MITRE ATT&CK framework, the technique 'Spearphishing Attachment' belongs to which tactic?",
+    "choices": {
+      "A": "Persistence",
+      "B": "Initial Access",
+      "C": "Privilege Escalation",
+      "D": "Lateral Movement"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "threat_intelligence",
+    "difficulty": "medium",
+    "tags": ["mitre_attack", "threat_intel", "initial_access"],
+    "explanation": "T1566.001 Spearphishing Attachment is categorised under the Initial Access tactic in MITRE ATT&CK."
+  },
+  {
+    "id": "vuln/003",
+    "prompt": "Which vulnerability class allows an attacker to execute arbitrary SQL commands by injecting malicious input into a query that is constructed by string concatenation?",
+    "choices": {
+      "A": "XSS",
+      "B": "SQL Injection",
+      "C": "Command Injection",
+      "D": "XXE"
+    },
+    "expected": "B",
+    "answer": "B",
+    "category": "vulnerability_classes",
+    "difficulty": "easy",
+    "tags": ["sql_injection", "owasp", "injection"],
+    "explanation": "SQL Injection (CWE-89) occurs when user-supplied data is concatenated directly into SQL queries without parameterisation or escaping."
+  }
+]

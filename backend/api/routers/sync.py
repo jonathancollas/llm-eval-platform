@@ -17,7 +17,7 @@ import httpx
 from core.database import get_session, engine
 from core.config import get_settings
 from core.models import Benchmark, BenchmarkType, LLMModel, ModelProvider
-from api.routers.catalog import BENCHMARK_CATALOG
+from api.routers.catalog import BENCHMARK_CATALOG, discover_hf_benchmarks
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ _sync_state: dict = {
     "total_benchmarks": 0,
     "total_models": 0,
     "openrouter_synced": False,
+    "hf_benchmarks_discovered": 0,
     "error": None,
 }
 _sync_lock = asyncio.Lock()
@@ -84,6 +85,7 @@ class StartupStatus(BaseModel):
     total_benchmarks: int = 0
     total_models: int = 0
     openrouter_synced: bool = False
+    hf_benchmarks_discovered: int = 0
     error: Optional[str] = None
 
 
@@ -256,6 +258,10 @@ async def _run_startup_sync_task() -> None:
             total_benches = len(session.exec(select(Benchmark)).all())
             total_models = len(session.exec(select(LLMModel)).all())
 
+        # Discover HuggingFace benchmarks (non-blocking, populates cache for /catalog/benchmarks/online)
+        hf_benchmarks = await discover_hf_benchmarks()
+        hf_discovered = len(hf_benchmarks)
+
         _sync_state.update({
             "status": "done",
             "finished_at": datetime.utcnow().isoformat(),
@@ -264,9 +270,10 @@ async def _run_startup_sync_task() -> None:
             "total_benchmarks": total_benches,
             "total_models": total_models,
             "openrouter_synced": or_synced,
+            "hf_benchmarks_discovered": hf_discovered,
             "error": None,
         })
-        logger.info(f"[startup] Sync done — {benches_added} benchmarks, {models_added} models.")
+        logger.info(f"[startup] Sync done — {benches_added} benchmarks, {models_added} models, {hf_discovered} HF datasets discovered.")
 
     except Exception as e:
         logger.error(f"[startup] Sync failed: {e}")

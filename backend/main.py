@@ -32,6 +32,11 @@ from api.routers import events as events_router
 from eval_engine.event_pipeline import register_default_subscribers
 from api.routers import monitoring
 from api.routers import science
+from api.routers import statistics as statistics_router
+from api.routers import plugins as plugins_router
+from api.routers import capability as capability_router
+from api.routers import scenarios as scenarios_router
+from api.routers import forecasting as forecasting_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,6 +197,16 @@ async def security_headers(request: Request, call_next: Callable) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self' https://openrouter.ai https://api.lakera.ai; "
+        "frame-ancestors 'none';"
+    )
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -293,6 +308,8 @@ tenant_scoped_routers = [
     redbox.router, judge.router, agents.router, policy.router,
     research.router, evidence.router, deep_analysis.router,
     multiagent.router, events_router.router, monitoring.router, science.router,
+    statistics_router.router, plugins_router.router, capability_router.router,
+    scenarios_router.router, forecasting_router.router,
 ]
 for router in tenant_scoped_routers:
     app.include_router(router, prefix="/api", dependencies=[Depends(require_tenant)])

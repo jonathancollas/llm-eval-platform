@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { benchmarksApi } from "@/lib/api";
-import type { Benchmark, BenchmarkType } from "@/lib/api";
+import type { Benchmark } from "@/lib/api";
 import { useBenchmarks } from "@/lib/useApi";
 import { useSync } from "@/lib/useSync";
 import { PageHeader } from "@/components/PageHeader";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
+import { BenchmarkWizard } from "@/components/BenchmarkWizard";
 import { SecurityBenchmarkWizard } from "@/components/SecurityBenchmarkWizard";
 import { benchmarkTypeColor } from "@/lib/utils";
 import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles,
@@ -391,13 +392,9 @@ export default function BenchmarksPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [exploringId, setExploringId] = useState<number | null>(null);
-  const [showCustomForm, setShowCustomForm] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [uploadId, setUploadId] = useState<number | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [customForm, setCustomForm] = useState({
-    name: "", description: "", type: "custom" as BenchmarkType, metric: "accuracy"
-  });
   const { benchmarksAdded: newBenchmarks } = useSync();
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -451,21 +448,9 @@ export default function BenchmarksPage() {
   const filtered = benches.filter(b => matchFilter(b, filter));
   const countFor = (f: FilterKey) => benches.filter(b => matchFilter(b, f)).length;
 
-  const handleCreateCustom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreating(true);
-    try {
-      const b = await benchmarksApi.create({ ...customForm, tags: [customForm.type] });
-      setUploadId(b.id);
-      setShowCustomForm(false);
-      load();
-    } catch (err) { alert(String(err)); } finally { setCreating(false); }
-  };
-
   const handleUpload = async (benchId: number, file: File) => {
     try {
       await benchmarksApi.uploadDataset(benchId, file);
-      setUploadId(null);
       load();
     } catch (err) { alert(String(err)); }
   };
@@ -481,53 +466,6 @@ export default function BenchmarksPage() {
       load();
       setTimeout(() => setImportMsg(null), 4000);
     } finally { setImporting(false); }
-  };
-
-  // HuggingFace explorer
-  const [showHfImport, setShowHfImport] = useState(false);
-  const [hfQuery, setHfQuery]           = useState("");
-  const [hfResults, setHfResults]       = useState<any[]>([]);
-  const [hfSearching, setHfSearching]   = useState(false);
-  const [hfSelected, setHfSelected]     = useState<any | null>(null);
-  const [hfForm, setHfForm]             = useState({ repo_id: "", split: "test", subset: "", max_items: 500 });
-  const [hfLoading, setHfLoading]       = useState(false);
-
-  const searchHF = async (q: string) => {
-    if (!q.trim()) { setHfResults([]); return; }
-    setHfSearching(true);
-    try {
-      const res = await fetch(`https://huggingface.co/api/datasets?search=${encodeURIComponent(q)}&limit=12&sort=downloads&direction=-1`);
-      const data = await res.json();
-      setHfResults(Array.isArray(data) ? data : []);
-    } catch { setHfResults([]); }
-    setHfSearching(false);
-  };
-
-  useEffect(() => {
-    const t = setTimeout(() => searchHF(hfQuery), 400);
-    return () => clearTimeout(t);
-  }, [hfQuery]);
-
-  const handleHfImport = async () => {
-    if (!hfForm.repo_id.trim()) return;
-    setHfLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/benchmarks/import-huggingface`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...hfForm, subset: hfForm.subset || undefined }),
-      });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
-      const data = await res.json();
-      alert(`✅ ${data.items_imported} items imported from ${data.source}\nBenchmark: ${data.benchmark_name}`);
-      setShowHfImport(false);
-      setHfForm({ repo_id: "", split: "test", subset: "", max_items: 500 });
-      setHfSelected(null);
-      setHfResults([]);
-      setHfQuery("");
-      load();
-    } catch (e: any) { alert(`Error: ${e.message}`); }
-    finally { setHfLoading(false); }
   };
 
   return (
@@ -548,13 +486,9 @@ export default function BenchmarksPage() {
               className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
               🔍 Catalogue
             </button>
-            <button onClick={() => setShowHfImport(!showHfImport)}
-              className="flex items-center gap-2 border border-yellow-300 px-4 py-2 rounded-lg text-sm hover:bg-yellow-50 text-yellow-700 transition-colors">
-              🤗 HuggingFace
-            </button>
-            <button onClick={() => setShowCustomForm(!showCustomForm)}
+            <button onClick={() => setShowWizard(true)}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
-              <Plus size={14} /> Import Custom
+              <Plus size={14} /> Nouveau benchmark
             </button>
             <button onClick={() => setShowSecurityWizard(true)}
               className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700 transition-colors">
@@ -567,173 +501,6 @@ export default function BenchmarksPage() {
       {importMsg && (
         <div className="mx-4 sm:mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
           ✅ {importMsg}
-        </div>
-      )}
-
-      {/* HuggingFace Explorer */}
-      {showHfImport && (
-        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 HuggingFace Dataset Explorer</h3>
-
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={hfQuery}
-              onChange={e => setHfQuery(e.target.value)}
-              placeholder="Search datasets… (e.g. mmlu, truthfulqa, gsm8k)"
-              className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            {hfSearching && <Spinner size={13} className="absolute right-3 top-1/2 -translate-y-1/2" />}
-          </div>
-
-          {/* Results grid */}
-          {hfResults.length > 0 && (
-            <div className="grid grid-cols-2 gap-2 mb-4 max-h-64 overflow-y-auto">
-              {hfResults.map((ds: any) => (
-                <button
-                  key={ds.id}
-                  onClick={() => { setHfSelected(ds); setHfForm(f => ({ ...f, repo_id: ds.id })); }}
-                  className={`text-left p-3 rounded-lg border transition-colors text-xs ${
-                    hfSelected?.id === ds.id
-                      ? "border-yellow-400 bg-yellow-50"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="font-medium text-slate-900 truncate">{ds.id}</div>
-                  <div className="text-slate-400 mt-0.5 flex items-center gap-2">
-                    {ds.downloads != null && <span>⬇ {(ds.downloads / 1000).toFixed(0)}k</span>}
-                    {ds.likes != null && <span>♥ {ds.likes}</span>}
-                    {ds.gated && <span className="text-amber-600 font-medium">GATED</span>}
-                  </div>
-                  {ds.tags?.slice(0, 3).map((t: string) => (
-                    <span key={t} className="inline-block mt-1 mr-1 px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px]">{t}</span>
-                  ))}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Import config — shown once dataset selected */}
-          {hfSelected && (
-            <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50 mb-4">
-              <div className="text-sm font-semibold text-slate-800 mb-3">
-                Import: <span className="font-mono text-yellow-700">{hfSelected.id}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Split</label>
-                  <select value={hfForm.split} onChange={e => setHfForm(f => ({ ...f, split: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white">
-                    <option value="test">test</option>
-                    <option value="train">train</option>
-                    <option value="validation">validation</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Subset (optional)</label>
-                  <input value={hfForm.subset} onChange={e => setHfForm(f => ({ ...f, subset: e.target.value }))}
-                    placeholder="abstract_algebra…"
-                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Max items</label>
-                  <input type="number" value={hfForm.max_items} onChange={e => setHfForm(f => ({ ...f, max_items: +e.target.value }))}
-                    min={10} max={5000}
-                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
-                </div>
-              </div>
-              <div className="flex items-center gap-3 mt-3">
-                <button onClick={handleHfImport} disabled={hfLoading}
-                  className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-40">
-                  {hfLoading ? <Spinner size={13} /> : "🤗"}
-                  {hfLoading ? "Importing…" : "Import dataset"}
-                </button>
-                <button onClick={() => { setHfSelected(null); setHfForm(f => ({ ...f, repo_id: "" })); }}
-                  className="text-sm text-slate-500 hover:text-slate-700">
-                  Deselect
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Manual entry fallback */}
-          {!hfSelected && (
-            <div className="text-xs text-slate-400 flex items-center gap-2 mt-2">
-              Or enter manually:
-              <input value={hfForm.repo_id} onChange={e => setHfForm(f => ({ ...f, repo_id: e.target.value }))}
-                placeholder="owner/dataset-name"
-                className="border border-slate-200 rounded px-2 py-1 text-xs w-48" />
-              {hfForm.repo_id && (
-                <button onClick={handleHfImport} disabled={hfLoading}
-                  className="text-xs bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 disabled:opacity-40">
-                  {hfLoading ? "…" : "Import"}
-                </button>
-              )}
-            </div>
-          )}
-
-          <button onClick={() => { setShowHfImport(false); setHfResults([]); setHfSelected(null); setHfQuery(""); }}
-            className="mt-4 text-xs text-slate-400 hover:text-slate-600">
-            ✕ Fermer
-          </button>
-        </div>
-      )}
-
-      {showCustomForm && (
-        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4">New custom benchmark</h3>
-          <form onSubmit={handleCreateCustom} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Nom</label>
-              <input required value={customForm.name}
-                onChange={e => setCustomForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Type</label>
-              <select value={customForm.type}
-                onChange={e => setCustomForm(f => ({ ...f, type: e.target.value as BenchmarkType }))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="custom">Custom</option>
-                <option value="academic">Academic</option>
-                <option value="safety">Safety</option>
-                <option value="coding">Coding</option>
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Description</label>
-              <textarea value={customForm.description}
-                onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))}
-                rows={2}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Metric</label>
-              <input value={customForm.metric}
-                onChange={e => setCustomForm(f => ({ ...f, metric: e.target.value }))}
-                placeholder="accuracy"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div className="col-span-2 flex gap-3 pt-1">
-              <button type="submit" disabled={creating}
-                className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
-                {creating ? "Creating…" : "Create"}
-              </button>
-              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {uploadId && (
-        <div className="mx-4 sm:mx-8 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
-          <Upload size={16} className="text-blue-600 shrink-0" />
-          <p className="text-sm text-blue-700">Benchmark created! Upload your JSON dataset:</p>
-          <input type="file" accept=".json"
-            onChange={e => e.target.files?.[0] && handleUpload(uploadId, e.target.files[0])}
-            className="text-sm" />
-          <button onClick={() => setUploadId(null)} className="ml-auto text-xs text-blue-500">fermer</button>
         </div>
       )}
 
@@ -893,6 +660,12 @@ export default function BenchmarksPage() {
 
       {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
       {exploringId !== null && <ItemExplorer benchmarkId={exploringId} onClose={() => setExploringId(null)} />}
+      {showWizard && (
+        <BenchmarkWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => { setShowWizard(false); load(); }}
+        />
+      )}
       {showSecurityWizard && (
         <SecurityBenchmarkWizard
           onClose={() => setShowSecurityWizard(false)}

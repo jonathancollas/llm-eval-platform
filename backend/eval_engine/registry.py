@@ -31,6 +31,22 @@ LOCAL_ONLY_NAMES = {
     # Purple Llama benchmarks
     "CyberSecEval (Purple Llama)",
     "LlamaGuard Harm Classification (Purple Llama)",
+    # Cybersecurity benchmarks (Phase 1)
+    "Cybench",
+    "CyberSec-Bench",
+    "DefenseBench",
+    # Cybersecurity benchmarks (Phase 2)
+    "InterCode CTF",
+    "CTIBench",
+    "CyberBench",
+    "SOC Bench",
+    # Cybersecurity benchmarks (Phase 3)
+    "PACEbench",
+    "CAIBench",
+    "CyScenarioBench",
+    "CyberGym",
+    "EVMbench",
+    "SusVibes",
     # NRBC-E benchmarks (all 16)
     "SAFE-Bio (NRBC-E)",
     "BioBench (NRBC-E)",
@@ -62,6 +78,21 @@ def _lazy_register():
     from eval_engine.safety.purple_llama import PurpleLlamaRunner
     from eval_engine.custom.runner import CustomRunner
     from eval_engine.safety.sycophancy import SycophancyRunner
+    from eval_engine.cybersecurity.cybench import CybenchRunner
+    from eval_engine.cybersecurity.cybersec_bench import CyberSecBenchRunner
+    from eval_engine.cybersecurity.defense_bench import DefenseBenchRunner
+    # Phase 2
+    from eval_engine.cybersecurity.intercode_ctf import InterCodeCTFRunner
+    from eval_engine.cybersecurity.cti_bench import CTIBenchRunner
+    from eval_engine.cybersecurity.cyberbench import CyberBenchRunner
+    from eval_engine.cybersecurity.soc_bench import SOCBenchRunner
+    # Phase 3
+    from eval_engine.cybersecurity.pace_bench import PACEbenchRunner
+    from eval_engine.cybersecurity.cai_bench import CAIBenchRunner
+    from eval_engine.cybersecurity.cy_scenario_bench import CyScenarioBenchRunner
+    from eval_engine.cybersecurity.cyber_gym import CyberGymRunner
+    from eval_engine.cybersecurity.evm_bench import EVMbenchRunner
+    from eval_engine.cybersecurity.sus_vibes import SusVibesRunner
     from eval_engine.nrbce.runner import NRBCERunner
 
     _NAME_REGISTRY = {
@@ -83,6 +114,22 @@ def _lazy_register():
         "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
         "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
         "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
+        # Cybersecurity benchmarks (Phase 1)
+        "Cybench":                            CybenchRunner,
+        "CyberSec-Bench":                     CyberSecBenchRunner,
+        "DefenseBench":                       DefenseBenchRunner,
+        # Cybersecurity benchmarks (Phase 2)
+        "InterCode CTF":                      InterCodeCTFRunner,
+        "CTIBench":                           CTIBenchRunner,
+        "CyberBench":                         CyberBenchRunner,
+        "SOC Bench":                          SOCBenchRunner,
+        # Cybersecurity benchmarks (Phase 3)
+        "PACEbench":                          PACEbenchRunner,
+        "CAIBench":                           CAIBenchRunner,
+        "CyScenarioBench":                    CyScenarioBenchRunner,
+        "CyberGym":                           CyberGymRunner,
+        "EVMbench":                           EVMbenchRunner,
+        "SusVibes":                           SusVibesRunner,
         # NRBC-E benchmarks (all 16)
         "SAFE-Bio (NRBC-E)":                  NRBCERunner,
         "BioBench (NRBC-E)":                  NRBCERunner,
