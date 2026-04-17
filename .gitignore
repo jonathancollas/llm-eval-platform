@@ -5,3 +5,7 @@ node_modules/
 *.pyc
 *.db
 backend/data/
+
+# Secrets — never commit
+.env
+.env.*
