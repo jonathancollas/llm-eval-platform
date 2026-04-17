@@ -151,7 +151,7 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
         radar.setdefault(model_name, {})[bench_name] = round(run.score * 100, 2)
 
     # ── Win rates (pairwise) ──
-    win_rates = _compute_win_rates(runs, models, benches)
+    win_rates = compute_win_rates(runs, models, benches)
 
     # ── Aggregates ──
     completed = [r for r in runs if r.status == JobStatus.COMPLETED]
