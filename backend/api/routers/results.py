@@ -197,9 +197,6 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
     return result
 
 
-# _compute_win_rates moved to eval_engine/win_rate_engine.py (#88)
-
-
 @router.get("/stats/summary")
 def get_stats_summary(session: Session = Depends(get_session)):
     """Aggregate platform statistics in a single query — replaces three separate list() calls.
