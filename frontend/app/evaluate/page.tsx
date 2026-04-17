@@ -143,8 +143,10 @@ function EvaluateWizard() {
     };
     const tools = system.tools.map(t => toolMap[t]).filter(Boolean);
 
+    const controller = new AbortController();
     setRiskLoading(true);
     fetch(`${API_BASE}/science/compositional-risk`, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -158,8 +160,9 @@ function EvaluateWizard() {
     })
       .then(async (res) => (res.ok ? res.json() : null))
       .then((json) => setRiskProfile(json))
-      .catch(() => setRiskProfile(null))
+      .catch((err) => { if (err.name !== "AbortError") setRiskProfile(null); })
       .finally(() => setRiskLoading(false));
+    return () => controller.abort();
   }, [
     step,
     system.modelId,
