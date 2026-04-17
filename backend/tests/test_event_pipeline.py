@@ -446,3 +446,192 @@ def test_register_default_subscribers_does_not_raise():
     """Should be callable multiple times without error."""
     register_default_subscribers()
     register_default_subscribers()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ReplayEngine.replay / diff / _load_events (with mocked DB)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_replay_engine_replay_empty_returns_initial_state():
+    """With no events, replay returns a default CampaignState."""
+    engine = get_replay_engine()
+    from unittest.mock import AsyncMock, patch
+    with patch.object(engine.__class__, "_load_events", new=AsyncMock(return_value=[])):
+        state = await engine.replay(campaign_id=999)
+    assert state.campaign_id == 999
+    assert state.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_replay_engine_replay_applies_events():
+    """Replay applies loaded events to reconstruct state."""
+    engine = get_replay_engine()
+    ev = _event(EventType.CAMPAIGN_STARTED, campaign_id=1, sequence=1,
+                payload={"model_ids": [1, 2], "benchmark_ids": [3]})
+
+    from unittest.mock import AsyncMock, patch
+    with patch.object(engine.__class__, "_load_events", new=AsyncMock(return_value=[ev])):
+        state = await engine.replay(campaign_id=1)
+    assert state.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_replay_engine_replay_with_up_to_sequence():
+    """up_to_sequence is passed to _load_events."""
+    engine = get_replay_engine()
+    ev_start = _event(EventType.CAMPAIGN_STARTED, campaign_id=2, sequence=1, payload={})
+    ev_done = _event(EventType.CAMPAIGN_COMPLETED, campaign_id=2, sequence=5, payload={"score": 0.9})
+
+    from unittest.mock import AsyncMock, patch
+
+    # Replay only up to sequence 1 → status=running
+    async def load_up_to_1(campaign_id, up_to_sequence):
+        events = [ev_start, ev_done]
+        if up_to_sequence is not None:
+            events = [e for e in events if e.sequence <= up_to_sequence]
+        return events
+
+    with patch.object(engine.__class__, "_load_events", new=AsyncMock(side_effect=load_up_to_1)):
+        state = await engine.replay(campaign_id=2, up_to_sequence=1)
+    assert state.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_replay_engine_diff():
+    """diff returns state changes between two sequence points."""
+    engine = get_replay_engine()
+    ev_start = _event(EventType.CAMPAIGN_STARTED, campaign_id=3, sequence=1, payload={})
+    ev_complete = _event(EventType.CAMPAIGN_COMPLETED, campaign_id=3, sequence=2,
+                         payload={"score": 0.8})
+
+    from unittest.mock import AsyncMock, patch
+
+    async def load_events(campaign_id, up_to_sequence):
+        events = [ev_start, ev_complete]
+        if up_to_sequence is not None:
+            events = [e for e in events if e.sequence <= up_to_sequence]
+        return events
+
+    with patch.object(engine.__class__, "_load_events", new=AsyncMock(side_effect=load_events)):
+        diff = await engine.diff(campaign_id=3, sequence_a=1, sequence_b=2)
+    assert "status" in diff
+
+
+@pytest.mark.asyncio
+async def test_replay_engine_load_events_db_error_returns_empty():
+    """When DB raises, _load_events returns [] gracefully."""
+    from unittest.mock import patch
+    with patch("eval_engine.event_pipeline.Session", side_effect=RuntimeError("DB down")):
+        events = await ReplayEngine._load_events(campaign_id=1, up_to_sequence=None)
+    assert events == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _live_telemetry_subscriber
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_live_telemetry_subscriber_ignores_irrelevant_events():
+    """Events not in the watch-list return early without DB access."""
+    from eval_engine.event_pipeline import _live_telemetry_subscriber
+    from unittest.mock import patch
+
+    with patch("eval_engine.event_pipeline.Session") as mock_session_cls:
+        ev = _event(EventType.RUN_STARTED, campaign_id=1, payload={})
+        await _live_telemetry_subscriber(ev)
+    # Session should not be called for non-progress events
+    mock_session_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_live_telemetry_subscriber_progress_updates_campaign():
+    """CAMPAIGN_PROGRESS event updates campaign fields in DB."""
+    from eval_engine.event_pipeline import _live_telemetry_subscriber
+    from unittest.mock import MagicMock, patch
+
+    mock_campaign = MagicMock()
+    mock_campaign.progress = 0.0
+
+    mock_session = MagicMock()
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=False)
+    mock_session.get = MagicMock(return_value=mock_campaign)
+
+    with patch("eval_engine.event_pipeline.Session", return_value=mock_session), \
+         patch("eval_engine.event_pipeline.engine", MagicMock()):
+        ev = _event(EventType.CAMPAIGN_PROGRESS, campaign_id=1,
+                    payload={"progress": 50.0, "current_item_index": 5,
+                             "current_item_total": 10, "current_item_label": "bench1"})
+        await _live_telemetry_subscriber(ev)
+
+    assert mock_campaign.progress == 50.0
+
+
+@pytest.mark.asyncio
+async def test_live_telemetry_subscriber_completed_sets_completed_at():
+    """CAMPAIGN_COMPLETED event sets completed_at on the campaign."""
+    from eval_engine.event_pipeline import _live_telemetry_subscriber
+    from unittest.mock import MagicMock, patch
+
+    mock_campaign = MagicMock()
+    mock_campaign.completed_at = None
+
+    mock_session = MagicMock()
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=False)
+    mock_session.get = MagicMock(return_value=mock_campaign)
+
+    with patch("eval_engine.event_pipeline.Session", return_value=mock_session), \
+         patch("eval_engine.event_pipeline.engine", MagicMock()):
+        ev = _event(EventType.CAMPAIGN_COMPLETED, campaign_id=1, payload={})
+        await _live_telemetry_subscriber(ev)
+
+    assert mock_campaign.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_live_telemetry_subscriber_campaign_not_found():
+    """When campaign not in DB, returns without error."""
+    from eval_engine.event_pipeline import _live_telemetry_subscriber
+    from unittest.mock import MagicMock, patch
+
+    mock_session = MagicMock()
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=False)
+    mock_session.get = MagicMock(return_value=None)
+
+    with patch("eval_engine.event_pipeline.Session", return_value=mock_session), \
+         patch("eval_engine.event_pipeline.engine", MagicMock()):
+        ev = _event(EventType.CAMPAIGN_PROGRESS, campaign_id=999, payload={"progress": 10.0})
+        await _live_telemetry_subscriber(ev)  # no error
+
+
+@pytest.mark.asyncio
+async def test_live_telemetry_subscriber_db_error_is_swallowed():
+    """DB errors are swallowed (logged as debug)."""
+    from eval_engine.event_pipeline import _live_telemetry_subscriber
+    from unittest.mock import patch
+
+    with patch("eval_engine.event_pipeline.Session", side_effect=RuntimeError("DB down")), \
+         patch("eval_engine.event_pipeline.engine", MagicMock()):
+        ev = _event(EventType.CAMPAIGN_COMPLETED, campaign_id=1, payload={})
+        await _live_telemetry_subscriber(ev)  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_live_telemetry_subscriber_item_completed_no_error():
+    """ITEM_COMPLETED events don't update campaign fields but don't crash."""
+    from eval_engine.event_pipeline import _live_telemetry_subscriber
+    from unittest.mock import MagicMock, patch
+
+    mock_campaign = MagicMock()
+    mock_session = MagicMock()
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=False)
+    mock_session.get = MagicMock(return_value=mock_campaign)
+
+    with patch("eval_engine.event_pipeline.Session", return_value=mock_session), \
+         patch("eval_engine.event_pipeline.engine", MagicMock()):
+        ev = _event(EventType.ITEM_COMPLETED, campaign_id=1, payload={"score": 1.0})
+        await _live_telemetry_subscriber(ev)  # no error

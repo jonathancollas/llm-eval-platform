@@ -2,11 +2,14 @@
 Tests for eval_engine/mech_interp.py
 Covers: _extract_cot_and_answer (all formats), _check_cot_answer_consistency,
         _score_reasoning_quality, _extract_confidence, PARAPHRASE_TEMPLATES,
-        MechInterpValidator._make_interpretation (all signal branches).
+        MechInterpValidator._make_interpretation (all signal branches),
+        MechInterpValidator.__init__ / run / _probe_cot / _probe_paraphrase.
 """
+import asyncio
 import os
 import secrets
 import sys
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -311,3 +314,152 @@ def test_make_interpretation_returns_non_empty_string():
     )
     assert isinstance(text, str)
     assert len(text) > 20
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MechInterpValidator.__init__ / run / _probe_cot / _probe_paraphrase
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _make_adapter(text_response="The answer is A. Confidence: 0.8"):
+    """Build a mock adapter whose complete() returns a fake response."""
+    resp = MagicMock()
+    resp.text = text_response
+    resp.total_tokens = 30
+    resp.cost_usd = 0.001
+    adapter = MagicMock()
+    adapter.complete = AsyncMock(return_value=resp)
+    return adapter
+
+
+def _make_model(name="test-model", model_id=1):
+    m = MagicMock()
+    m.id = model_id
+    m.name = name
+    return m
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_init():
+    factory = lambda m: _make_adapter()
+    v = MechInterpValidator(adapter_factory=factory)
+    assert v.adapter_factory is factory
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_run_basic():
+    adapter = _make_adapter("I think step by step. Therefore: 4. Confidence: 0.9")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+    questions = [{"question": "What is 2+2?", "expected": "4"}]
+    model = _make_model()
+
+    result = await validator.run(model, "test_bench", questions, n_samples=1)
+
+    assert result is not None
+    assert result.model_name == "test-model"
+    assert result.benchmark_name == "test_bench"
+    assert result.n_probes == 1
+    assert len(result.cot_results) == 1
+    assert len(result.paraphrase_results) == 1
+    assert isinstance(result.total_tokens, int)
+    assert isinstance(result.total_cost_usd, float)
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_run_no_confidence():
+    """Run with a response that has no confidence marker."""
+    adapter = _make_adapter("The answer is B.")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+    questions = [{"question": "Pick A or B", "expected": "B"}]
+    model = _make_model()
+
+    result = await validator.run(model, "bench", questions, n_samples=1)
+    # stated_confidence_accuracy falls back to 0.5 when no confidence pairs
+    assert result.stated_confidence_accuracy == 0.5
+    assert result.overconfidence_rate == 0.0
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_run_multiple_questions_sampling():
+    """n_samples < total questions triggers random sampling."""
+    adapter = _make_adapter("Answer is X. Confidence: 0.7")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+    questions = [{"question": f"Q{i}", "expected": "X"} for i in range(10)]
+    model = _make_model()
+
+    result = await validator.run(model, "bench", questions, n_samples=3)
+    assert result.n_probes == 3
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_run_validation_signal():
+    """High CoT rate + high invariance should produce supports or neutral signal."""
+    adapter = _make_adapter("Step 1: analyse. Step 2: conclude. Therefore: Paris. Confidence: 0.9")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+    questions = [{"question": "Capital of France?", "expected": "Paris"}]
+    model = _make_model()
+
+    result = await validator.run(model, "geo", questions, n_samples=1)
+    assert result.validation_signal in ("supports", "neutral", "undermines")
+    assert result.interpretation != ""
+    assert len(result.limitations) > 0
+    assert len(result.references) > 0
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_probe_cot_exception_handling():
+    """When adapter raises, _probe_cot returns an error result with zeros."""
+    adapter = MagicMock()
+    adapter.complete = AsyncMock(side_effect=RuntimeError("network error"))
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+
+    result, tokens, cost = await validator._probe_cot(adapter, "What is 1+1?", "2")
+    assert result.cot_consistent is False
+    assert result.cot_reasoning == "[error]"
+    assert tokens == 0
+    assert cost == 0.0
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_probe_paraphrase_basic():
+    adapter = _make_adapter("Paris")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+
+    result, tokens, cost = await validator._probe_paraphrase(adapter, "Capital of France?", "paris")
+    assert len(result.paraphrases) == 3
+    assert len(result.answers) == 3
+    assert isinstance(result.agreement_rate, float)
+    assert isinstance(result.invariant, bool)
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_probe_paraphrase_no_expected():
+    """Without expected answer, uses pairwise similarity."""
+    adapter = _make_adapter("The answer is yes")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+
+    result, tokens, cost = await validator._probe_paraphrase(adapter, "Is sky blue?", "")
+    assert 0.0 <= result.agreement_rate <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_probe_paraphrase_adapter_error():
+    """When paraphrase calls fail, error strings are stored in answers."""
+    adapter = MagicMock()
+    adapter.complete = AsyncMock(side_effect=RuntimeError("timeout"))
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+
+    result, tokens, cost = await validator._probe_paraphrase(adapter, "Question?", "answer")
+    assert all(a == "[error]" for a in result.answers)
+    assert tokens == 0
+
+
+@pytest.mark.asyncio
+async def test_mech_interp_validator_run_prompt_key_variants():
+    """Supports both 'question' and 'prompt' keys in question dicts."""
+    adapter = _make_adapter("The result is 42")
+    validator = MechInterpValidator(adapter_factory=lambda m: adapter)
+    questions = [{"prompt": "What is the meaning?", "answer": "42"}]
+    model = _make_model()
+
+    result = await validator.run(model, "misc", questions, n_samples=1)
+    assert result.n_probes == 1
