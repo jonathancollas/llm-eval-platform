@@ -197,7 +197,7 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
     return result
 
 
-# _compute_win_rates moved to eval_engine/win_rate_engine.py (#88)
+# compute_win_rates is imported from eval_engine/win_rate_engine.py (#88) and called above.
 
 
 @router.get("/stats/summary")
@@ -521,7 +521,7 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
     Unified view across all modules for one campaign.
     Returns eval summary + genome + judge agreement + redbox exploits.
     """
-    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit, ModelFingerprint
+    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit
     from core.utils import safe_json_load
 
     campaign = session.get(Campaign, campaign_id)
