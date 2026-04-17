@@ -16,7 +16,7 @@ interface Stats {
 const QUICK_LINKS = [
   { href: "/models",      icon: Cpu,         label: "Model Registry",     desc: "Catalogue, access types, Ollama download",           color: "text-blue-600" },
   { href: "/benchmarks",  icon: Library,     label: "Benchmarks",         desc: "INESIA + public · taxonomy · source classification",  color: "text-violet-600" },
-  { href: "/campaigns",   icon: Rocket,      label: "Campaigns",          desc: "Launch static evaluation runs",                       color: "text-slate-700" },
+  { href: "/campaigns",   icon: Rocket,      label: "Evaluations",        desc: "Run static or system-in-context evaluations",                color: "text-slate-700" },
   { href: "/dashboard",   icon: BarChart3,   label: "Dashboard",          desc: "Heatmaps, radar, capability / propensity scores",     color: "text-green-600" },
   { href: "/leaderboard", icon: Trophy,      label: "Leaderboard",        desc: "Rankings by domain",                                 color: "text-amber-600" },
   { href: "/genome",      icon: Dna,         label: "Genomia",            desc: "Structural behavioral diagnostic · beyond the score", color: "text-cyan-600" },
@@ -57,7 +57,7 @@ export default function OverviewPage() {
           { label: "Models",            value: s.models,            color: "text-blue-600",   bg: "bg-blue-50",   border: "border-blue-100" },
           { label: "Benchmarks",        value: s.benchmarks,        color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
           { label: "INESIA Benchmarks", value: s.inesia_benchmarks, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-          { label: "Campaigns",         value: s.campaigns,         color: "text-slate-700",  bg: "bg-slate-50",  border: "border-slate-100" },
+          { label: "Evaluations",        value: s.campaigns,         color: "text-slate-700",  bg: "bg-slate-50",  border: "border-slate-100" },
           { label: "Completed Evals",   value: s.completed_runs,    color: "text-green-600",  bg: "bg-green-50",  border: "border-green-100" },
         ].map(({ label, value, color, bg, border }) => (
           <div key={label} className={`${bg} border ${border} rounded-xl p-4`}>
