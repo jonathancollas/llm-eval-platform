@@ -347,7 +347,7 @@ async def upload_dataset(
 
 class BenchmarkUpdate(BaseModel):
     tags: Optional[list[str]] = None
-    source: Optional[str] = None   # "inesia" | "public" | "community"
+    source: Optional[str] = Field(default=None, pattern="^(inesia|public|community)$")
     description: Optional[str] = None
     risk_threshold: Optional[float] = None
 

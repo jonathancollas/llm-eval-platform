@@ -61,6 +61,13 @@ def _csv_escape(value: str) -> str:
 
     Leading whitespace is stripped before the check so that values like
     ' =cmd' (space then formula) are also caught.
+
+    Note on tab (\\t): a value that starts only with tabs will have them removed
+    by lstrip() before the check, so a bare leading tab is NOT caught.  This is
+    an accepted limitation — tab is included in _CSV_FORMULA_CHARS for cases where
+    the tab is preceded by a non-whitespace formula character (e.g. '\\t=cmd'),
+    not as a standalone escape trigger.  Most spreadsheet parsers do not treat a
+    bare leading tab as a formula trigger, so this is safe in practice.
     """
     if value and value.lstrip()[0:1] in _CSV_FORMULA_CHARS:
         return "'" + value
@@ -151,7 +158,7 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
         radar.setdefault(model_name, {})[bench_name] = round(run.score * 100, 2)
 
     # ── Win rates (pairwise) ──
-    win_rates = _compute_win_rates(runs, models, benches)
+    win_rates = compute_win_rates(runs, models, benches)
 
     # ── Aggregates ──
     completed = [r for r in runs if r.status == JobStatus.COMPLETED]

@@ -15,7 +15,6 @@ import json
 import logging
 import math
 import hashlib
-import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional

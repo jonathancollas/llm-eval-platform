@@ -199,7 +199,7 @@ async def generate_text(
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         msg = await asyncio.wait_for(
             client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=settings.report_model,
                 max_tokens=max_tokens,
                 system=system_prompt if system_prompt else "You are a helpful AI evaluation expert.",
                 messages=[{"role": "user", "content": prompt}],

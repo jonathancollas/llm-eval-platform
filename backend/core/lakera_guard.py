@@ -37,10 +37,10 @@ async def screen_prompt_with_lakera(prompt: str, system_prompt: Optional[str] = 
                 headers={"Authorization": f"Bearer {settings.lakera_guard_api_key}"},
             )
             response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, dict):
+            response_data = response.json()
+            if not isinstance(response_data, dict):
                 logger.warning("Lakera Guard returned non-object JSON payload.")
-                payload = {}
+                response_data = {}
     except Exception as exc:
         if settings.lakera_guard_fail_closed:
             raise RuntimeError(
@@ -49,15 +49,15 @@ async def screen_prompt_with_lakera(prompt: str, system_prompt: Optional[str] = 
         logger.warning("Lakera Guard request failed; continuing in fail-open mode.")
         return
 
-    flagged = bool(payload.get("flagged"))
-    breakdown = payload.get("breakdown")
+    flagged = bool(response_data.get("flagged"))
+    breakdown = response_data.get("breakdown")
     prompt_injection = isinstance(breakdown, dict) and bool(breakdown.get("prompt_injection"))
     missing_breakdown = breakdown is None
     should_block = flagged and (missing_breakdown or prompt_injection)
 
     if should_block:
         request_uuid = ""
-        metadata = payload.get("metadata")
+        metadata = response_data.get("metadata")
         if isinstance(metadata, dict):
             request_uuid = str(metadata.get("request_uuid") or "")
         suffix = f" Request ID: {request_uuid}" if request_uuid else ""
