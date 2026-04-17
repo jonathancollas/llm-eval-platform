@@ -17,15 +17,17 @@ export interface SyncState {
   synced: boolean;
   benchmarksAdded: number;
   modelsAdded: number;
+  hfBenchmarksDiscovered: number;
   syncing: boolean;
 }
 
 export function useSync(): SyncState {
-  const [synced, setSynced]             = useState(false);
-  const [benchmarksAdded, setBenchmarks] = useState(0);
-  const [modelsAdded, setModels]         = useState(0);
-  const [syncing, setSyncing]            = useState(false);
-  const pollRef                          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [synced, setSynced]                       = useState(false);
+  const [benchmarksAdded, setBenchmarks]           = useState(0);
+  const [modelsAdded, setModels]                   = useState(0);
+  const [hfBenchmarksDiscovered, setHfDiscovered]  = useState(0);
+  const [syncing, setSyncing]                      = useState(false);
+  const pollRef                                    = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // Skip if synced recently (localStorage TTL cache)
@@ -68,6 +70,7 @@ export function useSync(): SyncState {
         if (data.status === "done" || data.status === "error") {
           setBenchmarks(data.benchmarks_added ?? 0);
           setModels(data.models_added ?? 0);
+          setHfDiscovered(data.hf_benchmarks_discovered ?? 0);
           stopPolling();
         }
       } catch (err) {
@@ -87,5 +90,5 @@ export function useSync(): SyncState {
     };
   }, []);
 
-  return { synced, benchmarksAdded, modelsAdded, syncing };
+  return { synced, benchmarksAdded, modelsAdded, hfBenchmarksDiscovered, syncing };
 }

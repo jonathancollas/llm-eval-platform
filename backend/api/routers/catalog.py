@@ -7,6 +7,7 @@ from typing import Optional
 
 import time
 import httpx
+import threading
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -21,12 +22,61 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+HF_DATASETS_API_URL = "https://huggingface.co/api/datasets"
+HF_BENCH_CACHE_TTL = 24 * 3600  # 24 h
 
 # ── Simple TTL cache for OpenRouter catalog (thread-safe) ─────────────────────
-import threading
 _catalog_lock = threading.Lock()
 _catalog_cache: list = []
 _catalog_cache_ts: float = 0.0
+
+# ── TTL cache for HuggingFace benchmark discovery (thread-safe) ───────────────
+_hf_bench_lock = threading.Lock()
+_hf_bench_cache: list = []
+_hf_bench_cache_ts: float = 0.0
+
+
+class HFDiscoveredBenchmark(BaseModel):
+    id: str
+    name: str
+    downloads: int
+    likes: int
+    description: str
+    tags: list[str]
+    gated: bool
+    card_data: dict
+
+
+async def discover_hf_benchmarks() -> list[dict]:
+    """
+    Fetch popular benchmark datasets from HuggingFace (tags=benchmark, sorted by downloads).
+    Results are cached for HF_BENCH_CACHE_TTL (24 h). Safe to call concurrently.
+    """
+    global _hf_bench_cache, _hf_bench_cache_ts
+    now = time.time()
+    with _hf_bench_lock:
+        if _hf_bench_cache and (now - _hf_bench_cache_ts) < HF_BENCH_CACHE_TTL:
+            return list(_hf_bench_cache)
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                HF_DATASETS_API_URL,
+                params={"tags": "benchmark", "sort": "downloads", "direction": -1, "limit": 50},
+            )
+            resp.raise_for_status()
+            raw = resp.json()
+        if not isinstance(raw, list):
+            raw = []
+        with _hf_bench_lock:
+            _hf_bench_cache = raw
+            _hf_bench_cache_ts = now
+        logger.info(f"HuggingFace benchmark discovery: {len(raw)} datasets cached.")
+        return raw
+    except Exception as e:
+        logger.warning(f"HuggingFace benchmark discovery failed: {e}")
+        with _hf_bench_lock:
+            return list(_hf_bench_cache)
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────────
@@ -681,4 +731,37 @@ def get_benchmark_catalog(
         if frontier_only and not b.get("is_frontier", False): continue
         if search and search.lower() not in b["name"].lower() and search.lower() not in b["description"].lower(): continue
         results.append(CatalogBenchmark(**b))
+    return results
+
+
+@router.get("/benchmarks/online", response_model=list[HFDiscoveredBenchmark])
+async def get_online_benchmarks(search: Optional[str] = Query(None)):
+    """
+    Return HuggingFace benchmark datasets discovered at startup (cached 24 h).
+    These are NOT imported into the DB automatically; the user picks which to import.
+    """
+    raw = await discover_hf_benchmarks()
+    results = []
+    for ds in raw:
+        name = ds.get("id", "")
+        if not name:
+            continue
+        desc = ""
+        card = ds.get("cardData") or {}
+        if isinstance(card, dict):
+            desc = str(card.get("description") or "")[:300]
+        tags = [t for t in (ds.get("tags") or []) if isinstance(t, str)]
+        item = HFDiscoveredBenchmark(
+            id=name,
+            name=name,
+            downloads=int(ds.get("downloads") or 0),
+            likes=int(ds.get("likes") or 0),
+            description=desc,
+            tags=tags,
+            gated=bool(ds.get("gated", False)),
+            card_data=card if isinstance(card, dict) else {},
+        )
+        if search and search.lower() not in item.id.lower():
+            continue
+        results.append(item)
     return results
