@@ -31,6 +31,23 @@ LOCAL_ONLY_NAMES = {
     # Purple Llama benchmarks
     "CyberSecEval (Purple Llama)",
     "LlamaGuard Harm Classification (Purple Llama)",
+    # NRBC-E benchmarks (all 16)
+    "SAFE-Bio (NRBC-E)",
+    "BioBench (NRBC-E)",
+    "ChemBench (NRBC-E)",
+    "SafetyChem Evals (NRBC-E)",
+    "Nuclear QA Bench (NRBC-E)",
+    "RDD Scenario Eval (NRBC-E)",
+    "Explosive Risk Bench (NRBC-E)",
+    "Hazmat Classification (NRBC-E)",
+    "NRBC-E QA Sets",
+    "CTI-WMD Bench (NRBC-E)",
+    "WMD Scenario Bench (NRBC-E)",
+    "Frontier Safety Evals (NRBC-E)",
+    "Pandemic Sim Bench (NRBC-E)",
+    "Crisis Response Bench (NRBC-E)",
+    "Policy Compliance Bench (NRBC-E)",
+    "Refusal Eval Suites (NRBC-E)",
 }
 
 
@@ -45,6 +62,7 @@ def _lazy_register():
     from eval_engine.safety.purple_llama import PurpleLlamaRunner
     from eval_engine.custom.runner import CustomRunner
     from eval_engine.safety.sycophancy import SycophancyRunner
+    from eval_engine.nrbce.runner import NRBCERunner
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
@@ -65,6 +83,23 @@ def _lazy_register():
         "CyberSecEval (Purple Llama)":                 PurpleLlamaRunner,
         "LlamaGuard Harm Classification (Purple Llama)": PurpleLlamaRunner,
         "Sycophancy Evaluation (INESIA)":     SycophancyRunner,
+        # NRBC-E benchmarks (all 16)
+        "SAFE-Bio (NRBC-E)":                  NRBCERunner,
+        "BioBench (NRBC-E)":                  NRBCERunner,
+        "ChemBench (NRBC-E)":                 NRBCERunner,
+        "SafetyChem Evals (NRBC-E)":          NRBCERunner,
+        "Nuclear QA Bench (NRBC-E)":          NRBCERunner,
+        "RDD Scenario Eval (NRBC-E)":         NRBCERunner,
+        "Explosive Risk Bench (NRBC-E)":      NRBCERunner,
+        "Hazmat Classification (NRBC-E)":     NRBCERunner,
+        "NRBC-E QA Sets":                     NRBCERunner,
+        "CTI-WMD Bench (NRBC-E)":             NRBCERunner,
+        "WMD Scenario Bench (NRBC-E)":        NRBCERunner,
+        "Frontier Safety Evals (NRBC-E)":     NRBCERunner,
+        "Pandemic Sim Bench (NRBC-E)":        NRBCERunner,
+        "Crisis Response Bench (NRBC-E)":     NRBCERunner,
+        "Policy Compliance Bench (NRBC-E)":   NRBCERunner,
+        "Refusal Eval Suites (NRBC-E)":       NRBCERunner,
     }
     _TYPE_REGISTRY = {
         BenchmarkType.SAFETY:   SafetyRefusalsRunner,
