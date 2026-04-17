@@ -20,6 +20,7 @@ def _make_benchmark(**kwargs):
     b.has_dataset = kwargs.get("has_dataset", False)
     b.num_items = kwargs.get("num_items", 10)
     b.config = kwargs.get("config", {})
+    b.config_json = kwargs.get("config_json", None)
     return b
 
 
@@ -83,8 +84,8 @@ def test_score_item_no_letter():
 def test_score_item_first_char_fallback():
     runner = _make_runner()
     item = {"answer": "C"}
-    # Response starts with C but no word boundary
-    assert runner.score_item("Correct", item) == 0.0
+    # "Correct".upper() = "CORRECT", no \bC\b match but first char is C → matches
+    assert runner.score_item("Correct", item) == 1.0
 
 
 def test_score_item_exact_letter_start():

@@ -18,6 +18,7 @@ def _make_benchmark(**kwargs):
         type=BenchmarkType.CUSTOM,
         has_dataset=False,
         dataset_path=None,
+        config_json=None,
     )
     defaults.update(kwargs)
     b = MagicMock(spec=Benchmark)

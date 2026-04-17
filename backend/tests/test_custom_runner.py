@@ -19,6 +19,7 @@ def _make_runner():
     b.has_dataset = False
     b.num_items = 10
     b.config = {}
+    b.config_json = None
     return CustomRunner(benchmark=b, bench_library_path="/tmp")
 
 
