@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot, Zap,
-         Beaker, AlertCircle, Radio, Lock, FlaskConical, List,
-         Menu, X, Rocket, LineChart, Layers, TestTubes, Search,
-         Crosshair, GitBranch, BrainCircuit } from "lucide-react";
+         Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
+         Menu, X, Rocket, LineChart, Layers, Search,
+         Crosshair, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";

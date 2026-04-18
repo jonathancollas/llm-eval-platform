@@ -15,7 +15,7 @@ from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobS
 from core.config import get_settings
 from core.relations import get_campaign_benchmark_ids, get_campaign_model_ids, replace_eval_run_metrics
 from eval_engine.registry import get_runner
-from core.utils import safe_extract_text
+from core.utils import safe_extract_text, resolve_safe_path
 from eval_engine.event_pipeline import get_bus, EventType
 
 logger = logging.getLogger(__name__)
@@ -414,8 +414,11 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
     from eval_engine.base import ItemResult as _ItemResult
 
     if benchmark.dataset_path:
-        dataset_file = Path(settings.bench_library_path) / benchmark.dataset_path
-        logger.info(f"Benchmark '{benchmark.name}': {dataset_file} (exists={dataset_file.exists()})")
+        try:
+            dataset_file = resolve_safe_path(Path(settings.bench_library_path), benchmark.dataset_path)
+            logger.info(f"Benchmark '{benchmark.name}': {dataset_file} (exists={dataset_file.exists()})")
+        except ValueError:
+            logger.warning(f"Benchmark '{benchmark.name}': dataset_path '{benchmark.dataset_path}' resolves outside allowed directory — skipping.")
 
     try:
         runner = get_runner(benchmark, settings.bench_library_path)

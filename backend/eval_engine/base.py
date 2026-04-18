@@ -12,6 +12,7 @@ import random
 from pathlib import Path
 
 from core.models import LLMModel, Benchmark
+from core.utils import resolve_safe_path
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +69,12 @@ class BaseBenchmarkRunner(ABC):
         """Load items from dataset_path JSON. Cached per file path."""
         if not self.benchmark.dataset_path:
             return []
-        root = self.bench_library_path.resolve()
-        full_path = (root / self.benchmark.dataset_path).resolve()
-        if not str(full_path).startswith(str(root)):
-            logger.error(
-                f"Rejected dataset path outside bench_library: {self.benchmark.dataset_path!r} "
-                f"(benchmark: {self.benchmark.name})"
+        try:
+            full_path = resolve_safe_path(self.bench_library_path, self.benchmark.dataset_path)
+        except ValueError:
+            logger.warning(
+                f"Dataset path '{self.benchmark.dataset_path}' resolves outside the allowed directory "
+                f"(benchmark: {self.benchmark.name}). Skipping dataset load."
             )
             return []
         if not full_path.exists():

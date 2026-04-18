@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from core.database import get_session
 from core.config import get_settings
 from core.models import LLMModel, Benchmark, EvalRun, EvalResult, JobStatus
+from core.utils import resolve_safe_path
 from inference.adapter import get_adapter
 from eval_engine.capability_propensity import CapabilityPropensityEngine
 from eval_engine.mech_interp import MechInterpValidator
@@ -127,10 +128,9 @@ def _get_questions(benchmark: Benchmark, n: int, session: Session) -> list[dict]
 
     if benchmark.dataset_path:
         from pathlib import Path
-        from core.security import safe_bench_path
         try:
-            bench_path = safe_bench_path(settings.bench_library_path, benchmark.dataset_path)
-        except Exception:
+            bench_path = resolve_safe_path(Path(settings.bench_library_path), benchmark.dataset_path)
+        except ValueError:
             return []
         if bench_path.exists():
             try:
@@ -571,10 +571,9 @@ def check_benchmark_validity(
         score -= 0.1
     else:
         from pathlib import Path
-        from core.security import safe_bench_path
         try:
-            full_path = safe_bench_path(settings.bench_library_path, bench.dataset_path)
-        except Exception:
+            full_path = resolve_safe_path(Path(settings.bench_library_path), bench.dataset_path)
+        except ValueError:
             issues.append(f"Dataset path is invalid or unsafe: {bench.dataset_path}.")
             score -= 0.2
             full_path = None
