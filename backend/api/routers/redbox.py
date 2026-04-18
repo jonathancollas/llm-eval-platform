@@ -394,16 +394,14 @@ def _generate_garak_variants(seed: str, mutation_types: list[str], n: int) -> li
 def _generate_deepteam_variants(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
     """Generate DeepTeam (Confident AI) attack variants for supported attack classes.
 
-    Optional integration: gracefully falls back to rule-based templates when the
-    ``deepteam`` package is not installed in the environment.
+    Uses DEEPTEAM_ATTACK_MODULES to annotate each variant with the corresponding
+    DeepTeam attack class name and metadata.  The ``deepteam`` package is not
+    required at runtime — variants are produced from the built-in rule-based
+    templates labelled with DeepTeam class names, mirroring the Garak integration
+    pattern.  When the ``deepteam`` Python package *is* installed in the
+    environment, callers can use the ``attack_class`` value in each variant's
+    rationale to instantiate the real attack object directly.
     """
-    try:
-        importlib.import_module("deepteam")
-    except ModuleNotFoundError:
-        # deepteam not installed — fall back to rule-based templates labelled with
-        # DeepTeam attack class names so the intent is still communicated.
-        pass
-
     variants: list[ForgeVariant] = []
     for mt in mutation_types:
         cfg = DEEPTEAM_ATTACK_MODULES.get(mt)
