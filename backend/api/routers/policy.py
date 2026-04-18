@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from core.database import get_session
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus
+from core.models import Campaign, EvalRun, EvalResult, LLMModel, JobStatus
 from core.utils import safe_json_load
 
 router = APIRouter(prefix="/policy", tags=["policy"])

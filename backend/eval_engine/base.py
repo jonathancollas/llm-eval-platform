@@ -150,7 +150,7 @@ class BaseBenchmarkRunner(ABC):
         rng = random.Random(seed + 1)
         few_shot_examples = rng.sample(few_shot_pool, min(few_shot_count, len(few_shot_pool)))
 
-        max_tokens = self.config.get("max_tokens", 256)
+        max_tokens = self.config.get("max_tokens", 2048)
         item_results: list[ItemResult] = []
 
         for idx, item in enumerate(items):

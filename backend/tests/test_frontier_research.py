@@ -8,13 +8,21 @@ from eval_engine.capability_forecasting import (
     fit_linear,
     fit_power_law,
     fit_logistic,
+    fit_chinchilla,
+    validate_data_quality,
     extrapolate,
     detect_phase_transition,
     CapabilityForecastingEngine,
     ScalingDataPoint,
     CapabilityForecast,
+    MultiDimScalingFit,
+    DataQualityReport,
+    ForecastCalibrationRecord,
 )
-from eval_engine.frontier_metrics import FrontierMetricsEngine, FrontierMetricsResult
+from eval_engine.frontier_metrics import (
+    FrontierMetricsEngine, FrontierMetricsResult,
+    ConfidenceInterval,
+)
 from eval_engine.long_horizon import (
     LongHorizonEvaluator,
     LONG_HORIZON_TASKS,
@@ -382,3 +390,362 @@ def test_compute_recovery_rate_with_recovery():
     ]
     rate = ev.compute_recovery_rate(results)
     assert abs(rate - 0.5) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# fit_linear — residuals and MAE
+# ---------------------------------------------------------------------------
+
+def test_fit_linear_returns_residuals():
+    x = [0.0, 1.0, 2.0, 3.0]
+    y = [0.0, 1.0, 2.0, 3.0]  # perfect y=x
+    fit = fit_linear(x, y)
+    assert isinstance(fit.residuals, list)
+    assert len(fit.residuals) == 4
+    # perfect fit -> all residuals ~0
+    assert all(abs(r) < 1e-6 for r in fit.residuals)
+    assert fit.mae < 1e-6
+
+
+def test_fit_power_law_returns_residuals():
+    x = [1.0, 2.0, 4.0, 8.0]
+    y = [1.0, 2.0 ** 0.5, 2.0, 2.0 ** 1.5]  # y = x^0.5
+    fit = fit_power_law(x, y)
+    assert isinstance(fit.residuals, list)
+    assert len(fit.residuals) == 4
+
+
+def test_fit_logistic_returns_residuals():
+    import math
+    x = [float(i) for i in range(8)]
+    y = [1 / (1 + math.exp(-0.8 * (xi - 3.5))) for xi in x]
+    fit = fit_logistic(x, y)
+    assert isinstance(fit.residuals, list)
+    assert len(fit.residuals) == 8
+    assert fit.mae >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# fit_chinchilla
+# ---------------------------------------------------------------------------
+
+def test_fit_chinchilla_valid():
+    import math
+    # Synthetic Chinchilla data: score = 1 - (1/N^0.5 + 1/D^0.5) * 0.2
+    params = [1e8, 3e8, 1e9, 3e9, 1e10]
+    tokens = [1e9, 3e9, 1e10, 3e10, 1e11]
+    scores = [1 - 0.2 * (1 / n ** 0.5 + 1 / d ** 0.5) for n, d in zip(params, tokens)]
+    scores = [max(0.01, min(0.99, s)) for s in scores]
+    fit = fit_chinchilla(params, tokens, scores)
+    assert isinstance(fit, MultiDimScalingFit)
+    assert fit.n_points == 5
+    assert fit.alpha != 0.0 or not fit.valid  # if valid, alpha should be non-trivial
+    assert 0.0 <= fit.r_squared <= 1.0
+
+
+def test_fit_chinchilla_insufficient():
+    fit = fit_chinchilla([1e8, 3e8], [1e9, 3e9], [0.5, 0.6])
+    assert fit.valid is False
+    assert fit.n_points <= 2
+
+
+# ---------------------------------------------------------------------------
+# validate_data_quality
+# ---------------------------------------------------------------------------
+
+def _make_points(overrides=None):
+    base = [
+        ScalingDataPoint("m1", "bench", "reasoning", 0.6),
+        ScalingDataPoint("m2", "bench", "reasoning", 0.7),
+        ScalingDataPoint("m3", "bench", "safety", 0.8),
+    ]
+    if overrides:
+        base.extend(overrides)
+    return base
+
+
+def test_validate_data_quality_clean():
+    report = validate_data_quality(_make_points())
+    assert isinstance(report, DataQualityReport)
+    assert report.total_points == 3
+    assert report.valid_points == 3
+    assert report.invalid_points == 0
+    assert report.score_range_violations == 0
+    assert report.passed is True
+
+
+def test_validate_data_quality_out_of_range():
+    bad = ScalingDataPoint("m_bad", "bench", "reasoning", 1.5)
+    report = validate_data_quality(_make_points([bad]))
+    assert report.score_range_violations == 1
+    assert report.invalid_points == 1
+    assert report.passed is False
+    assert any("1.5" in issue or "m_bad" in issue for issue in report.issues)
+
+
+def test_validate_data_quality_duplicates():
+    dup = ScalingDataPoint("m1", "bench", "reasoning", 0.6, date="1970-01-01T00:00:00")
+    dup2 = ScalingDataPoint("m1", "bench", "reasoning", 0.6, date="1970-01-01T00:00:00")
+    report = validate_data_quality([dup, dup2])
+    assert report.duplicate_count == 1
+    assert report.passed is False
+
+
+def test_validate_data_quality_missing_ci_flagged():
+    # Default ci_lower=0.0, ci_upper=1.0 → flagged as missing CI
+    pts = [ScalingDataPoint("m", "b", "cap", 0.5)]
+    report = validate_data_quality(pts)
+    assert report.missing_ci_count == 1
+    # missing CI doesn't count as invalid
+    assert report.valid_points == 1
+
+
+# ---------------------------------------------------------------------------
+# CapabilityForecastingEngine — new methods
+# ---------------------------------------------------------------------------
+
+def _make_engine(capability="reasoning", n=5):
+    engine = CapabilityForecastingEngine()
+    scores = [0.3 + i * 0.1 for i in range(n)]
+    for i, score in enumerate(scores):
+        engine.add_data_point(
+            ScalingDataPoint(
+                model_name=f"model_{i}",
+                benchmark_name="bench",
+                capability=capability,
+                score=score,
+                date=f"2024-0{i+1}-01",
+            )
+        )
+    return engine
+
+
+def test_residual_analysis_returns_dict():
+    engine = _make_engine("reasoning")
+    result = engine.residual_analysis("reasoning")
+    assert isinstance(result, dict)
+    assert "residuals" in result
+    assert "r_squared" in result
+    assert "mae" in result
+    assert result["n_points"] == 5
+
+
+def test_capability_gap_to_frontier_zero_when_at_frontier():
+    engine = _make_engine("reasoning", n=1)
+    gaps = engine.capability_gap_to_frontier(["reasoning"])
+    # Single point: current == frontier → gap == 0
+    assert gaps.get("reasoning", -1) == 0.0
+
+
+def test_capability_gap_to_frontier_nonzero():
+    engine = _make_engine("reasoning", n=5)
+    # Add a higher frontier point
+    engine.add_data_point(ScalingDataPoint("frontier_model", "bench", "reasoning", 0.95, date="2025-01-01"))
+    # Then add a non-frontier point as last
+    engine.add_data_point(ScalingDataPoint("recent_model", "bench", "reasoning", 0.75, date="2025-02-01"))
+    gaps = engine.capability_gap_to_frontier(["reasoning"])
+    # frontier = 0.95, last = 0.75 → gap = 0.20
+    assert gaps["reasoning"] > 0.0
+
+
+def test_forecast_includes_new_fields():
+    engine = _make_engine("reasoning")
+    forecast = engine.forecast("reasoning")
+    assert hasattr(forecast, "capability_score")
+    assert hasattr(forecast, "propensity_score")
+    assert hasattr(forecast, "gap_to_frontier")
+    assert 0.0 <= forecast.gap_to_frontier <= 1.0
+
+
+def test_forecast_separates_capability_propensity():
+    engine = CapabilityForecastingEngine()
+    for i, (score, stype) in enumerate([
+        (0.5, "capability"), (0.6, "capability"), (0.7, "capability"),
+        (0.3, "propensity"), (0.35, "propensity"), (0.4, "propensity"),
+    ]):
+        engine.add_data_point(
+            ScalingDataPoint("m", "b", "agentic", score, score_type=stype, date=f"2024-0{i+1}-01")
+        )
+    fc = engine.forecast("agentic")
+    assert fc.capability_score != fc.propensity_score
+
+
+def test_record_calibration():
+    engine = _make_engine("reasoning")
+    record = engine.record_calibration("reasoning", 0.75, 0.70, "+3 cycles")
+    assert isinstance(record, ForecastCalibrationRecord)
+    assert record.absolute_error == 0.05
+    history = engine.get_calibration_history()
+    assert len(history) == 1
+    assert history[0].capability == "reasoning"
+
+
+def test_calibration_mae_computed():
+    engine = _make_engine("reasoning")
+    engine.record_calibration("reasoning", 0.75, 0.70)
+    engine.record_calibration("reasoning", 0.80, 0.76)
+    mae = engine._compute_calibration_mae()
+    expected = round((0.05 + 0.04) / 2, 4)
+    assert abs(mae - expected) < 1e-4
+
+
+def test_generate_report_includes_frontier_gaps():
+    engine = CapabilityForecastingEngine()
+    for cap in ("reasoning", "safety"):
+        for i, score in enumerate([0.5, 0.6, 0.7]):
+            engine.add_data_point(
+                ScalingDataPoint("m", "b", cap, score, date=f"2024-0{i+1}-01")
+            )
+    report = engine.generate_report()
+    assert isinstance(report.frontier_gaps, dict)
+    assert "reasoning" in report.frontier_gaps
+    assert "safety" in report.frontier_gaps
+    # calibration MAE with no records should be 0
+    assert report.calibration_mae == 0.0
+
+# Confidence intervals (Wilson)
+# ---------------------------------------------------------------------------
+
+def test_wilson_ci_full_success():
+    eng = FrontierMetricsEngine()
+    ci = eng.wilson_ci(10, 10)
+    assert isinstance(ci, ConfidenceInterval)
+    assert ci.lower >= 0.7   # should be high
+    assert ci.upper == 1.0
+
+
+def test_wilson_ci_zero_successes():
+    eng = FrontierMetricsEngine()
+    ci = eng.wilson_ci(0, 10)
+    assert ci.lower == 0.0
+    assert ci.upper <= 0.35
+
+
+def test_wilson_ci_zero_n():
+    eng = FrontierMetricsEngine()
+    ci = eng.wilson_ci(0, 0)
+    assert ci.lower == 0.0
+    assert ci.upper == 1.0
+
+
+def test_autonomy_score_has_ci():
+    eng = FrontierMetricsEngine()
+    steps = [{"tool_success": True} for _ in range(8)] + [
+        {"tool_success": False, "error_type": "err"}
+    ]
+    score = eng.compute_autonomy(steps)
+    assert score.ci is not None
+    assert 0.0 <= score.ci.lower <= score.value <= score.ci.upper <= 1.0
+
+
+def test_adaptivity_score_has_ci():
+    eng = FrontierMetricsEngine()
+    steps = [
+        {"tool_success": False, "error_type": "x"},
+        {"tool_success": True},
+        {"tool_success": False, "error_type": "y"},
+        {"tool_success": False, "error_type": "z"},  # no recovery
+    ]
+    score = eng.compute_adaptivity(steps)
+    assert score.ci is not None
+
+
+def test_generalization_score_has_ci():
+    eng = FrontierMetricsEngine()
+    scores = {"a": 0.7, "b": 0.8, "c": 0.75, "d": 0.72}
+    gen = eng.compute_generalization(scores)
+    assert gen.ci is not None
+    assert gen.ci.lower <= gen.value <= gen.ci.upper
+
+
+# ---------------------------------------------------------------------------
+# Per-capability metric breakdown
+# ---------------------------------------------------------------------------
+
+def test_compute_by_capability_groups_correctly():
+    eng = FrontierMetricsEngine()
+    steps = [
+        {"tool_success": True, "capability": "reasoning", "input_tokens": 100, "output_tokens": 50},
+        {"tool_success": True, "capability": "reasoning", "input_tokens": 80, "output_tokens": 40},
+        {"tool_success": False, "error_type": "x", "capability": "agentic", "input_tokens": 50, "output_tokens": 0},
+        {"tool_success": True, "capability": "agentic", "input_tokens": 90, "output_tokens": 45},
+    ]
+    breakdown = eng.compute_by_capability(steps, max_steps=10, task_completed=True)
+    caps = {b.capability for b in breakdown}
+    assert "reasoning" in caps
+    assert "agentic" in caps
+    for b in breakdown:
+        assert 0.0 <= b.composite <= 1.0
+        assert b.n_steps > 0
+
+
+def test_compute_by_capability_empty_steps():
+    eng = FrontierMetricsEngine()
+    breakdown = eng.compute_by_capability([], max_steps=10, task_completed=True)
+    assert breakdown == []
+
+
+def test_compute_all_includes_breakdown():
+    eng = FrontierMetricsEngine()
+    steps = [
+        {"tool_success": True, "capability": "reasoning"},
+        {"tool_success": True, "capability": "safety"},
+    ]
+    result = eng.compute_all(
+        model_name="m",
+        steps=steps,
+        benchmark_scores={"a": 0.8},
+        capability_score=0.7,
+        propensity_score=0.6,
+        safety_score=0.9,
+        max_steps=5,
+        task_completed=True,
+    )
+    assert isinstance(result.capability_breakdown, list)
+    assert len(result.capability_breakdown) == 2
+
+
+# ---------------------------------------------------------------------------
+# Metric correlation analysis
+# ---------------------------------------------------------------------------
+
+def _make_result(model, auto, adap, eff, gen):
+    """Helper to build a FrontierMetricsResult for correlation tests."""
+    eng = FrontierMetricsEngine()
+    auto_steps = [{"tool_success": True}] * max(1, int(auto * 10))
+    adap_steps = [{"tool_success": True}] * max(1, int(adap * 10))
+    eff_steps = [{}] * max(1, int((1 - eff) * 8))
+    bench = {"a": gen, "b": gen * 0.95}
+    return eng.compute_all(
+        model_name=model,
+        steps=auto_steps,
+        benchmark_scores=bench,
+        capability_score=0.7,
+        propensity_score=0.6,
+        safety_score=0.8,
+        max_steps=10,
+        task_completed=True,
+    )
+
+
+def test_compute_correlations_returns_object():
+    eng = FrontierMetricsEngine()
+    results = [
+        _make_result("m1", 0.9, 0.8, 0.7, 0.85),
+        _make_result("m2", 0.6, 0.5, 0.4, 0.55),
+        _make_result("m3", 0.4, 0.3, 0.3, 0.35),
+    ]
+    corr = eng.compute_correlations(results)
+    assert hasattr(corr, "autonomy_adaptivity")
+    assert -1.0 <= corr.autonomy_adaptivity <= 1.0
+    assert -1.0 <= corr.efficiency_generalization <= 1.0
+    assert isinstance(corr.interpretation, str)
+    assert len(corr.interpretation) > 0
+
+
+def test_compute_correlations_single_entry():
+    eng = FrontierMetricsEngine()
+    results = [_make_result("m1", 0.8, 0.7, 0.6, 0.75)]
+    corr = eng.compute_correlations(results)
+    # With a single entry all correlations are 0
+    assert corr.autonomy_adaptivity == 0.0

@@ -6,7 +6,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from queue import SimpleQueue
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 from uuid import uuid4
 
@@ -47,7 +47,7 @@ def _mark_heartbeat(campaign_id: int) -> None:
     with _get_session() as session:
         c = session.get(Campaign, campaign_id)
         if c:
-            c.last_heartbeat_at = datetime.utcnow()
+            c.last_heartbeat_at = datetime.now(UTC)
             session.add(c)
             session.commit()
         else:
@@ -236,7 +236,7 @@ def submit_campaign(campaign_id: int) -> str:
             c = session.get(Campaign, campaign_id)
             if c:
                 c.worker_task_id = task_id
-                c.last_heartbeat_at = datetime.utcnow()
+                c.last_heartbeat_at = datetime.now(UTC)
                 session.add(c)
                 session.commit()
     except (OSError, SQLAlchemyError) as e:
@@ -292,7 +292,7 @@ def is_running(campaign_id: int) -> bool:
                 heartbeat = getattr(c, "last_heartbeat_at", None)
                 if heartbeat is None:
                     return False  # Pre-heartbeat campaign
-                age = (datetime.utcnow() - heartbeat).total_seconds()
+                age = (datetime.now(UTC) - heartbeat).total_seconds()
                 return age <= STALE_THRESHOLD_S
     except (OSError, SQLAlchemyError):
         pass
@@ -323,7 +323,7 @@ def get_all_running() -> dict[int, str]:
             for c in running:
                 heartbeat = getattr(c, "last_heartbeat_at", None)
                 stale = (heartbeat is None or
-                         (datetime.utcnow() - heartbeat).total_seconds() > STALE_THRESHOLD_S)
+                         (datetime.now(UTC) - heartbeat).total_seconds() > STALE_THRESHOLD_S)
                 states[c.id] = "stale" if stale else "running"
     except (OSError, SQLAlchemyError) as e:
         logger.warning(f"[job_queue] DB read error in get_all_running: {e}")
@@ -343,7 +343,7 @@ def recover_stale_campaigns() -> list[int]:
             for c in running:
                 heartbeat = getattr(c, "last_heartbeat_at", None)
                 stale = (heartbeat is None or
-                         (datetime.utcnow() - heartbeat).total_seconds() > STALE_THRESHOLD_S)
+                         (datetime.now(UTC) - heartbeat).total_seconds() > STALE_THRESHOLD_S)
                 if stale:
                     c.status = JobStatus.FAILED
                     c.error_message = (

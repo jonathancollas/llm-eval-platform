@@ -48,7 +48,7 @@ export interface ModelIdentity {
   model_id: string;       // Provider identifier (OpenRouter format, Ollama name, etc.)
 }
 
-export type ModelProvider = "ollama" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
+export type ModelProvider = "ollama" | "vllm" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
 export type BenchmarkType = "academic" | "safety" | "coding" | "custom";
 
 // Ollama API
@@ -66,6 +66,17 @@ export const ollamaApi = {
       `/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(openrouterModelId)}`,
       { method: "POST", timeoutMs: 300000 }
     ),
+};
+
+// vLLM API
+export const vllmApi = {
+  /** Max 2s — if vLLM is absent, returns fast instead of blocking 5s */
+  check: (signal?: AbortSignal) =>
+    apiFetch<{ available: boolean; url: string; models: any[]; total: number }>(
+      "/sync/vllm",
+      { timeoutMs: 2000, signal }
+    ),
+  import: () => apiFetch<{ added: number; available: boolean }>("/sync/vllm/import", { method: "POST" }),
 };
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
@@ -150,6 +161,7 @@ export interface FailedItem {
   id: number; item_index: number; prompt: string; response: string;
   expected: string | null; score: number; latency_ms: number;
   model_name: string; benchmark_name: string; error_type: string;
+  human_verdict?: boolean | null;
 }
 export interface FailedRun {
   run_id: number; model_name: string; benchmark_name: string;
@@ -197,6 +209,11 @@ export const resultsApi = {
   insights: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/insights`),
   contamination: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/contamination`),
   exportUrl: (campaignId: number) => `${API_BASE}/results/campaign/${campaignId}/export.csv`,
+  humanReview: (resultId: number, verdict: boolean | null) =>
+    apiFetch<{ id: number; human_verdict: boolean | null }>(`/results/${resultId}/human-review`, {
+      method: "PATCH",
+      body: JSON.stringify({ verdict }),
+    }),
 };
 
 export const reportsApi = {
@@ -220,6 +237,62 @@ export const genomeApi = {
   regressionExplain: (baselineId: number, candidateId: number) => apiFetch<any>(`/genome/regression/explain?baseline_id=${baselineId}&candidate_id=${candidateId}`, { method: "POST", timeoutMs: 60000 }),
 };
 
+export const statisticsApi = {
+  compareRuns: (runIdA: number, runIdB: number, method = "both") =>
+    apiFetch<any>("/statistics/compare-runs", {
+      method: "POST",
+      body: JSON.stringify({ run_id_a: runIdA, run_id_b: runIdB, method }),
+    }),
+  powerAnalysis: (effectSize: number, alpha = 0.05, power = 0.8) =>
+    apiFetch<any>("/statistics/power-analysis", {
+      method: "POST",
+      body: JSON.stringify({ effect_size: effectSize, alpha, power }),
+    }),
+  runConfidence: (runId: number) =>
+    apiFetch<any>(`/statistics/run/${runId}/confidence`),
+};
+
+export const capabilityApi = {
+  taxonomy: () => apiFetch<Record<string, any>>("/capability/taxonomy"),
+  profile: (modelId: number) => apiFetch<any>(`/capability/profile/${modelId}`),
+  gaps: (modelId: number) => apiFetch<any[]>(`/capability/gaps/${modelId}`),
+  analyzeTrajectory: (steps: Record<string, unknown>[]) =>
+    apiFetch<any>("/capability/trajectory/analyze", {
+      method: "POST",
+      body: JSON.stringify({ steps }),
+    }),
+};
+
+export const scenariosApi = {
+  examples: () => apiFetch<any[]>("/scenarios/examples"),
+  validate: (scenario: Record<string, unknown>) =>
+    apiFetch<{ valid: boolean; errors: string[] }>("/scenarios/validate", {
+      method: "POST",
+      body: JSON.stringify(scenario),
+    }),
+};
+
+export const forecastingApi = {
+  capabilities: () => apiFetch<string[]>("/forecasting/capabilities"),
+  forecast: (
+    dataPoints: Record<string, unknown>[],
+    capability: string,
+    horizonSteps = 3,
+  ) =>
+    apiFetch<any>("/forecasting/forecast", {
+      method: "POST",
+      body: JSON.stringify({
+        data_points: dataPoints,
+        capability,
+        horizon_steps: horizonSteps,
+      }),
+    }),
+  longHorizonTasks: (domain?: string) =>
+    apiFetch<any[]>(
+      `/forecasting/long-horizon/tasks${domain ? `?domain=${domain}` : ""}`,
+    ),
+};
+
 export const judgeApi = {
   evaluate: (campaignId: number, judgeModels: string[], criteria = "correctness", maxItems = 50) =>
     apiFetch<any>("/judge/evaluate", {
@@ -232,4 +305,98 @@ export const judgeApi = {
     apiFetch<any>("/judge/calibrate", { method: "POST", body: JSON.stringify({ campaign_id: campaignId, oracle_labels: oracleLabels }) }),
   bias: (campaignId: number) => apiFetch<any>(`/judge/bias/${campaignId}`),
   summary: (campaignId: number) => apiFetch<any>(`/judge/summary/${campaignId}`),
+};
+
+export const forecastingApi = {
+  capabilities: () => apiFetch<string[]>("/forecasting/capabilities"),
+  forecast: (
+    dataPoints: Record<string, unknown>[],
+    capability: string,
+    horizonSteps = 3,
+  ) =>
+    apiFetch<any>("/forecasting/forecast", {
+      method: "POST",
+      body: JSON.stringify({
+        data_points: dataPoints,
+        capability,
+        horizon_steps: horizonSteps,
+      }),
+    }),
+  report: (dataPoints: Record<string, unknown>[], capabilities?: string[]) =>
+    apiFetch<any>("/forecasting/report", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, capabilities }),
+    }),
+  fitScalingLaw: (dataPoints: Record<string, unknown>[], method = "auto") =>
+    apiFetch<any>("/forecasting/fit", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, method }),
+    }),
+  fitChinchilla: (dataPoints: Record<string, unknown>[]) =>
+    apiFetch<any>("/forecasting/fit/chinchilla", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints }),
+    }),
+  aggregate: (dataPoints: Record<string, unknown>[], validate = true) =>
+    apiFetch<any>("/forecasting/aggregate", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, validate }),
+    }),
+  residuals: (dataPoints: Record<string, unknown>[], capability: string, method = "auto") =>
+    apiFetch<any>("/forecasting/scaling/residuals", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, capability, method }),
+    }),
+  frontierGaps: (dataPoints: Record<string, unknown>[], capabilities?: string[]) =>
+    apiFetch<any>("/forecasting/gaps/frontier", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, capabilities }),
+    }),
+  recordCalibration: (
+    capability: string,
+    predictedScore: number,
+    actualScore: number,
+    horizonLabel = "unknown",
+  ) =>
+    apiFetch<any>("/forecasting/calibration/record", {
+      method: "POST",
+      body: JSON.stringify({
+        capability,
+        predicted_score: predictedScore,
+        actual_score: actualScore,
+        horizon_label: horizonLabel,
+      }),
+    }),
+  calibrationHistory: (capability?: string) =>
+    apiFetch<any>(
+      `/forecasting/calibration${capability ? `?capability=${encodeURIComponent(capability)}` : ""}`,
+    ),
+  longHorizonTasks: (domain?: string) =>
+    apiFetch<any[]>(
+      `/forecasting/long-horizon/tasks${domain ? `?domain=${domain}` : ""}`,
+    ),
+};
+
+export interface VibeModelResult {
+  model_id: number;
+  model_name: string;
+  text: string;
+  latency_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  error: string | null;
+}
+
+export interface VibeResponse {
+  results: VibeModelResult[];
+}
+
+export const vibeApi = {
+  prompt: (modelIds: number[], prompt: string, temperature = 0.7, maxTokens = 1024) =>
+    apiFetch<VibeResponse>("/vibe/prompt", {
+      method: "POST",
+      body: JSON.stringify({ model_ids: modelIds, prompt, temperature, max_tokens: maxTokens }),
+      timeoutMs: 120000,
+    }),
 };

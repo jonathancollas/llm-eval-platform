@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -131,7 +131,7 @@ def _get_questions(benchmark: Benchmark, n: int, session: Session) -> list[dict]
         try:
             bench_path = resolve_safe_path(Path(settings.bench_library_path), benchmark.dataset_path)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid dataset path.")
+            return []
         if bench_path.exists():
             try:
                 data = json.loads(bench_path.read_text())
@@ -574,12 +574,12 @@ def check_benchmark_validity(
         try:
             full_path = resolve_safe_path(Path(settings.bench_library_path), bench.dataset_path)
         except ValueError:
-            issues.append("Invalid dataset path.")
+            issues.append(f"Dataset path is invalid or unsafe: {bench.dataset_path}.")
             score -= 0.2
-        else:
-            if not full_path.exists():
-                issues.append(f"Dataset file not found at {bench.dataset_path}.")
-                score -= 0.2
+            full_path = None
+        if full_path is not None and not full_path.exists():
+            issues.append(f"Dataset file not found at {bench.dataset_path}.")
+            score -= 0.2
 
     # Contamination risk from source
     source = getattr(bench, "source", "public")
