@@ -11,7 +11,7 @@ import math
 import logging
 import random
 import hashlib
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -213,7 +213,7 @@ def analyze_trial(trial_id: int, session: Session = Depends(get_session)):
     trial.ci_upper = round(ci_upper, 4)
     trial.conclusion = conclusion
     trial.status = "completed"
-    trial.completed_at = datetime.utcnow()
+    trial.completed_at = datetime.now(UTC)
     session.add(trial)
     session.commit()
 
@@ -230,8 +230,8 @@ def collect_rwd(
     session: Session = Depends(get_session),
 ):
     """Aggregate telemetry into a Real World Dataset."""
-    from datetime import timedelta
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    from datetime import timedelta, UTC
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
 
     events = session.exec(
         select(TelemetryEvent).where(

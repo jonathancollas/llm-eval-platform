@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, UTC
 import json
 from urllib.parse import urlparse
 
@@ -285,7 +285,7 @@ def update_model(model_id: int, payload: ModelUpdate, session: Session = Depends
         else:
             setattr(model, field, value)
 
-    model.updated_at = datetime.utcnow()
+    model.updated_at = datetime.now(UTC)
     session.add(model)
     session.commit()
     session.refresh(model)

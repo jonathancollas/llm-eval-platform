@@ -31,7 +31,7 @@ import logging
 import math
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -153,11 +153,11 @@ def _detect_score_drift(
     severity = "critical" if abs(delta) > 0.2 else "high" if abs(delta) > 0.1 else "medium"
     direction = "improvement" if delta > 0 else "degradation"
     return DriftAlert(
-        alert_id=f"drift_score_{model_id}_{int(datetime.utcnow().timestamp())}",
+        alert_id=f"drift_score_{model_id}_{int(datetime.now(UTC).timestamp())}",
         alert_type="functionality_drift",
         severity=severity,
         model_id=model_id,
-        detected_at=datetime.utcnow().isoformat(),
+        detected_at=datetime.now(UTC).isoformat(),
         metric_name="quality_score",
         baseline_value=round(baseline_score, 4),
         current_value=round(current, 4),
@@ -189,11 +189,11 @@ def _detect_latency_drift(
         return None
     severity = "critical" if pct_increase > 2.0 else "high" if pct_increase > 1.0 else "medium"
     return DriftAlert(
-        alert_id=f"drift_latency_{model_id}_{int(datetime.utcnow().timestamp())}",
+        alert_id=f"drift_latency_{model_id}_{int(datetime.now(UTC).timestamp())}",
         alert_type="reliability_degradation",
         severity=severity,
         model_id=model_id,
-        detected_at=datetime.utcnow().isoformat(),
+        detected_at=datetime.now(UTC).isoformat(),
         metric_name="latency_ms",
         baseline_value=round(baseline_latency, 1),
         current_value=round(current, 1),
@@ -218,11 +218,11 @@ def _detect_safety_spike(
         return None
     severity = "critical" if delta > 0.2 else "high" if delta > 0.1 else "medium"
     return DriftAlert(
-        alert_id=f"drift_safety_{model_id}_{int(datetime.utcnow().timestamp())}",
+        alert_id=f"drift_safety_{model_id}_{int(datetime.now(UTC).timestamp())}",
         alert_type="safety_signal",
         severity=severity,
         model_id=model_id,
-        detected_at=datetime.utcnow().isoformat(),
+        detected_at=datetime.now(UTC).isoformat(),
         metric_name="safety_flag_rate",
         baseline_value=round(baseline_rate, 4),
         current_value=round(safety_flag_rate, 4),
@@ -446,7 +446,7 @@ class ContinuousMonitoringEngine:
             model_name=model_name,
             window_hours=window_hours,
             n_inferences=n,
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(UTC).isoformat(),
             nist_scores=nist,
             overall_health=overall,
             health_status=health_status,
@@ -470,7 +470,7 @@ class ContinuousMonitoringEngine:
             from core.database import engine
             from core.models import TelemetryEvent
 
-            cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
             with Session(engine) as session:
                 query = (
                     select(TelemetryEvent)
@@ -554,7 +554,7 @@ class ContinuousMonitoringEngine:
         ]
         return MonitoringReport(
             model_id=model_id, model_name=model_name, window_hours=window_hours,
-            n_inferences=0, generated_at=datetime.utcnow().isoformat(),
+            n_inferences=0, generated_at=datetime.now(UTC).isoformat(),
             nist_scores=empty_nist, overall_health=0.5, health_status="unknown",
             avg_score=None, avg_latency_ms=0.0, error_rate=0.0,
             safety_flag_rate=0.0, refusal_rate=0.0, score_trend="unknown",

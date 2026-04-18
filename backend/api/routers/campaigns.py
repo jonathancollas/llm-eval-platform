@@ -7,7 +7,7 @@ import platform
 import sys
 
 from typing import Literal, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
@@ -298,7 +298,7 @@ def create_campaign_comment(
         "tenant_id": tenant.id,
         "author": payload.author,
         "message": payload.message,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     comments.append(comment)
     collab["comments"] = comments
@@ -326,7 +326,7 @@ def submit_campaign_review(
         "reviewer": payload.reviewer,
         "decision": payload.decision,
         "summary": payload.summary,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     reviews.append(review)
     collab["reviews"] = reviews
@@ -355,7 +355,7 @@ def export_campaign_bundle(
     collab = _campaign_collaboration(campaign)
     return {
         "bundle_version": "1.0",
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(UTC).isoformat(),
         "campaign": {
             "name": campaign.name,
             "description": campaign.description,
@@ -462,7 +462,7 @@ async def run_campaign(
 ):
     """Start or re-run a campaign."""
     import logging
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, UTC
     _logger = logging.getLogger(__name__)
 
     campaign = session.exec(

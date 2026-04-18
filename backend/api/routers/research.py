@@ -6,7 +6,7 @@ import json
 import hashlib
 import logging
 import platform
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -55,7 +55,7 @@ def create_workspace(payload: WorkspaceCreate, session: Session = Depends(get_se
 
     existing = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if existing:
-        slug = f"{slug}-{int(datetime.utcnow().timestamp())}"
+        slug = f"{slug}-{int(datetime.now(UTC).timestamp())}"
 
     ws = Workspace(
         name=payload.name,
@@ -128,7 +128,7 @@ def update_workspace(workspace_id: int, payload: WorkspaceUpdate, session: Sessi
             setattr(ws, field, json.dumps(value))
         else:
             setattr(ws, field, value)
-    ws.updated_at = datetime.utcnow()
+    ws.updated_at = datetime.now(UTC)
     session.add(ws)
     session.commit()
     return {"updated": True}
@@ -140,7 +140,7 @@ def fork_workspace(workspace_id: int, new_name: str = "Fork", session: Session =
     if not parent:
         raise HTTPException(404, detail="Workspace not found.")
 
-    slug = f"{parent.slug}-fork-{int(datetime.utcnow().timestamp())}"
+    slug = f"{parent.slug}-fork-{int(datetime.now(UTC).timestamp())}"
     fork = Workspace(
         name=f"{new_name} (fork of {parent.name})",
         slug=slug,
@@ -271,7 +271,7 @@ class IncidentCreate(BaseModel):
 @router.post("/incidents")
 def create_incident(payload: IncidentCreate, session: Session = Depends(get_session)):
     # Generate incident ID: MRX-YYYY-NNN
-    year = datetime.utcnow().year
+    year = datetime.now(UTC).year
     existing = session.exec(
         select(SafetyIncident).where(SafetyIncident.incident_id.like(f"MRX-{year}-%"))
     ).all()
@@ -389,9 +389,9 @@ def telemetry_dashboard(
     session: Session = Depends(get_session),
 ):
     """Drift detection dashboard — aggregated telemetry signals."""
-    from datetime import timedelta
+    from datetime import timedelta, UTC
 
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
     query = select(TelemetryEvent).where(TelemetryEvent.timestamp >= cutoff)
     if model_id:
         query = query.where(TelemetryEvent.model_id == model_id)
@@ -582,7 +582,7 @@ def request_replication(
         "type": "replication_request",
         "lab": payload.replicating_lab,
         "notes": payload.notes,
-        "requested_at": datetime.utcnow().isoformat(),
+        "requested_at": datetime.now(UTC).isoformat(),
         "status": "pending",
     })
     ws.tags = _json.dumps(reps)
@@ -628,7 +628,7 @@ def submit_replication_result(
                 "delta_capability": payload.delta_capability,
                 "delta_propensity": payload.delta_propensity,
                 "notes": payload.notes,
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
             })
             found = True
             break
@@ -641,7 +641,7 @@ def submit_replication_result(
             "delta_capability": payload.delta_capability,
             "delta_propensity": payload.delta_propensity,
             "notes": payload.notes,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
         })
     ws.tags = _json.dumps(reps)
     session.add(ws)
@@ -798,7 +798,7 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
                 "generate_manifest": f"POST /api/research/manifests/generate/{{campaign_id}}",
             },
 
-            "published_at": datetime.utcnow().isoformat(),
+            "published_at": datetime.now(UTC).isoformat(),
             "visibility": "public",
         }
     }

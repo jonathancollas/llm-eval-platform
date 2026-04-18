@@ -135,8 +135,8 @@ def _update_model_fingerprints(campaign_id: int, session: Session):
         if existing:
             existing.genome_json = json.dumps(agg)
             existing.stats_json = json.dumps(stats)
-            from datetime import datetime
-            existing.updated_at = datetime.utcnow()
+            from datetime import datetime, UTC
+            existing.updated_at = datetime.now(UTC)
             session.add(existing)
         else:
             session.add(ModelFingerprint(

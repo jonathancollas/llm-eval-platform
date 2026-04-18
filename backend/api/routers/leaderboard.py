@@ -3,7 +3,7 @@ Leaderboard endpoints — aggregated scores by domain + Claude narrative reports
 """
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 import anthropic
@@ -237,7 +237,7 @@ def get_leaderboard(domain: str, session: Session = Depends(get_session)):
         icon=cfg["icon"],
         benchmarks=bench_names,
         rows=rows,
-        last_updated=datetime.utcnow().isoformat(),
+        last_updated=datetime.now(UTC).isoformat(),
         total_runs=len(runs),
     )
 
@@ -280,7 +280,7 @@ async def generate_domain_report(
             "avg_latency_ms": row.avg_latency_ms,
         })
 
-    today = datetime.utcnow().strftime("%B %Y")
+    today = datetime.now(UTC).strftime("%B %Y")
 
     system_prompt = """You are an AI evaluation expert specializing in safety and systemic risks.
 You write rigorous narrative analyses for INESIA (National Institute for AI Evaluation and Security).
@@ -326,7 +326,7 @@ Be concrete, name models, cite precise scores."""
         domain=domain,
         label=cfg["label"],
         content_markdown=content,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
         model_used=settings.report_model,
     )
     _report_cache[domain] = report

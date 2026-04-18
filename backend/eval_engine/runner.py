@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlmodel import Session, select
 
@@ -42,7 +42,7 @@ def _mark_campaign(campaign_id: int, status: JobStatus, error: str | None = None
             if c:
                 c.status = status
                 c.error_message = error
-                c.completed_at = datetime.utcnow()
+                c.completed_at = datetime.now(UTC)
                 session.add(c)
                 session.commit()
     except Exception as e:
@@ -78,7 +78,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         if total_runs == 0:
             campaign.status = JobStatus.COMPLETED
             campaign.progress = 100.0
-            campaign.completed_at = datetime.utcnow()
+            campaign.completed_at = datetime.now(UTC)
             session.add(campaign)
             session.commit()
             return
@@ -109,7 +109,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     model_id=model_id,
                     benchmark_id=benchmark_id,
                     status=JobStatus.RUNNING,
-                    started_at=datetime.utcnow(),
+                    started_at=datetime.now(UTC),
                 )
                 session.add(eval_run)
                 session.commit()
@@ -233,7 +233,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                         },
                     ))
 
-                eval_run.completed_at = datetime.utcnow()
+                eval_run.completed_at = datetime.now(UTC)
                 session.add(eval_run)
                 completed_runs += 1
 
@@ -267,7 +267,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         campaign.current_item_index = None
         campaign.current_item_total = None
         campaign.current_item_label = None
-        campaign.completed_at = datetime.utcnow()
+        campaign.completed_at = datetime.now(UTC)
         session.add(campaign)
         session.commit()
         logger.info(f"Campaign {campaign_id} completed in {_format_eta(int(time.monotonic() - campaign_start))}.")
@@ -529,7 +529,7 @@ def _compute_genome_for_campaign(campaign_id: int, session: Session) -> None:
     from eval_engine.failure_genome.ontology import FAILURE_GENOME_VERSION
     from core.utils import safe_json_load
     import json as _json
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, UTC
 
     runs = session.exec(_sel_inner(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     for run in runs:
