@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
+         Crosshair,
          Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
@@ -32,10 +33,11 @@ const NAV_PHASE2 = [
 
 // Phase 3 — Real World Eval (ALPHA)
 const NAV_PHASE3 = [
-  { href: "/evidence",   label: "Evidence (RCT)",   icon: TestTubes },
-  { href: "/research",   label: "Workspaces",        icon: Beaker },
-  { href: "/incidents",  label: "Incidents (SIX)",   icon: AlertCircle },
-  { href: "/telemetry",  label: "Monitoring",         icon: Radio },
+  { href: "/evidence",          label: "Evidence (RCT)",   icon: TestTubes },
+  { href: "/research",          label: "Workspaces",       icon: Beaker },
+  { href: "/incidents",         label: "Incidents (SIX)",  icon: AlertCircle },
+  { href: "/telemetry",         label: "Monitoring",       icon: Radio },
+  { href: "/frontier-metrics",  label: "Frontier Metrics", icon: Crosshair },
 ];
 
 const MercurySymbol = () => (
