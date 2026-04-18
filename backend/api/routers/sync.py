@@ -44,6 +44,12 @@ _ollama_last_check: Optional[datetime] = None
 OLLAMA_TIMEOUT = 2.0        # seconds — was 5.0, now aggressive
 OLLAMA_CACHE_TTL = 30.0     # seconds between re-checks
 
+# ── vLLM circuit breaker — avoids wait on every request ──────────────────────
+_vllm_available: Optional[bool] = None
+_vllm_last_check: Optional[datetime] = None
+VLLM_TIMEOUT = 2.0          # seconds
+VLLM_CACHE_TTL = 30.0       # seconds between re-checks
+
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_TIMEOUT = 8.0    # seconds — was 20.0, background task so can be lower
@@ -711,3 +717,115 @@ async def pull_and_register_ollama_model(
         "openrouter_model": openrouter_model_id,
         "registered": True,
     }
+
+
+# ── vLLM Local Models ──────────────────────────────────────────────────────────
+
+async def _vllm_fetch_models() -> tuple[bool, list]:
+    """
+    Circuit-breaker wrapper for GET /v1/models on a vLLM server.
+    - Timeout: VLLM_TIMEOUT (2s)
+    - Caches availability for VLLM_CACHE_TTL (30s)
+    - Returns (available, models_list)
+    """
+    global _vllm_available, _vllm_last_check
+    now = datetime.utcnow()
+
+    if (
+        _vllm_available is False
+        and _vllm_last_check is not None
+        and (now - _vllm_last_check).total_seconds() < VLLM_CACHE_TTL
+    ):
+        return False, []
+
+    try:
+        async with httpx.AsyncClient(timeout=VLLM_TIMEOUT) as client:
+            resp = await client.get(f"{settings.vllm_base_url}/v1/models")
+            resp.raise_for_status()
+            data = resp.json()
+        _vllm_available = True
+        _vllm_last_check = now
+        return True, data.get("data", [])
+    except Exception as e:
+        _vllm_available = False
+        _vllm_last_check = now
+        logger.debug(f"vLLM unavailable: {e}")
+        return False, []
+
+
+async def sync_vllm_models(session: Session) -> tuple[int, bool]:
+    """Discover and import models from a local vLLM server. Uses circuit-breaker — never blocks > 2s.
+
+    Args:
+        session: Database session for model persistence.
+
+    Returns:
+        Tuple of (number of new models added, vLLM availability status).
+    """
+    available, models_data = await _vllm_fetch_models()
+    if not available:
+        logger.info(f"vLLM not available at {settings.vllm_base_url}")
+        return 0, False
+
+    if not models_data:
+        return 0, True
+
+    added = 0
+    for m in models_data:
+        model_id = m.get("id", "")
+        if not model_id:
+            continue
+
+        existing = session.exec(
+            select(LLMModel).where(
+                LLMModel.model_id == model_id,
+                LLMModel.provider == ModelProvider.VLLM,
+            )
+        ).first()
+        if existing:
+            continue
+
+        tags = ["vllm", "local", "free"]
+        session.add(LLMModel(
+            name=f"{model_id} (vLLM)",
+            provider=ModelProvider.VLLM,
+            model_id=model_id,
+            endpoint=settings.vllm_base_url,
+            context_length=int(m.get("max_model_len", 4096) or 4096),
+            cost_input_per_1k=0.0,
+            cost_output_per_1k=0.0,
+            is_free=True,
+            tags=json.dumps(tags),
+            notes=f"Local vLLM model at {settings.vllm_base_url}.",
+        ))
+        added += 1
+
+    if added:
+        session.commit()
+    logger.info(f"vLLM sync: {added} new models from {len(models_data)} available")
+    return added, True
+
+
+@router.get("/vllm")
+async def check_vllm():
+    """Check vLLM availability and list served models. Uses circuit-breaker — max 2s wait."""
+    available, raw_models = await _vllm_fetch_models()
+    if not available:
+        return {"available": False, "error": "vLLM unreachable", "url": settings.vllm_base_url, "models": []}
+
+    models = [{"id": m.get("id", ""), "max_model_len": m.get("max_model_len")} for m in raw_models]
+    return {
+        "available": True,
+        "url": settings.vllm_base_url,
+        "models": models,
+        "total": len(models),
+    }
+
+
+@router.post("/vllm/import")
+async def import_vllm_models(session: Session = Depends(get_session)):
+    """Import all models from the local vLLM server into the platform."""
+    added, available = await sync_vllm_models(session)
+    if not available:
+        return {"added": 0, "available": False, "message": f"vLLM not reachable at {settings.vllm_base_url}"}
+    return {"added": added, "available": True}

@@ -48,7 +48,7 @@ export interface ModelIdentity {
   model_id: string;       // Provider identifier (OpenRouter format, Ollama name, etc.)
 }
 
-export type ModelProvider = "ollama" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
+export type ModelProvider = "ollama" | "vllm" | "openai" | "anthropic" | "mistral" | "groq" | "custom";
 export type BenchmarkType = "academic" | "safety" | "coding" | "custom";
 
 // Ollama API
@@ -66,6 +66,17 @@ export const ollamaApi = {
       `/sync/ollama/pull-and-register?openrouter_model_id=${encodeURIComponent(openrouterModelId)}`,
       { method: "POST", timeoutMs: 300000 }
     ),
+};
+
+// vLLM API
+export const vllmApi = {
+  /** Max 2s — if vLLM is absent, returns fast instead of blocking 5s */
+  check: (signal?: AbortSignal) =>
+    apiFetch<{ available: boolean; url: string; models: any[]; total: number }>(
+      "/sync/vllm",
+      { timeoutMs: 2000, signal }
+    ),
+  import: () => apiFetch<{ added: number; available: boolean }>("/sync/vllm/import", { method: "POST" }),
 };
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
