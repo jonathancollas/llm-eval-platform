@@ -38,6 +38,7 @@ from api.routers import capability as capability_router
 from api.routers import scenarios as scenarios_router
 from api.routers import forecasting as forecasting_router
 from api.routers import reward_hacking as reward_hacking_router
+from api.routers import vibe as vibe_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,7 +80,11 @@ async def lifespan(app: FastAPI):
     app.state.bg_sync_task = asyncio.create_task(_background_openrouter_sync())
     app.state.bg_queue_recovery_task = asyncio.create_task(_background_queue_recovery())
 
-    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
+    # 5. Cache bench file count once at startup — avoids rglob() on every /api/health call
+    from pathlib import Path as _Path
+    _bench_path = _Path(settings.bench_library_path)
+    app.state.bench_files_count = len(list(_bench_path.rglob("*.json"))) if _bench_path.exists() else 0
+    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}  bench_files={app.state.bench_files_count}")
     yield
     # Cancel the background task and wait for it to finish cleanly.
     tasks = [app.state.bg_sync_task, app.state.bg_queue_recovery_task]
@@ -198,6 +203,16 @@ async def security_headers(request: Request, call_next: Callable) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self' https://openrouter.ai https://api.lakera.ai; "
+        "frame-ancestors 'none';"
+    )
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -302,6 +317,7 @@ tenant_scoped_routers = [
     statistics_router.router, plugins_router.router, capability_router.router,
     scenarios_router.router, forecasting_router.router,
     reward_hacking_router.router,
+    scenarios_router.router, forecasting_router.router, vibe_router.router,
 ]
 for router in tenant_scoped_routers:
     app.include_router(router, prefix="/api", dependencies=[Depends(require_tenant)])

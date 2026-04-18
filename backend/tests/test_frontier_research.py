@@ -14,7 +14,10 @@ from eval_engine.capability_forecasting import (
     ScalingDataPoint,
     CapabilityForecast,
 )
-from eval_engine.frontier_metrics import FrontierMetricsEngine, FrontierMetricsResult
+from eval_engine.frontier_metrics import (
+    FrontierMetricsEngine, FrontierMetricsResult,
+    ConfidenceInterval,
+)
 from eval_engine.long_horizon import (
     LongHorizonEvaluator,
     LONG_HORIZON_TASKS,
@@ -382,3 +385,153 @@ def test_compute_recovery_rate_with_recovery():
     ]
     rate = ev.compute_recovery_rate(results)
     assert abs(rate - 0.5) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Confidence intervals (Wilson)
+# ---------------------------------------------------------------------------
+
+def test_wilson_ci_full_success():
+    eng = FrontierMetricsEngine()
+    ci = eng.wilson_ci(10, 10)
+    assert isinstance(ci, ConfidenceInterval)
+    assert ci.lower >= 0.7   # should be high
+    assert ci.upper == 1.0
+
+
+def test_wilson_ci_zero_successes():
+    eng = FrontierMetricsEngine()
+    ci = eng.wilson_ci(0, 10)
+    assert ci.lower == 0.0
+    assert ci.upper <= 0.35
+
+
+def test_wilson_ci_zero_n():
+    eng = FrontierMetricsEngine()
+    ci = eng.wilson_ci(0, 0)
+    assert ci.lower == 0.0
+    assert ci.upper == 1.0
+
+
+def test_autonomy_score_has_ci():
+    eng = FrontierMetricsEngine()
+    steps = [{"tool_success": True} for _ in range(8)] + [
+        {"tool_success": False, "error_type": "err"}
+    ]
+    score = eng.compute_autonomy(steps)
+    assert score.ci is not None
+    assert 0.0 <= score.ci.lower <= score.value <= score.ci.upper <= 1.0
+
+
+def test_adaptivity_score_has_ci():
+    eng = FrontierMetricsEngine()
+    steps = [
+        {"tool_success": False, "error_type": "x"},
+        {"tool_success": True},
+        {"tool_success": False, "error_type": "y"},
+        {"tool_success": False, "error_type": "z"},  # no recovery
+    ]
+    score = eng.compute_adaptivity(steps)
+    assert score.ci is not None
+
+
+def test_generalization_score_has_ci():
+    eng = FrontierMetricsEngine()
+    scores = {"a": 0.7, "b": 0.8, "c": 0.75, "d": 0.72}
+    gen = eng.compute_generalization(scores)
+    assert gen.ci is not None
+    assert gen.ci.lower <= gen.value <= gen.ci.upper
+
+
+# ---------------------------------------------------------------------------
+# Per-capability metric breakdown
+# ---------------------------------------------------------------------------
+
+def test_compute_by_capability_groups_correctly():
+    eng = FrontierMetricsEngine()
+    steps = [
+        {"tool_success": True, "capability": "reasoning", "input_tokens": 100, "output_tokens": 50},
+        {"tool_success": True, "capability": "reasoning", "input_tokens": 80, "output_tokens": 40},
+        {"tool_success": False, "error_type": "x", "capability": "agentic", "input_tokens": 50, "output_tokens": 0},
+        {"tool_success": True, "capability": "agentic", "input_tokens": 90, "output_tokens": 45},
+    ]
+    breakdown = eng.compute_by_capability(steps, max_steps=10, task_completed=True)
+    caps = {b.capability for b in breakdown}
+    assert "reasoning" in caps
+    assert "agentic" in caps
+    for b in breakdown:
+        assert 0.0 <= b.composite <= 1.0
+        assert b.n_steps > 0
+
+
+def test_compute_by_capability_empty_steps():
+    eng = FrontierMetricsEngine()
+    breakdown = eng.compute_by_capability([], max_steps=10, task_completed=True)
+    assert breakdown == []
+
+
+def test_compute_all_includes_breakdown():
+    eng = FrontierMetricsEngine()
+    steps = [
+        {"tool_success": True, "capability": "reasoning"},
+        {"tool_success": True, "capability": "safety"},
+    ]
+    result = eng.compute_all(
+        model_name="m",
+        steps=steps,
+        benchmark_scores={"a": 0.8},
+        capability_score=0.7,
+        propensity_score=0.6,
+        safety_score=0.9,
+        max_steps=5,
+        task_completed=True,
+    )
+    assert isinstance(result.capability_breakdown, list)
+    assert len(result.capability_breakdown) == 2
+
+
+# ---------------------------------------------------------------------------
+# Metric correlation analysis
+# ---------------------------------------------------------------------------
+
+def _make_result(model, auto, adap, eff, gen):
+    """Helper to build a FrontierMetricsResult for correlation tests."""
+    eng = FrontierMetricsEngine()
+    auto_steps = [{"tool_success": True}] * max(1, int(auto * 10))
+    adap_steps = [{"tool_success": True}] * max(1, int(adap * 10))
+    eff_steps = [{}] * max(1, int((1 - eff) * 8))
+    bench = {"a": gen, "b": gen * 0.95}
+    return eng.compute_all(
+        model_name=model,
+        steps=auto_steps,
+        benchmark_scores=bench,
+        capability_score=0.7,
+        propensity_score=0.6,
+        safety_score=0.8,
+        max_steps=10,
+        task_completed=True,
+    )
+
+
+def test_compute_correlations_returns_object():
+    eng = FrontierMetricsEngine()
+    results = [
+        _make_result("m1", 0.9, 0.8, 0.7, 0.85),
+        _make_result("m2", 0.6, 0.5, 0.4, 0.55),
+        _make_result("m3", 0.4, 0.3, 0.3, 0.35),
+    ]
+    corr = eng.compute_correlations(results)
+    assert hasattr(corr, "autonomy_adaptivity")
+    assert -1.0 <= corr.autonomy_adaptivity <= 1.0
+    assert -1.0 <= corr.efficiency_generalization <= 1.0
+    assert isinstance(corr.interpretation, str)
+    assert len(corr.interpretation) > 0
+
+
+def test_compute_correlations_single_entry():
+    eng = FrontierMetricsEngine()
+    results = [_make_result("m1", 0.8, 0.7, 0.6, 0.75)]
+    corr = eng.compute_correlations(results)
+    # With a single entry all correlations are 0
+    assert corr.autonomy_adaptivity == 0.0
+
