@@ -70,7 +70,7 @@ class InferenceAdapter(ABC):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         """Generate a completion. Returns AdapterResult with text + metadata."""
         ...
@@ -84,6 +84,7 @@ class InferenceAdapter(ABC):
             )
             return result.error is None
         except Exception:
+            logger.debug("[adapter] health_check failed for %r", self, exc_info=True)
             return False
 
     def __repr__(self) -> str:
@@ -106,7 +107,7 @@ class LiteLLMAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         from litellm import acompletion
 
@@ -166,7 +167,7 @@ class AnthropicAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import anthropic
         from core.config import get_settings
@@ -223,7 +224,7 @@ class OllamaAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import httpx
 
@@ -269,6 +270,7 @@ class OllamaAdapter(InferenceAdapter):
                 r = await client.get(f"{self.base_url}/api/tags")
                 return r.status_code == 200
         except Exception:
+            logger.debug("[adapter] Ollama health_check failed for %r", self, exc_info=True)
             return False
 
     async def list_models(self) -> list[str]:
@@ -301,7 +303,7 @@ class HuggingFaceAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import httpx
 

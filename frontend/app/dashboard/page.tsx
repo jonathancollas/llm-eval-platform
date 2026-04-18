@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useMemo, Suspense } from "react";
+import { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { resultsApi, campaignsApi, reportsApi, genomeApi } from "@/lib/api";
 import type { DashboardData, Campaign, Report, GenomeData, FailedItemsData, FailedItem, FailedRun } from "@/lib/api";
@@ -55,9 +55,9 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
   const models = useMemo(() => [...new Set(heatmap.map(c => c.model_name))], [heatmap]);
   const benchmarks = useMemo(() => [...new Set(heatmap.map(c => c.benchmark_name))], [heatmap]);
   const heatmapMap = useMemo(() => {
-    const m = new Map<string, (typeof heatmap)[number]>();
-    heatmap.forEach(c => m.set(`${c.model_name}::${c.benchmark_name}`, c));
-    return m;
+    const map = new Map<string, (typeof heatmap)[number]>();
+    heatmap.forEach(c => map.set(`${c.model_name}::${c.benchmark_name}`, c));
+    return map;
   }, [heatmap]);
 
   // Check if any cell has capability/propensity split
@@ -445,6 +445,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
 function DashboardContent() {
   const searchParams = useSearchParams();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const campaignsRef = useRef<Campaign[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
   const [genome, setGenome] = useState<GenomeData | null>(null);
@@ -455,7 +456,7 @@ function DashboardContent() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
 
-  useEffect(() => { campaignsApi.list().then(c => setCampaigns(c.filter(x => x.status === "completed"))); }, []);
+  useEffect(() => { campaignsApi.list().then(c => { const completed = c.filter(x => x.status === "completed"); setCampaigns(completed); campaignsRef.current = completed; }); }, []);
 
   useEffect(() => {
     const id = searchParams.get("campaign");
@@ -513,7 +514,7 @@ function DashboardContent() {
       return;
     }
 
-    const campaign = campaigns.find(c => c.id === selectedId);
+    const campaign = campaignsRef.current.find(c => c.id === selectedId);
     const desc = campaign?.description ?? "";
     const autonomyLevel = (desc.match(/Autonomy:\s*(L[1-5])/i)?.[1] ?? "L2").toUpperCase();
     const memoryType = /Memory:\s*enabled/i.test(desc) ? "persistent" : "session";
@@ -533,8 +534,10 @@ function DashboardContent() {
       .map(t => toolMap[t])
       .filter(Boolean);
 
+    const controller = new AbortController();
     setRiskLoading(true);
     fetch(`${API_BASE}/science/compositional-risk`, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -548,9 +551,10 @@ function DashboardContent() {
     })
       .then(async (res) => (res.ok ? res.json() : null))
       .then((json) => setCompositionalRisk(json))
-      .catch(() => setCompositionalRisk(null))
+      .catch((err) => { if (err.name !== "AbortError") setCompositionalRisk(null); })
       .finally(() => setRiskLoading(false));
-  }, [selectedId, data, campaigns]);
+    return () => controller.abort();
+  }, [selectedId, data]);
 
   const signalCount = insights?.signals?.length ?? 0;
 

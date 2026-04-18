@@ -197,8 +197,6 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
     return result
 
 
-# _compute_win_rates moved to eval_engine/win_rate_engine.py (#88)
-
 
 @router.get("/stats/summary")
 def get_stats_summary(session: Session = Depends(get_session)):
@@ -345,6 +343,7 @@ def get_campaign_live_feed(
                 "current_item_index": None, "current_item_total": None, "current_item_label": None}
 
     run_ids = [r.id for r in runs]
+    run_map = {r.id: r for r in runs}
     completed_runs = sum(1 for r in runs if r.status == "completed")
 
     # Get latest results
@@ -360,7 +359,7 @@ def get_campaign_live_feed(
     bench_cache = {}
     items = []
     for r in results:
-        run = next((x for x in runs if x.id == r.run_id), None)
+        run = run_map.get(r.run_id)
         if not run:
             continue
         if run.model_id not in model_cache:
@@ -382,10 +381,9 @@ def get_campaign_live_feed(
         })
 
     # Compute rate from ACTUAL items in DB (including streamed ones during execution)
-    all_item_ids = session.exec(
-        select(EvalResult.id).where(EvalResult.run_id.in_(run_ids))
-    ).all() if run_ids else []
-    total_items_in_db = len(all_item_ids)
+    total_items_in_db = session.exec(
+        select(func.count()).select_from(EvalResult).where(EvalResult.run_id.in_(run_ids))
+    ).one() if run_ids else 0
 
     items_per_sec = 0.0
     eta_seconds = None
@@ -521,7 +519,7 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
     Unified view across all modules for one campaign.
     Returns eval summary + genome + judge agreement + redbox exploits.
     """
-    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit, ModelFingerprint
+    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit
     from core.utils import safe_json_load
 
     campaign = session.get(Campaign, campaign_id)
