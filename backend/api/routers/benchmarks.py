@@ -514,9 +514,70 @@ class HuggingFaceImportRequest(BaseModel):
     repo_id: str = Field(..., description="HuggingFace repo ID (e.g. 'cais/mmlu', 'tatsu-lab/alpaca_eval')")
     split: str = Field(default="test", description="Dataset split: train, test, validation")
     subset: Optional[str] = Field(default=None, description="Dataset subset/config name")
-    max_items: int = Field(default=500, ge=10, le=5000)
+    max_items: int = Field(
+        default=10000,
+        ge=1,
+        le=500000,
+        description=(
+            "Maximum number of items to import. Ignored when full_dataset=True. "
+            "Raise this to get a complete dataset for benchmarks with more than 10 000 rows."
+        ),
+    )
+    full_dataset: bool = Field(
+        default=False,
+        description=(
+            "When True, download ALL rows in the split regardless of max_items. "
+            "The total row count is first queried from the HuggingFace datasets-server so the "
+            "effective limit is set automatically. Use this to guarantee a complete benchmark."
+        ),
+    )
     benchmark_name: Optional[str] = Field(default=None, description="Custom name, defaults to repo_id")
     benchmark_type: BenchmarkType = Field(default=BenchmarkType.CUSTOM)
+
+
+async def _fetch_hf_split_total_rows(
+    client,
+    repo_id: str,
+    split: str,
+    subset: Optional[str],
+) -> Optional[int]:
+    """Query the HuggingFace datasets-server for the total number of rows in a split.
+
+    Returns the row count, or None if the information is unavailable (the caller
+    should then fall back to downloading until the server returns an empty page).
+    """
+    splits_url = "https://datasets-server.huggingface.co/splits"
+    params: dict = {"dataset": repo_id}
+    if subset:
+        params["config"] = subset
+    try:
+        resp = await client.get(splits_url, params=params, timeout=15.0)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        for entry in data.get("splits", []):
+            if entry.get("split") == split:
+                # The /splits response includes num_rows when available
+                num_rows = entry.get("num_rows") or entry.get("num_examples")
+                if num_rows is not None:
+                    return int(num_rows)
+        # Fallback: try /info endpoint
+        info_url = "https://datasets-server.huggingface.co/info"
+        info_params: dict = {"dataset": repo_id}
+        if subset:
+            info_params["config"] = subset
+        info_resp = await client.get(info_url, params=info_params, timeout=15.0)
+        if info_resp.status_code == 200:
+            info = info_resp.json()
+            dataset_info = info.get("dataset_info", {})
+            # dataset_info may be nested under config name
+            if isinstance(dataset_info, dict):
+                splits_info = dataset_info.get("splits", {})
+                if isinstance(splits_info, dict) and split in splits_info:
+                    return int(splits_info[split].get("num_examples", 0) or 0) or None
+    except Exception:
+        pass
+    return None
 
 
 @router.post("/import-huggingface")
@@ -524,7 +585,13 @@ async def import_huggingface_dataset(
     payload: HuggingFaceImportRequest,
     session: Session = Depends(get_session),
 ):
-    """Import a dataset from HuggingFace Hub and create a benchmark."""
+    """Import a dataset from HuggingFace Hub and create a benchmark.
+
+    Set ``full_dataset=True`` to download the **complete** split without any
+    item-count limit.  The endpoint first queries the HuggingFace datasets-server
+    for the total row count so that pagination terminates correctly even for very
+    large datasets.
+    """
     import httpx
     import logging as _log
 
@@ -532,25 +599,40 @@ async def import_huggingface_dataset(
 
     # Build HuggingFace API URL
     base = "https://datasets-server.huggingface.co/rows"
-    params = {
+    rows_params: dict = {
         "dataset": payload.repo_id,
         "split": payload.split,
         "offset": 0,
-        "length": min(payload.max_items, 100),  # API max 100 per page
+        "length": 100,  # API max 100 per page
     }
     if payload.subset:
-        params["config"] = payload.subset
+        rows_params["config"] = payload.subset
 
-    all_items = []
+    all_items: list[dict] = []
     offset = 0
+    total_rows_in_split: Optional[int] = None
+    truncated = False
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            while len(all_items) < payload.max_items:
-                params["offset"] = offset
-                params["length"] = min(100, payload.max_items - len(all_items))
+            # ── Determine the effective item limit ────────────────────────────
+            if payload.full_dataset:
+                # Ask the server how many rows exist so we can set an exact cap.
+                total_rows_in_split = await _fetch_hf_split_total_rows(
+                    client, payload.repo_id, payload.split, payload.subset
+                )
+                # Use the server's count (+ a small buffer) as the effective limit.
+                # If the count is unavailable we use a very large sentinel so the
+                # loop runs until the server returns an empty page.
+                effective_max = (total_rows_in_split + 10) if total_rows_in_split else 10_000_000
+            else:
+                effective_max = payload.max_items
 
-                resp = await client.get(base, params=params)
+            while len(all_items) < effective_max:
+                rows_params["offset"] = offset
+                rows_params["length"] = min(100, effective_max - len(all_items))
+
+                resp = await client.get(base, params=rows_params)
                 if resp.status_code == 404:
                     raise HTTPException(404, detail=f"Dataset '{payload.repo_id}' not found on HuggingFace.")
                 resp.raise_for_status()
@@ -563,7 +645,7 @@ async def import_huggingface_dataset(
                 for row in rows:
                     item = row.get("row", {})
                     # Normalize common field names
-                    normalized = {}
+                    normalized: dict = {}
                     for k, v in item.items():
                         normalized[k] = v
                     # Try to detect question/answer fields
@@ -580,8 +662,18 @@ async def import_huggingface_dataset(
                     all_items.append(normalized)
 
                 offset += len(rows)
-                if len(rows) < params["length"]:
-                    break  # No more data
+                if len(rows) < rows_params["length"]:
+                    break  # Server returned fewer rows than requested → end of dataset
+
+            # Detect truncation: we hit our limit before the dataset was exhausted
+            if not payload.full_dataset and total_rows_in_split is None:
+                # Re-fetch the total count for the truncation warning
+                async with httpx.AsyncClient(timeout=15.0) as info_client:
+                    total_rows_in_split = await _fetch_hf_split_total_rows(
+                        info_client, payload.repo_id, payload.split, payload.subset
+                    )
+            if total_rows_in_split and len(all_items) < total_rows_in_split:
+                truncated = True
 
     except httpx.HTTPError as e:
         raise HTTPException(502, detail=f"HuggingFace API error: {str(e)[:200]}")
@@ -621,7 +713,7 @@ async def import_huggingface_dataset(
             tags=json.dumps(["huggingface", payload.repo_id.split("/")[0], payload.split]),
             dataset_path=f"custom/{filename}",
             metric="accuracy",
-            num_samples=min(len(all_items), 50),
+            num_samples=len(all_items),
             config_json=json.dumps({"source": "huggingface", "repo_id": payload.repo_id, "split": payload.split, "subset": payload.subset}),
             is_builtin=False,
             has_dataset=True,
@@ -634,15 +726,23 @@ async def import_huggingface_dataset(
     sample = all_items[0] if all_items else {}
     detected_fields = list(sample.keys())[:10]
 
-    return {
+    response: dict = {
         "benchmark_id": bench.id,
         "benchmark_name": bench.name,
         "items_imported": len(all_items),
+        "total_rows_in_split": total_rows_in_split,
+        "complete": not truncated,
         "dataset_path": f"custom/{filename}",
         "detected_fields": detected_fields,
         "sample_item": {k: str(v)[:200] for k, v in sample.items()} if sample else {},
         "source": f"huggingface:{payload.repo_id}/{payload.split}",
     }
+    if truncated:
+        response["warning"] = (
+            f"Dataset was truncated: only {len(all_items)} of {total_rows_in_split} rows were imported. "
+            f"Re-import with full_dataset=true to download the complete benchmark."
+        )
+    return response
 
 
 # ── External Benchmark Sources (routing + discovery) ───────────────────────────

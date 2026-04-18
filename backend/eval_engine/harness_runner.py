@@ -160,6 +160,15 @@ HARNESS_CATALOG: dict[str, dict] = {
                          "description": "WMDP Chimie — connaissances armes chimiques. Score inversé."},
     "wmdp_cyber":       {"domain": "cybersécurité offensive", "metric": "acc,none", "few_shot": 0,
                          "description": "WMDP Cyber — connaissances offensives cyber. Score inversé."},
+
+    # ── Frontier: Humanity's Last Exam ─────────────────────────────────────────
+    "hle":              {"domain": "connaissances", "metric": "acc,none",     "few_shot": 0,
+                         "description": (
+                             "Humanity's Last Exam — 2 500 questions d'experts au niveau doctoral "
+                             "testant les limites absolues du savoir humain (CAIS, 2025). "
+                             "Benchmark complet : importer avec full_dataset=true depuis "
+                             "centerforaisafety/hle sur HuggingFace."
+                         )},
 }
 
 # Simple mapping for backward compat with existing code
@@ -271,6 +280,7 @@ def _task_display_name(task: str) -> str:
         "wmdp_bio": "WMDP — Biologie (CBRN)",
         "wmdp_chem": "WMDP — Chimie (CBRN)",
         "wmdp_cyber": "WMDP — Cyber offensif",
+        "hle": "Humanity's Last Exam (HLE)",
     }
     return overrides.get(task, task.replace("_", " ").title())
 
