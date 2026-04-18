@@ -14,7 +14,14 @@ from sqlmodel import Session, select
 
 from core.database import get_session
 from core.models import Benchmark, Campaign, EvalRun, JobStatus, LLMModel, Tenant
-from core.relations import get_campaign_benchmark_ids, get_campaign_model_ids, get_eval_run_metrics, replace_campaign_links
+from core.relations import (
+    get_campaign_benchmark_ids,
+    get_campaign_model_ids,
+    get_campaigns_benchmark_ids_bulk,
+    get_campaigns_model_ids_bulk,
+    get_eval_run_metrics,
+    replace_campaign_links,
+)
 from core.auth import require_tenant
 from core import job_queue
 
@@ -120,15 +127,21 @@ def _can_access_campaign(campaign: Campaign, tenant: Tenant) -> bool:
     return False
 
 
-def _to_read(session: Session, c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
+def _to_read(
+    session: Session,
+    c: Campaign,
+    runs: list[EvalRun] | None = None,
+    model_ids: list[int] | None = None,
+    benchmark_ids: list[int] | None = None,
+) -> CampaignRead:
     collab = _campaign_collaboration(c)
     comments = collab.get("comments", [])
     return CampaignRead(
         id=c.id,
         name=c.name,
         description=c.description,
-        model_ids=get_campaign_model_ids(session, c),
-        benchmark_ids=get_campaign_benchmark_ids(session, c),
+        model_ids=model_ids if model_ids is not None else get_campaign_model_ids(session, c),
+        benchmark_ids=benchmark_ids if benchmark_ids is not None else get_campaign_benchmark_ids(session, c),
         seed=c.seed,
         max_samples=c.max_samples,
         temperature=c.temperature,
@@ -175,7 +188,13 @@ def list_campaigns(
         .where(Campaign.tenant_id == tenant.id)
         .order_by(Campaign.created_at.desc())
     ).all()
-    return [_to_read(session, c) for c in campaigns]
+    campaigns = list(campaigns)
+    model_ids_map = get_campaigns_model_ids_bulk(session, campaigns)
+    benchmark_ids_map = get_campaigns_benchmark_ids_bulk(session, campaigns)
+    return [
+        _to_read(session, c, model_ids=model_ids_map[c.id], benchmark_ids=benchmark_ids_map[c.id])
+        for c in campaigns
+    ]
 
 @router.post("/", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
 def create_campaign(
@@ -234,7 +253,12 @@ def list_shared_campaigns(
 ):
     campaigns = session.exec(select(Campaign).order_by(Campaign.created_at.desc())).all()
     shared = [c for c in campaigns if c.tenant_id != tenant.id and _can_access_campaign(c, tenant)]
-    return [_to_read(session, c) for c in shared]
+    model_ids_map = get_campaigns_model_ids_bulk(session, shared)
+    benchmark_ids_map = get_campaigns_benchmark_ids_bulk(session, shared)
+    return [
+        _to_read(session, c, model_ids=model_ids_map[c.id], benchmark_ids=benchmark_ids_map[c.id])
+        for c in shared
+    ]
 
 
 @router.post("/{campaign_id}/share", response_model=CampaignRead)
