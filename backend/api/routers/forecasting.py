@@ -10,6 +10,10 @@ from eval_engine.capability_forecasting import (
     fit_linear,
     fit_power_law,
     fit_logistic,
+    fit_chinchilla,
+    validate_data_quality,
+    MultiDimScalingFit,
+    ForecastCalibrationRecord,
 )
 from eval_engine.frontier_metrics import FrontierMetricsEngine, MetricCorrelations
 
@@ -18,6 +22,10 @@ _metrics_engine = FrontierMetricsEngine()
 
 from eval_engine.long_horizon import LongHorizonEvaluator, LONG_HORIZON_TASKS
 _lh_evaluator = LongHorizonEvaluator()
+
+# ── In-memory calibration store (per-capability) ──────────────────────────────
+# Maps capability -> list of ForecastCalibrationRecord
+_calibration_store: dict[str, list[dict]] = {}
 
 # ── In-memory frontier metrics leaderboard ────────────────────────────────────
 # Maps model_name -> list of leaderboard entries (supports trend over versions)
@@ -60,7 +68,86 @@ def fit_scaling_law(req: FitRequest):
         "law_type": fit.law_type,
         "coefficients": fit.coefficients,
         "r_squared": fit.r_squared,
+        "rmse": fit.rmse,
+        "mae": fit.mae,
         "valid": fit.valid,
+        "interpretation": fit.interpretation,
+        "residuals": fit.residuals,
+    }
+
+
+class ChinchillaFitRequest(BaseModel):
+    data_points: List[dict]  # each has: parameter_count, training_tokens, score
+
+
+@router.post("/fit/chinchilla")
+def fit_chinchilla_law(req: ChinchillaFitRequest):
+    """Fit a Chinchilla-style multi-dimensional power law (compute + parameters)."""
+    if len(req.data_points) < 4:
+        raise HTTPException(400, "Need at least 4 data points for Chinchilla fitting")
+    param_counts = [float(d["parameter_count"]) for d in req.data_points]
+    token_counts = [float(d["training_tokens"]) for d in req.data_points]
+    scores = [float(d["score"]) for d in req.data_points]
+    fit = fit_chinchilla(param_counts, token_counts, scores)
+    return {
+        "alpha": fit.alpha,
+        "beta": fit.beta,
+        "A": fit.A,
+        "B": fit.B,
+        "r_squared": fit.r_squared,
+        "rmse": fit.rmse,
+        "n_points": fit.n_points,
+        "valid": fit.valid,
+        "interpretation": fit.interpretation,
+    }
+
+
+class AggregateRequest(BaseModel):
+    data_points: List[dict]
+    validate: bool = True
+
+
+@router.post("/aggregate")
+def aggregate_historical_data(req: AggregateRequest):
+    """Aggregate and validate a batch of historical evaluation data points."""
+    points = []
+    for dp in req.data_points:
+        points.append(
+            ScalingDataPoint(
+                model_name=dp.get("model_name", "unknown"),
+                benchmark_name=dp.get("benchmark_name", "unknown"),
+                capability=dp.get("capability", "general"),
+                score=float(dp["score"]),
+                ci_lower=float(dp.get("ci_lower", 0.0)),
+                ci_upper=float(dp.get("ci_upper", 1.0)),
+                parameter_count=dp.get("parameter_count"),
+                training_tokens=dp.get("training_tokens"),
+                compute_flops=dp.get("compute_flops"),
+                score_type=dp.get("score_type", "capability"),
+                date=dp.get("date", "2024-01-01"),
+            )
+        )
+
+    quality = validate_data_quality(points) if req.validate else None
+
+    return {
+        "total_received": len(points),
+        "capabilities": list({p.capability for p in points}),
+        "benchmarks": list({p.benchmark_name for p in points}),
+        "date_range": {
+            "earliest": min(p.date for p in points) if points else None,
+            "latest": max(p.date for p in points) if points else None,
+        },
+        "quality_report": {
+            "total_points": quality.total_points,
+            "valid_points": quality.valid_points,
+            "invalid_points": quality.invalid_points,
+            "duplicate_count": quality.duplicate_count,
+            "missing_ci_count": quality.missing_ci_count,
+            "score_range_violations": quality.score_range_violations,
+            "issues": quality.issues,
+            "passed": quality.passed,
+        } if quality else None,
     }
 
 
@@ -80,6 +167,7 @@ def forecast_capability(req: ForecastRequest):
                 benchmark_name=dp.get("benchmark_name", "unknown"),
                 capability=req.capability,
                 score=float(dp["score"]),
+                score_type=dp.get("score_type", "capability"),
                 date=dp.get("date", "2024-01-01"),
             )
         )
@@ -88,8 +176,171 @@ def forecast_capability(req: ForecastRequest):
         "capability": forecast.capability,
         "current_score": forecast.current_score,
         "forecast_score": forecast.forecast_score,
+        "uncertainty_lower": forecast.uncertainty_lower,
+        "uncertainty_upper": forecast.uncertainty_upper,
         "trend_direction": forecast.trend_direction,
         "confidence": forecast.confidence,
+        "scaling_law_type": forecast.scaling_law_type,
+        "capability_score": forecast.capability_score,
+        "propensity_score": forecast.propensity_score,
+        "gap_to_frontier": forecast.gap_to_frontier,
+        "forecast_horizon_label": forecast.forecast_horizon_label,
+        "key_assumptions": forecast.key_assumptions,
+    }
+
+
+class ReportRequest(BaseModel):
+    data_points: List[dict]
+    capabilities: Optional[List[str]] = None
+
+
+@router.post("/report")
+def generate_forecast_report(req: ReportRequest):
+    """Generate a full forecast report across all capabilities."""
+    engine = CapabilityForecastingEngine()
+    for dp in req.data_points:
+        engine.add_data_point(
+            ScalingDataPoint(
+                model_name=dp.get("model_name", "unknown"),
+                benchmark_name=dp.get("benchmark_name", "unknown"),
+                capability=dp.get("capability", "general"),
+                score=float(dp["score"]),
+                score_type=dp.get("score_type", "capability"),
+                date=dp.get("date", "2024-01-01"),
+            )
+        )
+    report = engine.generate_report(req.capabilities)
+
+    def _serialize_forecast(f):
+        return {
+            "capability": f.capability,
+            "current_score": f.current_score,
+            "forecast_score": f.forecast_score,
+            "uncertainty_lower": f.uncertainty_lower,
+            "uncertainty_upper": f.uncertainty_upper,
+            "trend_direction": f.trend_direction,
+            "confidence": f.confidence,
+            "scaling_law_type": f.scaling_law_type,
+            "capability_score": f.capability_score,
+            "propensity_score": f.propensity_score,
+            "gap_to_frontier": f.gap_to_frontier,
+            "forecast_horizon_label": f.forecast_horizon_label,
+        }
+
+    return {
+        "benchmarks_analyzed": report.benchmarks_analyzed,
+        "capabilities_covered": report.capabilities_covered,
+        "forecasts": [_serialize_forecast(f) for f in report.forecasts],
+        "overall_trend": report.overall_trend,
+        "riskiest_capability": report.riskiest_capability,
+        "plateau_capabilities": report.plateau_capabilities,
+        "emerging_capabilities": report.emerging_capabilities,
+        "recommendations": report.recommendations,
+        "frontier_gaps": report.frontier_gaps,
+        "calibration_mae": report.calibration_mae,
+        "created_at": report.created_at,
+    }
+
+
+class ResidualRequest(BaseModel):
+    data_points: List[dict]
+    capability: str
+    method: str = "auto"
+
+
+@router.post("/scaling/residuals")
+def get_residual_analysis(req: ResidualRequest):
+    """Compute residual analysis / goodness-of-fit diagnostics for a capability."""
+    engine = CapabilityForecastingEngine()
+    for dp in req.data_points:
+        engine.add_data_point(
+            ScalingDataPoint(
+                model_name=dp.get("model_name", "unknown"),
+                benchmark_name=dp.get("benchmark_name", "unknown"),
+                capability=req.capability,
+                score=float(dp["score"]),
+                date=dp.get("date", "2024-01-01"),
+            )
+        )
+    return engine.residual_analysis(req.capability, req.method)
+
+
+class GapRequest(BaseModel):
+    data_points: List[dict]
+    capabilities: Optional[List[str]] = None
+
+
+@router.post("/gaps/frontier")
+def compute_frontier_gaps(req: GapRequest):
+    """Compute 'capability gap to frontier' metric for each capability."""
+    engine = CapabilityForecastingEngine()
+    for dp in req.data_points:
+        engine.add_data_point(
+            ScalingDataPoint(
+                model_name=dp.get("model_name", "unknown"),
+                benchmark_name=dp.get("benchmark_name", "unknown"),
+                capability=dp.get("capability", "general"),
+                score=float(dp["score"]),
+                date=dp.get("date", "2024-01-01"),
+            )
+        )
+    gaps = engine.capability_gap_to_frontier(req.capabilities)
+    return {
+        "gaps": gaps,
+        "worst_capability": max(gaps, key=lambda k: gaps[k]) if gaps else None,
+        "best_capability": min(gaps, key=lambda k: gaps[k]) if gaps else None,
+    }
+
+
+class CalibrationRecordRequest(BaseModel):
+    capability: str
+    predicted_score: float
+    actual_score: float
+    horizon_label: str = "unknown"
+
+
+@router.post("/calibration/record")
+def record_calibration(req: CalibrationRecordRequest):
+    """Record a historical forecast prediction vs actual outcome."""
+    record = {
+        "capability": req.capability,
+        "predicted_score": round(req.predicted_score, 4),
+        "actual_score": round(req.actual_score, 4),
+        "absolute_error": round(abs(req.predicted_score - req.actual_score), 4),
+        "horizon_label": req.horizon_label,
+        "recorded_at": __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    _calibration_store.setdefault(req.capability, []).append(record)
+    return record
+
+
+@router.get("/calibration")
+def get_calibration_history(capability: Optional[str] = None):
+    """Retrieve forecast calibration history (how accurate were past forecasts?)."""
+    if capability:
+        records = _calibration_store.get(capability, [])
+    else:
+        records = [r for recs in _calibration_store.values() for r in recs]
+
+    if not records:
+        return {"records": [], "overall_mae": 0.0, "by_capability": {}}
+
+    overall_mae = round(sum(r["absolute_error"] for r in records) / len(records), 4)
+    by_cap: dict[str, dict] = {}
+    for r in records:
+        cap = r["capability"]
+        if cap not in by_cap:
+            by_cap[cap] = {"count": 0, "total_error": 0.0}
+        by_cap[cap]["count"] += 1
+        by_cap[cap]["total_error"] += r["absolute_error"]
+
+    return {
+        "records": records,
+        "overall_mae": overall_mae,
+        "by_capability": {
+            cap: {"count": v["count"], "mae": round(v["total_error"] / v["count"], 4)}
+            for cap, v in by_cap.items()
+        },
     }
 
 
