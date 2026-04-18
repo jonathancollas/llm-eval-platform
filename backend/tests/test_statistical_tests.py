@@ -527,3 +527,87 @@ class TestComputeCalibrationReport:
         llm_scores = {"i1": 0.87, "i2": 0.32, "i3": 0.72, "i4": 0.52}
         report = compute_calibration_report(items, llm_scores)
         assert report.spearman_human_llm > 0.9
+
+
+# ---------------------------------------------------------------------------
+# Security: safe_bench_path path containment
+# ---------------------------------------------------------------------------
+
+class TestSafeBenchPath:
+    def test_normal_path_is_allowed(self, tmp_path):
+        from core.security import safe_bench_path
+        result = safe_bench_path(str(tmp_path), "custom/dataset.json")
+        assert str(result).startswith(str(tmp_path.resolve()))
+
+    def test_path_traversal_is_rejected(self, tmp_path):
+        from fastapi import HTTPException
+        from core.security import safe_bench_path
+        with pytest.raises(HTTPException) as exc_info:
+            safe_bench_path(str(tmp_path), "../../../etc/passwd")
+        assert exc_info.value.status_code == 400
+
+    def test_double_dot_in_subdirectory_is_rejected(self, tmp_path):
+        from fastapi import HTTPException
+        from core.security import safe_bench_path
+        with pytest.raises(HTTPException):
+            safe_bench_path(str(tmp_path), "custom/../../etc/shadow")
+
+    def test_simple_subpath_allowed(self, tmp_path):
+        from core.security import safe_bench_path
+        result = safe_bench_path(str(tmp_path), "benchmarks/mmlu.json")
+        assert "mmlu.json" in str(result)
+
+
+# ---------------------------------------------------------------------------
+# Confidence engine: correct two-arg call
+# ---------------------------------------------------------------------------
+
+class TestConfidenceEngine:
+    def test_compute_confidence_requires_run_id_and_scores(self):
+        from eval_engine.confidence_engine import compute_confidence
+        result = compute_confidence(42, [0.8, 0.9, 0.7, 0.85, 0.75])
+        assert result.run_id == 42
+        assert 0.0 <= result.ci_lower <= result.ci_upper <= 1.0
+        assert result.reliability_grade in ("A", "B", "C", "D")
+
+    def test_compute_confidence_raises_on_empty_scores(self):
+        from eval_engine.confidence_engine import compute_confidence
+        with pytest.raises(ValueError):
+            compute_confidence(1, [])
+
+
+# ---------------------------------------------------------------------------
+# Reproducibility endpoint logic (unit-level, no DB)
+# ---------------------------------------------------------------------------
+
+class TestReproducibilityFingerprint:
+    def test_same_inputs_produce_same_fingerprint(self):
+        cfg = {"model": "gpt-4", "benchmark": "mmlu"}
+        models = [{"id": 1, "name": "gpt-4", "provider": "openai"}]
+        benches = [{"id": 1, "name": "mmlu", "metric": "accuracy"}]
+        fp1 = generate_fingerprint(cfg, models, benches, seed=42, temperature=0.0)
+        fp2 = generate_fingerprint(cfg, models, benches, seed=42, temperature=0.0)
+        assert fp1.fingerprint_hash == fp2.fingerprint_hash
+
+    def test_different_seed_produces_different_fingerprint(self):
+        cfg = {"model": "gpt-4"}
+        fp1 = generate_fingerprint(cfg, [], [], seed=42, temperature=0.0)
+        fp2 = generate_fingerprint(cfg, [], [], seed=99, temperature=0.0)
+        assert fp1.fingerprint_hash != fp2.fingerprint_hash
+
+    def test_validate_identical_reproducible(self):
+        cfg = {"x": 1}
+        fp_a = generate_fingerprint(cfg, [], [], seed=42, temperature=0.0)
+        fp_b = generate_fingerprint(cfg, [], [], seed=42, temperature=0.0)
+        result = validate_reproducibility(fp_a, fp_b)
+        assert result["reproducible"] is True
+        assert result["differences"] == []
+
+    def test_validate_different_reports_differences(self):
+        cfg_a = {"x": 1}
+        cfg_b = {"x": 2}
+        fp_a = generate_fingerprint(cfg_a, [], [], seed=42, temperature=0.0)
+        fp_b = generate_fingerprint(cfg_b, [], [], seed=42, temperature=0.0)
+        result = validate_reproducibility(fp_a, fp_b)
+        assert result["reproducible"] is False
+        assert len(result["differences"]) > 0

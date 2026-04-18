@@ -22,3 +22,4 @@ lm-eval>=0.4.4
 datasets>=2.18.0
 celery[redis]>=5.6.3
 giskard>=2.19.1
+artkit>=0.1.0

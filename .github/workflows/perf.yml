@@ -2,8 +2,10 @@ name: Performance / Integration
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
+    paths:
+      - 'backend/**'
 
 permissions:
   contents: read
@@ -24,7 +26,7 @@ jobs:
         # same repo).  Fall back to randomly-generated values for fork PRs
         # where secrets are not injected — the backend only needs SECRET_KEY
         # to be non-empty for startup; no real secret value is required for
-        # smoke / perf tests.
+        # perf tests.
         run: |
           SECRET_KEY="${{ secrets.BACKEND_SECRET_KEY }}"
           ADMIN_API_KEY="${{ secrets.ADMIN_API_KEY }}"
@@ -41,10 +43,11 @@ jobs:
           echo "SECRET_KEY=${SECRET_KEY}" >> "$GITHUB_ENV"
           echo "ADMIN_API_KEY=${ADMIN_API_KEY}" >> "$GITHUB_ENV"
           # Write .env for docker compose env_file loading (required by docker-compose.yml)
-          printf 'SECRET_KEY=%s\nADMIN_API_KEY=%s\nDATABASE_URL=sqlite:///./data/llm_eval.db\nMERCURY_DEV_MODE=true\n' \
-            "${SECRET_KEY}" "${ADMIN_API_KEY}" > .env
+          cp .env.example .env
+          sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${SECRET_KEY}|" .env
+          sed -i "s|^ADMIN_API_KEY=.*|ADMIN_API_KEY=${ADMIN_API_KEY}|" .env
 
-      - name: Run docker compose up -d backend
+      - name: Start backend
         run: docker compose up -d backend
 
       - name: Wait for backend to be healthy
@@ -61,9 +64,24 @@ jobs:
           docker compose logs backend
           exit 1
 
-      - name: Smoke test — health endpoint
+      - name: Run perf baseline
         run: |
-          curl -sf "${BACKEND_URL}/api/health" | python3 -m json.tool
+          cd backend
+          pip install httpx
+          python tests/perf_baseline.py --runs 5 --output /tmp/perf.json
+
+      - name: Check regression
+        run: |
+          cd backend
+          python tests/perf_baseline.py --check-regression \
+            --threshold-p95 2000 \
+            --input /tmp/perf.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-baseline
+          path: /tmp/perf.json
 
       - name: Tear down
         if: always()
