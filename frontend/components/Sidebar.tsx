@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot, Zap,
          Beaker, AlertCircle, Radio, Lock, FlaskConical, List,
-         Menu, X, Rocket, LineChart, Layers, TestTubes, Search } from "lucide-react";
+         Menu, X, Rocket, LineChart, Layers, TestTubes, Search,
+         Crosshair } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -25,7 +26,8 @@ const NAV_ANALYSE = [
   { href: "/agents",      label: "Agents",           icon: Bot },
   { href: "/vibe",        label: "Vibe Check",       icon: Zap, badge: "NEW" },
   { href: "/capability",  label: "Capability Intel", icon: Search },
-  { href: "/forecasting", label: "Forecasting",      icon: LineChart },
+  { href: "/forecasting",       label: "Forecasting",        icon: LineChart },
+  { href: "/frontier-metrics",  label: "Frontier Metrics",   icon: Crosshair },
 ];
 
 // ── Opérer — production & compliance ──────────────────────────────────────────
