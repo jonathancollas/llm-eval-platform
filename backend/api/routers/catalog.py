@@ -8,7 +8,7 @@ from typing import Optional
 import time
 import httpx
 import threading
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -601,6 +601,23 @@ BENCHMARK_CATALOG: list[dict] = [
 
     # ══ HUGGINGFACE COMMUNITY BENCHMARKS ═══════════════════════════════════
     # Popular evaluation datasets from HuggingFace Hub — importable via API
+    {"key": "hle", "name": "Humanity's Last Exam (HLE)", "type": "academic", "domain": "knowledge",
+     "description": (
+         "2 500+ expert-written questions at the absolute frontier of human knowledge, "
+         "created by ~1 000 domain experts. Covers mathematics, sciences, humanities and more. "
+         "Import with full_dataset=true to download all 2 500 questions."
+     ),
+     "metric": "accuracy", "num_samples": 2500,
+     "tags": ["knowledge", "frontier", "expert", "PhD-level", "HuggingFace", "CAIS"],
+     "year": 2025,
+     "hf_dataset": "centerforaisafety/hle", "source": "public",
+     "paper_url": "https://arxiv.org/abs/2501.14249",
+     "is_frontier": True,
+     "methodology_note": (
+         "Import via POST /benchmarks/import-huggingface with "
+         "repo_id='centerforaisafety/hle', split='test', full_dataset=true "
+         "to guarantee all questions are downloaded."
+     )},
     {"key": "ifeval", "name": "IFEval (Instruction Following)", "type": "academic", "domain": "instruction following",
      "description": "Instruction Following Eval — 541 verifiable instructions testing whether models follow explicit constraints (word count, format, language, etc.).",
      "metric": "accuracy", "num_samples": 100,
