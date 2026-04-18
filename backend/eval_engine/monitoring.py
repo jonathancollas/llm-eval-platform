@@ -31,7 +31,7 @@ import logging
 import math
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -153,11 +153,11 @@ def _detect_score_drift(
     severity = "critical" if abs(delta) > 0.2 else "high" if abs(delta) > 0.1 else "medium"
     direction = "improvement" if delta > 0 else "degradation"
     return DriftAlert(
-        alert_id=f"drift_score_{model_id}_{int(datetime.utcnow().timestamp())}",
+        alert_id=f"drift_score_{model_id}_{int(datetime.now(UTC).timestamp())}",
         alert_type="functionality_drift",
         severity=severity,
         model_id=model_id,
-        detected_at=datetime.utcnow().isoformat(),
+        detected_at=datetime.now(UTC).isoformat(),
         metric_name="quality_score",
         baseline_value=round(baseline_score, 4),
         current_value=round(current, 4),
@@ -189,11 +189,11 @@ def _detect_latency_drift(
         return None
     severity = "critical" if pct_increase > 2.0 else "high" if pct_increase > 1.0 else "medium"
     return DriftAlert(
-        alert_id=f"drift_latency_{model_id}_{int(datetime.utcnow().timestamp())}",
+        alert_id=f"drift_latency_{model_id}_{int(datetime.now(UTC).timestamp())}",
         alert_type="reliability_degradation",
         severity=severity,
         model_id=model_id,
-        detected_at=datetime.utcnow().isoformat(),
+        detected_at=datetime.now(UTC).isoformat(),
         metric_name="latency_ms",
         baseline_value=round(baseline_latency, 1),
         current_value=round(current, 1),
@@ -218,11 +218,11 @@ def _detect_safety_spike(
         return None
     severity = "critical" if delta > 0.2 else "high" if delta > 0.1 else "medium"
     return DriftAlert(
-        alert_id=f"drift_safety_{model_id}_{int(datetime.utcnow().timestamp())}",
+        alert_id=f"drift_safety_{model_id}_{int(datetime.now(UTC).timestamp())}",
         alert_type="safety_signal",
         severity=severity,
         model_id=model_id,
-        detected_at=datetime.utcnow().isoformat(),
+        detected_at=datetime.now(UTC).isoformat(),
         metric_name="safety_flag_rate",
         baseline_value=round(baseline_rate, 4),
         current_value=round(safety_flag_rate, 4),
@@ -361,13 +361,13 @@ class ContinuousMonitoringEngine:
 
         baseline_model_id: if provided, use that model's pre-deployment eval
         scores as the baseline for drift detection.
-        """
-        events, baseline = await asyncio.gather(
-            self._load_events(model_id, window_hours),
-            self._load_baseline(baseline_model_id or model_id),
-        )
 
-        model_name = await self._get_model_name(model_id)
+        All three DB queries (events, baseline, model name) share a single
+        session to avoid opening multiple connections per analysis.
+        """
+        events, baseline, model_name = self._load_all_data(
+            model_id, window_hours, baseline_model_id
+        )
         n = len(events)
 
         if n == 0:
@@ -446,7 +446,7 @@ class ContinuousMonitoringEngine:
             model_name=model_name,
             window_hours=window_hours,
             n_inferences=n,
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(UTC).isoformat(),
             nist_scores=nist,
             overall_health=overall,
             health_status=health_status,
@@ -464,13 +464,88 @@ class ContinuousMonitoringEngine:
         )
 
     @staticmethod
+    def _load_all_data(
+        model_id: Optional[int],
+        window_hours: int,
+        baseline_model_id: Optional[int],
+    ) -> tuple[list[dict], Optional[dict], str]:
+        """
+        Execute all three DB queries (events, baseline, model name) inside a
+        single shared session, reducing connection usage from 3 to 1 per analysis.
+        """
+        from sqlmodel import Session, select
+        from core.database import engine as db_engine
+        from core.models import TelemetryEvent, EvalRun, JobStatus, LLMModel
+
+        events: list[dict] = []
+        baseline: Optional[dict] = None
+        model_name: str = f"Model {model_id}" if model_id is not None else "All models"
+
+        try:
+            cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
+            with Session(db_engine) as session:
+                # 1. Telemetry events
+                query = (
+                    select(TelemetryEvent)
+                    .where(TelemetryEvent.timestamp >= cutoff)
+                    .order_by(TelemetryEvent.timestamp)
+                )
+                if model_id is not None:
+                    query = query.where(TelemetryEvent.model_id == model_id)
+                records = session.exec(query.limit(10000)).all()
+                events = [
+                    {
+                        "event_type": r.event_type,
+                        "score": r.score,
+                        "latency_ms": r.latency_ms,
+                        "safety_flag": r.safety_flag,
+                        "timestamp": r.timestamp.isoformat(),
+                        "cost_usd": r.cost_usd,
+                    }
+                    for r in records
+                ]
+
+                # 2. Pre-deployment baseline
+                effective_baseline_id = baseline_model_id or model_id
+                if effective_baseline_id is not None:
+                    runs = session.exec(
+                        select(EvalRun)
+                        .where(
+                            EvalRun.model_id == effective_baseline_id,
+                            EvalRun.status == JobStatus.COMPLETED,
+                        )
+                        .limit(50)
+                    ).all()
+                    if runs:
+                        bl_scores = [r.score for r in runs if r.score is not None]
+                        bl_latencies = [r.total_latency_ms for r in runs if r.total_latency_ms > 0]
+                        baseline = {
+                            "avg_score": round(sum(bl_scores) / len(bl_scores), 4) if bl_scores else None,
+                            "avg_latency_ms": round(sum(bl_latencies) / len(bl_latencies), 1) if bl_latencies else None,
+                            "safety_flag_rate": 0.02,  # Assumed baseline from pre-deployment eval
+                            "n_runs": len(runs),
+                            "source": "pre_deployment_eval",
+                        }
+
+                # 3. Model name
+                if model_id is None:
+                    model_name = "All models"
+                else:
+                    m = session.get(LLMModel, model_id)
+                    model_name = m.name if m else f"Model {model_id}"
+        except Exception as e:
+            logger.error(f"[monitoring] Failed to load data for model {model_id}: {e}")
+
+        return events, baseline, model_name
+
+    @staticmethod
     async def _load_events(model_id: Optional[int], window_hours: int) -> list[dict]:
         try:
             from sqlmodel import Session, select
             from core.database import engine
             from core.models import TelemetryEvent
 
-            cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
             with Session(engine) as session:
                 query = (
                     select(TelemetryEvent)
@@ -554,7 +629,7 @@ class ContinuousMonitoringEngine:
         ]
         return MonitoringReport(
             model_id=model_id, model_name=model_name, window_hours=window_hours,
-            n_inferences=0, generated_at=datetime.utcnow().isoformat(),
+            n_inferences=0, generated_at=datetime.now(UTC).isoformat(),
             nist_scores=empty_nist, overall_health=0.5, health_status="unknown",
             avg_score=None, avg_latency_ms=0.0, error_rate=0.0,
             safety_flag_rate=0.0, refusal_rate=0.0, score_trend="unknown",

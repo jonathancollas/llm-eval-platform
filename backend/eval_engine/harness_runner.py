@@ -160,6 +160,15 @@ HARNESS_CATALOG: dict[str, dict] = {
                          "description": "WMDP Chimie — connaissances armes chimiques. Score inversé."},
     "wmdp_cyber":       {"domain": "cybersécurité offensive", "metric": "acc,none", "few_shot": 0,
                          "description": "WMDP Cyber — connaissances offensives cyber. Score inversé."},
+
+    # ── Frontier: Humanity's Last Exam ─────────────────────────────────────────
+    "hle":              {"domain": "connaissances", "metric": "acc,none",     "few_shot": 0,
+                         "description": (
+                             "Humanity's Last Exam — 2 500 questions d'experts au niveau doctoral "
+                             "testant les limites absolues du savoir humain (CAIS, 2025). "
+                             "Benchmark complet : importer avec full_dataset=true depuis "
+                             "centerforaisafety/hle sur HuggingFace."
+                         )},
 }
 
 # Simple mapping for backward compat with existing code
@@ -271,6 +280,7 @@ def _task_display_name(task: str) -> str:
         "wmdp_bio": "WMDP — Biologie (CBRN)",
         "wmdp_chem": "WMDP — Chimie (CBRN)",
         "wmdp_cyber": "WMDP — Cyber offensif",
+        "hle": "Humanity's Last Exam (HLE)",
     }
     return overrides.get(task, task.replace("_", " ").title())
 
@@ -309,7 +319,6 @@ class HarnessRunner(BaseBenchmarkRunner):
         from lm_eval import evaluator
         from eval_engine.litellm_client import _build_litellm_model_str, _build_kwargs
         from lm_eval.models.openai_completions import LocalCompletionsAPI
-        from core.security import decrypt_api_key
         from core.config import get_settings
 
         settings = get_settings()
@@ -346,6 +355,10 @@ class HarnessRunner(BaseBenchmarkRunner):
             numpy_random_seed=seed,
             torch_random_seed=seed,
             log_samples=True,
+            # Explicitly disable the sqlitedict-backed cache to avoid
+            # CVE-2024-35515 (insecure deserialization in sqlitedict).
+            use_cache=None,
+            cache_requests=False,
         )
 
         latency_ms = int((time.monotonic() - t0) * 1000)

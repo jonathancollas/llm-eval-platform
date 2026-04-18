@@ -5,7 +5,7 @@ import json
 import platform
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 
 
 @dataclass
@@ -37,7 +37,7 @@ def capture_environment() -> EnvironmentSnapshot:
         platform_os=platform.system(),
         platform_arch=platform.machine(),
         platform_version=platform.version(),
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
 
 
@@ -73,7 +73,7 @@ def generate_fingerprint(
         model_configs_json=json.dumps(model_configs),
         benchmark_configs_json=json.dumps(benchmark_configs),
         environment=env,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
