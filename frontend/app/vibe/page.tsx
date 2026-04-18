@@ -17,8 +17,6 @@ interface HistoryEntry {
   votes: Record<number, "up" | "down" | null>;
 }
 
-let _historySeq = 0;
-
 function ResultCard({
   result,
   vote,
@@ -145,7 +143,7 @@ export default function VibePage() {
   const handleSaveToHistory = () => {
     if (!currentResults) return;
     const entry: HistoryEntry = {
-      id: ++_historySeq,
+      id: Date.now(),
       prompt: prompt.trim(),
       timestamp: new Date().toLocaleTimeString(),
       results: currentResults,
