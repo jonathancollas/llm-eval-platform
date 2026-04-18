@@ -12,7 +12,7 @@ from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select, desc
+from sqlmodel import Session, func, select, desc
 
 from core.database import get_session
 from core.config import get_settings
@@ -1028,10 +1028,14 @@ def redbox_live_feed(model_id: int, limit: int = 10, session: Session = Depends(
     model = session.get(LLMModel, model_id)
     model_name = model.name if model else f"Model {model_id}"
 
-    total = len(session.exec(select(RedboxExploit.id).where(RedboxExploit.model_id == model_id)).all())
-    breached_total = len(session.exec(
-        select(RedboxExploit.id).where(RedboxExploit.model_id == model_id, RedboxExploit.breached == True)
-    ).all())
+    total = session.exec(
+        select(func.count()).select_from(RedboxExploit).where(RedboxExploit.model_id == model_id)
+    ).one()
+    breached_total = session.exec(
+        select(func.count()).select_from(RedboxExploit).where(
+            RedboxExploit.model_id == model_id, RedboxExploit.breached == True
+        )
+    ).one()
 
     items = [{
         "id": e.id,
