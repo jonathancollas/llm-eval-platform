@@ -537,29 +537,6 @@ function ExportPanel({ campaignId, runs }: { campaignId: number; runs: { id: num
 }
 
 
-
-type AutonomyLevel = "L1" | "L2" | "L3" | "L4" | "L5";
-const AUTONOMY_LEVELS: Record<AutonomyLevel, { label: string; desc: string; color: string }> = {
-  L1: { label: "L1 — No autonomy",    desc: "Human approves every action",            color: "bg-green-100 text-green-700 border-green-200" },
-  L2: { label: "L2 — Supervised",     desc: "Human reviews outputs before acting",    color: "bg-blue-100 text-blue-700 border-blue-200" },
-  L3: { label: "L3 — Conditional",    desc: "Human intervenes on exceptions only",    color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
-  L4: { label: "L4 — High autonomy",  desc: "Model acts independently on most tasks", color: "bg-orange-100 text-orange-700 border-orange-200" },
-  L5: { label: "L5 — Full autonomy",  desc: "No human-in-the-loop",                  color: "bg-red-100 text-red-700 border-red-200" },
-};
-
-const RISK_DOMAINS = [
-  { key: "cbrn",         label: "CBRN Uplift",      icon: "☢️", desc: "Chemical, biological, radiological, nuclear" },
-  { key: "cyber",        label: "Cyber Uplift",      icon: "💻", desc: "Offensive cyber, attack planning" },
-  { key: "fimi",         label: "Info Warfare",      icon: "📡", desc: "Disinformation, influence operations" },
-  { key: "agentic",      label: "Agentic Failures",  icon: "🤖", desc: "Prompt injection, goal drift, inter-agent trust" },
-  { key: "alignment",    label: "Alignment",         icon: "🧭", desc: "Scheming, sandbagging, sycophancy, shutdown resistance" },
-  { key: "safety",       label: "General Safety",    icon: "🛡", desc: "Refusal calibration, harmful content" },
-  { key: "purple_llama", label: "Purple Llama",      icon: "🦙", desc: "Meta AI safety — CyberSecEval & LlamaGuard" },
-];
-
-const TOOL_OPTIONS = [
-  "Web search", "Code execution", "File system", "Email/calendar", "Database",
-  "External APIs", "Browser automation", "Memory (long-term)", "Sub-agent spawning",
 type BenchFilterKey = "all"|"academic"|"safety"|"coding"|"custom"|"inesia";
 const BENCH_FILTERS: {key:BenchFilterKey;label:string}[] = [
   {key:"all",label:"Tous"},{key:"inesia",label:"☿ INESIA"},{key:"academic",label:"Academic"},
@@ -919,13 +896,6 @@ export default function CampaignsPage(){
                       <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
                     </>
                   )}
-                     <>
-                       <Link href={`/dashboard?campaign=${c.id}`} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><BarChart2 size={13}/> Results</Link>
-                       <ManifestButton campaignId={c.id} />
-                       <button onClick={()=>router.push(`/evaluate?clone=${c.id}`)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><Copy size={13}/> Clone</button>
-                       <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
-                     </>
-                   )}
                   {(c.status==="pending"||c.status==="failed")&&!running&&<button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700"><Play size={13}/> Run</button>}
                   {running&&<button onClick={()=>handleCancel(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100"><Square size={13}/> Cancel</button>}
                   {runningId===c.id&&c.status!=="running"&&<div className="flex items-center gap-1.5 text-xs text-slate-400"><Spinner size={13}/> Starting…</div>}
