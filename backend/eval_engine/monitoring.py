@@ -482,7 +482,7 @@ class ContinuousMonitoringEngine:
         model_name: str = f"Model {model_id}" if model_id is not None else "All models"
 
         try:
-            cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+            cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
             with Session(db_engine) as session:
                 # 1. Telemetry events
                 query = (

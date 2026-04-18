@@ -739,7 +739,7 @@ async def _vllm_fetch_models() -> tuple[bool, list]:
     - Returns (available, models_list)
     """
     global _vllm_available, _vllm_last_check
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     if (
         _vllm_available is False
