@@ -13,7 +13,8 @@ class ModelProvider(str, Enum):
     MISTRAL   = "mistral"
     GROQ      = "groq"
     OLLAMA    = "ollama"     # Local Ollama models
-    CUSTOM    = "custom"     # OpenAI-compatible endpoints (OpenRouter, vLLM, etc.)
+    VLLM      = "vllm"       # Local vLLM server (OpenAI-compatible, high-throughput)
+    CUSTOM    = "custom"     # OpenAI-compatible endpoints (OpenRouter, etc.)
 
 
 class BenchmarkType(str, Enum):
