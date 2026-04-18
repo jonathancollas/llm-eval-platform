@@ -499,6 +499,7 @@ def _load_hf_items(task_name: str, limit: int = 60) -> list[dict]:
                         item["_answer"] = task.doc_to_target(doc)
                     items.append(item)
                 except Exception:
+                    logger.debug("[benchmarks] failed to render prompt/answer for doc; using raw doc", exc_info=True)
                     items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
             else:
                 items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})

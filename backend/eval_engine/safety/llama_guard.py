@@ -30,6 +30,7 @@ def _extract_json_object(text: str) -> Optional[dict]:
     try:
         return json.loads(match.group(0))
     except Exception:
+        logger.debug("[llama-guard] failed to parse regex-extracted JSON object", exc_info=True)
         return None
 
 
