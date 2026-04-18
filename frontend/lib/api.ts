@@ -272,27 +272,6 @@ export const scenariosApi = {
     }),
 };
 
-export const forecastingApi = {
-  capabilities: () => apiFetch<string[]>("/forecasting/capabilities"),
-  forecast: (
-    dataPoints: Record<string, unknown>[],
-    capability: string,
-    horizonSteps = 3,
-  ) =>
-    apiFetch<any>("/forecasting/forecast", {
-      method: "POST",
-      body: JSON.stringify({
-        data_points: dataPoints,
-        capability,
-        horizon_steps: horizonSteps,
-      }),
-    }),
-  longHorizonTasks: (domain?: string) =>
-    apiFetch<any[]>(
-      `/forecasting/long-horizon/tasks${domain ? `?domain=${domain}` : ""}`,
-    ),
-};
-
 export const judgeApi = {
   evaluate: (campaignId: number, judgeModels: string[], criteria = "correctness", maxItems = 50) =>
     apiFetch<any>("/judge/evaluate", {
