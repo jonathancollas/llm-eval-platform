@@ -45,6 +45,12 @@ class BenchmarkRead(BaseModel):
     has_dataset: bool
     source: str          # "inesia" | "public" | "community"
     created_at: datetime
+    citation_count: int = 0
+
+
+def _citation_count(b: Benchmark) -> int:
+    config = json.loads(b.config_json) if b.config_json else {}
+    return len(config.get("citations", []))
 
 
 def _to_read(b: Benchmark) -> BenchmarkRead:
@@ -66,6 +72,7 @@ def _to_read(b: Benchmark) -> BenchmarkRead:
         has_dataset=has_dataset,
         source=getattr(b, "source", "public") or "public",
         created_at=b.created_at,
+        citation_count=_citation_count(b),
     )
 
 
