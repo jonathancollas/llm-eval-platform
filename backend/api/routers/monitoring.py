@@ -306,6 +306,7 @@ def get_telemetry_feed(
     model_id: Optional[int] = None,
     window_hours: int = Query(default=1, ge=1, le=168),
     limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
     event_type: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
@@ -315,6 +316,7 @@ def get_telemetry_feed(
         select(TelemetryEvent)
         .where(TelemetryEvent.timestamp >= cutoff)
         .order_by(desc(TelemetryEvent.timestamp))
+        .offset(offset)
         .limit(limit)
     )
     if model_id:
@@ -338,6 +340,8 @@ def get_telemetry_feed(
             for e in events
         ],
         "total": len(events),
+        "offset": offset,
+        "limit": limit,
         "window_hours": window_hours,
     }
 
@@ -346,11 +350,17 @@ def get_telemetry_feed(
 def get_telemetry_stats(
     model_id: Optional[int] = None,
     window_hours: int = Query(default=24, ge=1, le=720),
+    limit: int = Query(default=10000, le=100000),
     session: Session = Depends(get_session),
 ):
     """Aggregate stats for a model over the time window — fast, no ML."""
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
-    query = select(TelemetryEvent).where(TelemetryEvent.timestamp >= cutoff)
+    query = (
+        select(TelemetryEvent)
+        .where(TelemetryEvent.timestamp >= cutoff)
+        .order_by(desc(TelemetryEvent.timestamp))
+        .limit(limit)
+    )
     if model_id:
         query = query.where(TelemetryEvent.model_id == model_id)
     events = session.exec(query).all()

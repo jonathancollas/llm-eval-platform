@@ -204,11 +204,15 @@ def get_model_genome(model_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/models")
-def list_model_fingerprints(session: Session = Depends(get_session)):
+def list_model_fingerprints(
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+):
     """List all model fingerprints for comparison."""
-    fps = session.exec(select(ModelFingerprint)).all()
+    fps = session.exec(select(ModelFingerprint).offset(offset).limit(limit)).all()
     if not fps:
-        return {"fingerprints": [], "ontology": ONTOLOGY}
+        return {"fingerprints": [], "ontology": ONTOLOGY, "limit": limit, "offset": offset}
 
     # Bulk-fetch all models referenced by fingerprints
     model_ids = [fp.model_id for fp in fps]
@@ -228,7 +232,7 @@ def list_model_fingerprints(session: Session = Depends(get_session)):
             "stats": safe_json_load(fp.stats_json, {}),
             "updated_at": fp.updated_at,
         })
-    return {"fingerprints": result, "ontology": ONTOLOGY}
+    return {"fingerprints": result, "ontology": ONTOLOGY, "limit": limit, "offset": offset}
 
 
 @router.get("/ontology")
