@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
-         Menu, X } from "lucide-react";
+         Menu, X, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -14,6 +14,7 @@ const NAV_FOUNDATION = [
   { href: "/",            label: "Overview",    icon: Activity },
   { href: "/models",      label: "Models",      icon: Cpu },
   { href: "/benchmarks",  label: "Benchmarks",  icon: Library },
+  { href: "/tasks",       label: "Task Registry", icon: ClipboardList },
   { href: "/dashboard",   label: "Dashboard",   icon: BarChart3 },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
