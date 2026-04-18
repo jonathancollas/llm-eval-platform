@@ -37,6 +37,7 @@ from api.routers import plugins as plugins_router
 from api.routers import capability as capability_router
 from api.routers import scenarios as scenarios_router
 from api.routers import forecasting as forecasting_router
+from api.routers import vibe as vibe_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -313,7 +314,7 @@ tenant_scoped_routers = [
     research.router, evidence.router, deep_analysis.router,
     multiagent.router, events_router.router, monitoring.router, science.router,
     statistics_router.router, plugins_router.router, capability_router.router,
-    scenarios_router.router, forecasting_router.router,
+    scenarios_router.router, forecasting_router.router, vibe_router.router,
 ]
 for router in tenant_scoped_routers:
     app.include_router(router, prefix="/api", dependencies=[Depends(require_tenant)])

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
-         Dna, Shield, Gavel, Bot,
+         Dna, Shield, Gavel, Bot, Zap,
          Beaker, AlertCircle, Radio, Lock, FlaskConical, List,
          Menu, X, Rocket, LineChart, Layers, TestTubes, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,13 +18,14 @@ const NAV_EVALUATE = [
 
 // ── Analyser — post-eval insights ─────────────────────────────────────────────
 const NAV_ANALYSE = [
-  { href: "/dashboard",   label: "Dashboard",          icon: BarChart3 },
-  { href: "/leaderboard", label: "Leaderboard",        icon: Trophy },
-  { href: "/genome",      label: "Genomia",            icon: Dna },
-  { href: "/judge",       label: "LLM Judge",          icon: Gavel },
-  { href: "/agents",      label: "Agents",             icon: Bot },
-  { href: "/capability",  label: "Capability Intel",   icon: Search },
-  { href: "/forecasting", label: "Forecasting",        icon: LineChart },
+  { href: "/dashboard",   label: "Dashboard",        icon: BarChart3 },
+  { href: "/leaderboard", label: "Leaderboard",      icon: Trophy },
+  { href: "/genome",      label: "Genomia",          icon: Dna },
+  { href: "/judge",       label: "LLM Judge",        icon: Gavel },
+  { href: "/agents",      label: "Agents",           icon: Bot },
+  { href: "/vibe",        label: "Vibe Check",       icon: Zap, badge: "NEW" },
+  { href: "/capability",  label: "Capability Intel", icon: Search },
+  { href: "/forecasting", label: "Forecasting",      icon: LineChart },
 ];
 
 // ── Opérer — production & compliance ──────────────────────────────────────────
@@ -71,7 +72,7 @@ function NavSection({
   hoverColor = "hover:bg-slate-100 hover:text-slate-900",
   onLinkClick,
 }: {
-  items: { href: string; label: string; icon: React.ElementType }[];
+  items: { href: string; label: string; icon: React.ElementType; badge?: string }[];
   activeColor?: string;
   hoverColor?: string;
   onLinkClick?: () => void;
@@ -79,7 +80,7 @@ function NavSection({
   const pathname = usePathname();
   return (
     <>
-      {items.map(({ href, label, icon: Icon }) => (
+      {items.map(({ href, label, icon: Icon, badge }) => (
         <Link key={href} href={href} onClick={onLinkClick}
           className={cn(
             "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
@@ -87,6 +88,11 @@ function NavSection({
               ? `${activeColor} font-medium` : `text-slate-600 ${hoverColor}`
           )}>
           <Icon size={14} />{label}
+          {badge && (
+            <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-600 font-bold tracking-wide border border-cyan-200">
+              {badge}
+            </span>
+          )}
         </Link>
       ))}
     </>

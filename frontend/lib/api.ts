@@ -306,3 +306,27 @@ export const judgeApi = {
   bias: (campaignId: number) => apiFetch<any>(`/judge/bias/${campaignId}`),
   summary: (campaignId: number) => apiFetch<any>(`/judge/summary/${campaignId}`),
 };
+
+export interface VibeModelResult {
+  model_id: number;
+  model_name: string;
+  text: string;
+  latency_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  error: string | null;
+}
+
+export interface VibeResponse {
+  results: VibeModelResult[];
+}
+
+export const vibeApi = {
+  prompt: (modelIds: number[], prompt: string, temperature = 0.7, maxTokens = 1024) =>
+    apiFetch<VibeResponse>("/vibe/prompt", {
+      method: "POST",
+      body: JSON.stringify({ model_ids: modelIds, prompt, temperature, max_tokens: maxTokens }),
+      timeoutMs: 120000,
+    }),
+};
