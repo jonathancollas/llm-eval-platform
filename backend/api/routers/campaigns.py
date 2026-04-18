@@ -13,8 +13,15 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from core.database import get_session
-from core.models import Benchmark, Campaign, EvalRun, JobStatus, LLMModel, Tenant
-from core.relations import get_campaign_benchmark_ids, get_campaign_model_ids, get_eval_run_metrics, replace_campaign_links
+from core.models import Benchmark, Campaign, CampaignBenchmark, CampaignModel, EvalRun, JobStatus, LLMModel, Tenant
+from core.relations import (
+    get_campaign_benchmark_ids,
+    get_campaign_model_ids,
+    get_eval_run_metrics,
+    replace_campaign_links,
+    batch_get_eval_run_metrics,
+)
+from core.utils import safe_json_load
 from core.auth import require_tenant
 from core import job_queue
 
@@ -120,15 +127,25 @@ def _can_access_campaign(campaign: Campaign, tenant: Tenant) -> bool:
     return False
 
 
-def _to_read(session: Session, c: Campaign, runs: list[EvalRun] | None = None) -> CampaignRead:
+def _to_read(
+    session: Session,
+    c: Campaign,
+    runs: list[EvalRun] | None = None,
+    *,
+    model_ids: list[int] | None = None,
+    benchmark_ids: list[int] | None = None,
+    run_metrics: dict[int, dict] | None = None,
+) -> CampaignRead:
     collab = _campaign_collaboration(c)
     comments = collab.get("comments", [])
+    m_ids = model_ids if model_ids is not None else get_campaign_model_ids(session, c)
+    b_ids = benchmark_ids if benchmark_ids is not None else get_campaign_benchmark_ids(session, c)
     return CampaignRead(
         id=c.id,
         name=c.name,
         description=c.description,
-        model_ids=get_campaign_model_ids(session, c),
-        benchmark_ids=get_campaign_benchmark_ids(session, c),
+        model_ids=m_ids,
+        benchmark_ids=b_ids,
         seed=c.seed,
         max_samples=c.max_samples,
         temperature=c.temperature,
@@ -154,7 +171,11 @@ def _to_read(session: Session, c: Campaign, runs: list[EvalRun] | None = None) -
                 "score": r.score,
                 "capability_score": r.capability_score,
                 "propensity_score": r.propensity_score,
-                "metrics": get_eval_run_metrics(session, r),
+                "metrics": (
+                    (run_metrics.get(r.id) or safe_json_load(r.metrics_json, {}))
+                    if run_metrics is not None
+                    else get_eval_run_metrics(session, r)
+                ),
                 "total_cost_usd": r.total_cost_usd,
                 "total_latency_ms": r.total_latency_ms,
                 "num_items": r.num_items,
@@ -175,7 +196,48 @@ def list_campaigns(
         .where(Campaign.tenant_id == tenant.id)
         .order_by(Campaign.created_at.desc())
     ).all()
-    return [_to_read(session, c) for c in campaigns]
+    if not campaigns:
+        return []
+
+    campaign_ids = [c.id for c in campaigns if c.id is not None]
+
+    # Batch-fetch model links — eliminates 1 query per campaign
+    model_links = session.exec(
+        select(CampaignModel).where(CampaignModel.campaign_id.in_(campaign_ids))
+    ).all()
+    model_ids_by_campaign: dict[int, list[int]] = {cid: [] for cid in campaign_ids}
+    for link in model_links:
+        model_ids_by_campaign[link.campaign_id].append(link.model_id)
+    # Fallback to JSON column for campaigns with no normalised link rows
+    for c in campaigns:
+        if c.id is not None and not model_ids_by_campaign[c.id]:
+            model_ids_by_campaign[c.id] = [
+                int(v) for v in safe_json_load(c.model_ids, []) if isinstance(v, int)
+            ]
+
+    # Batch-fetch benchmark links — eliminates 1 query per campaign
+    bench_links = session.exec(
+        select(CampaignBenchmark).where(CampaignBenchmark.campaign_id.in_(campaign_ids))
+    ).all()
+    bench_ids_by_campaign: dict[int, list[int]] = {cid: [] for cid in campaign_ids}
+    for link in bench_links:
+        bench_ids_by_campaign[link.campaign_id].append(link.benchmark_id)
+    # Fallback to JSON column for campaigns with no normalised link rows
+    for c in campaigns:
+        if c.id is not None and not bench_ids_by_campaign[c.id]:
+            bench_ids_by_campaign[c.id] = [
+                int(v) for v in safe_json_load(c.benchmark_ids, []) if isinstance(v, int)
+            ]
+
+    return [
+        _to_read(
+            session,
+            c,
+            model_ids=model_ids_by_campaign.get(c.id, []),
+            benchmark_ids=bench_ids_by_campaign.get(c.id, []),
+        )
+        for c in campaigns
+    ]
 
 @router.post("/", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
 def create_campaign(
@@ -183,11 +245,18 @@ def create_campaign(
     session: Session = Depends(get_session),
     tenant: Tenant = Depends(require_tenant),
 ):
+    # Batch-validate models and benchmarks — eliminates N per-ID queries
+    found_model_ids = {
+        m.id for m in session.exec(select(LLMModel).where(LLMModel.id.in_(payload.model_ids))).all()
+    }
     for mid in payload.model_ids:
-        if not session.get(LLMModel, mid):
+        if mid not in found_model_ids:
             raise HTTPException(404, detail=f"Model {mid} not found.")
+    found_bench_ids = {
+        b.id for b in session.exec(select(Benchmark).where(Benchmark.id.in_(payload.benchmark_ids))).all()
+    }
     for bid in payload.benchmark_ids:
-        if not session.get(Benchmark, bid):
+        if bid not in found_bench_ids:
             raise HTTPException(404, detail=f"Benchmark {bid} not found.")
 
     model_ids = list(dict.fromkeys(payload.model_ids))
@@ -224,7 +293,9 @@ def get_campaign(
     if not _can_access_campaign(campaign, tenant):
         raise HTTPException(404, detail="Campaign not found.")
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
-    return _to_read(session, campaign, list(runs))
+    run_ids = [r.id for r in runs if r.id is not None]
+    run_metrics = batch_get_eval_run_metrics(session, run_ids)
+    return _to_read(session, campaign, list(runs), run_metrics=run_metrics)
 
 
 @router.get("/shared/available", response_model=list[CampaignRead])
@@ -234,7 +305,46 @@ def list_shared_campaigns(
 ):
     campaigns = session.exec(select(Campaign).order_by(Campaign.created_at.desc())).all()
     shared = [c for c in campaigns if c.tenant_id != tenant.id and _can_access_campaign(c, tenant)]
-    return [_to_read(session, c) for c in shared]
+    if not shared:
+        return []
+
+    shared_ids = [c.id for c in shared if c.id is not None]
+
+    # Batch-fetch model links for all shared campaigns
+    model_links = session.exec(
+        select(CampaignModel).where(CampaignModel.campaign_id.in_(shared_ids))
+    ).all()
+    model_ids_by_campaign: dict[int, list[int]] = {cid: [] for cid in shared_ids}
+    for link in model_links:
+        model_ids_by_campaign[link.campaign_id].append(link.model_id)
+    for c in shared:
+        if c.id is not None and not model_ids_by_campaign[c.id]:
+            model_ids_by_campaign[c.id] = [
+                int(v) for v in safe_json_load(c.model_ids, []) if isinstance(v, int)
+            ]
+
+    # Batch-fetch benchmark links for all shared campaigns
+    bench_links = session.exec(
+        select(CampaignBenchmark).where(CampaignBenchmark.campaign_id.in_(shared_ids))
+    ).all()
+    bench_ids_by_campaign: dict[int, list[int]] = {cid: [] for cid in shared_ids}
+    for link in bench_links:
+        bench_ids_by_campaign[link.campaign_id].append(link.benchmark_id)
+    for c in shared:
+        if c.id is not None and not bench_ids_by_campaign[c.id]:
+            bench_ids_by_campaign[c.id] = [
+                int(v) for v in safe_json_load(c.benchmark_ids, []) if isinstance(v, int)
+            ]
+
+    return [
+        _to_read(
+            session,
+            c,
+            model_ids=model_ids_by_campaign.get(c.id, []),
+            benchmark_ids=bench_ids_by_campaign.get(c.id, []),
+        )
+        for c in shared
+    ]
 
 
 @router.post("/{campaign_id}/share", response_model=CampaignRead)
@@ -350,8 +460,14 @@ def export_campaign_bundle(
         raise HTTPException(404, detail="Campaign not found.")
     model_ids = get_campaign_model_ids(session, campaign)
     benchmark_ids = get_campaign_benchmark_ids(session, campaign)
-    models = [session.get(LLMModel, mid) for mid in model_ids]
-    benchmarks = [session.get(Benchmark, bid) for bid in benchmark_ids]
+    models_map = {
+        m.id: m for m in session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()
+    } if model_ids else {}
+    models = [models_map.get(mid) for mid in model_ids]
+    benches_map = {
+        b.id: b for b in session.exec(select(Benchmark).where(Benchmark.id.in_(benchmark_ids))).all()
+    } if benchmark_ids else {}
+    benchmarks = [benches_map.get(bid) for bid in benchmark_ids]
     collab = _campaign_collaboration(campaign)
     return {
         "bundle_version": "1.0",
@@ -595,8 +711,14 @@ def get_reproducibility_manifest(
     model_ids = get_campaign_model_ids(session, campaign)
     bench_ids = get_campaign_benchmark_ids(session, campaign)
 
-    models = [session.get(LLMModel, mid) for mid in model_ids]
-    benches = [session.get(Benchmark, bid) for bid in bench_ids]
+    models_map = {
+        m.id: m for m in session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()
+    } if model_ids else {}
+    models = [models_map.get(mid) for mid in model_ids]
+    benches_map = {
+        b.id: b for b in session.exec(select(Benchmark).where(Benchmark.id.in_(bench_ids))).all()
+    } if bench_ids else {}
+    benches = [benches_map.get(bid) for bid in bench_ids]
 
     model_configs = [
         {"model_id": m.id, "model_name": m.name, "provider": m.provider,

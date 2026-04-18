@@ -14,6 +14,45 @@ from core.models import (
 from core.utils import safe_json_load
 
 
+def batch_get_benchmark_tags(session: Session, benchmark_ids: list[int]) -> dict[int, list[str]]:
+    """Fetch benchmark tags for all given benchmark IDs in a single query.
+
+    Returns a mapping of benchmark_id → list of tag strings.
+    Falls back to the JSON ``tags`` column for benchmarks that have no rows
+    in ``benchmark_tags`` (pre-migration data); callers must pass the
+    corresponding :class:`Benchmark` objects for that fallback to work.
+    """
+    if not benchmark_ids:
+        return {}
+    rows = session.exec(
+        select(BenchmarkTag)
+        .where(BenchmarkTag.benchmark_id.in_(benchmark_ids))
+        .order_by(BenchmarkTag.tag)
+    ).all()
+    result: dict[int, list[str]] = {bid: [] for bid in benchmark_ids}
+    for row in rows:
+        result[row.benchmark_id].append(str(row.tag))
+    return result
+
+
+def batch_get_eval_run_metrics(session: Session, run_ids: list[int]) -> dict[int, dict]:
+    """Fetch EvalRunMetric rows for all given run IDs in a single query.
+
+    Returns a mapping of run_id → metrics dict.  Runs that have no rows in
+    ``eval_run_metrics`` are returned with an empty dict; callers should fall
+    back to the ``metrics_json`` column of each :class:`EvalRun` as needed.
+    """
+    if not run_ids:
+        return {}
+    rows = session.exec(
+        select(EvalRunMetric).where(EvalRunMetric.run_id.in_(run_ids))
+    ).all()
+    by_run: dict[int, dict] = {rid: {} for rid in run_ids}
+    for row in rows:
+        by_run.setdefault(row.run_id, {})[row.metric_key] = safe_json_load(row.metric_value_json, None)
+    return by_run
+
+
 def get_campaign_model_ids(session: Session, campaign: Campaign) -> list[int]:
     ids = session.exec(
         select(CampaignModel.model_id)

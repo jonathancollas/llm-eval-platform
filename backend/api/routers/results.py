@@ -17,7 +17,7 @@ from typing import Optional
 from core.utils import safe_json_load
 from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, EvalRunMetric, LLMModel, Benchmark, JobStatus
-from core.relations import get_eval_run_metrics
+from core.relations import get_eval_run_metrics, batch_get_eval_run_metrics
 from eval_engine.confidence_engine import compute_confidence
 from core.utils import normalize_adversarial_risk
 from eval_engine.comparison_engine import compare_campaigns as _compare_campaigns_engine
@@ -37,23 +37,8 @@ _CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _batch_get_run_metrics(session: Session, run_ids: list[int]) -> dict[int, dict]:
-    """Fetch EvalRunMetric rows for all given run IDs in a single query.
-
-    Returns a mapping of run_id → metrics dict.  Falls back to the JSON column
-    only for runs that have no rows in eval_run_metrics (pre-migration data).
-    """
-    if not run_ids:
-        return {}
-
-    rows = session.exec(
-        select(EvalRunMetric).where(EvalRunMetric.run_id.in_(run_ids))
-    ).all()
-
-    # Group by run_id
-    by_run: dict[int, dict] = {rid: {} for rid in run_ids}
-    for row in rows:
-        by_run.setdefault(row.run_id, {})[row.metric_key] = safe_json_load(row.metric_value_json, None)
-    return by_run
+    """Thin wrapper around :func:`core.relations.batch_get_eval_run_metrics`."""
+    return batch_get_eval_run_metrics(session, run_ids)
 
 
 def _csv_escape(value: str) -> str:
@@ -362,20 +347,26 @@ def get_campaign_live_feed(
         .limit(limit)
     ).all()
 
+    # Batch-prefetch all models and benchmarks referenced by runs — eliminates
+    # per-unique-ID session.get() calls inside the results loop
+    unique_model_ids = list({r.model_id for r in runs})
+    unique_bench_ids = list({r.benchmark_id for r in runs})
+    model_cache = {
+        m.id: m.name
+        for m in session.exec(select(LLMModel).where(LLMModel.id.in_(unique_model_ids))).all()
+    }
+    bench_cache = {
+        b.id: b.name
+        for b in session.exec(select(Benchmark).where(Benchmark.id.in_(unique_bench_ids))).all()
+    }
+
     # Build enriched items
-    model_cache = {}
-    bench_cache = {}
+    run_map = {r.id: r for r in runs}
     items = []
     for r in results:
-        run = next((x for x in runs if x.id == r.run_id), None)
+        run = run_map.get(r.run_id)
         if not run:
             continue
-        if run.model_id not in model_cache:
-            m = session.get(LLMModel, run.model_id)
-            model_cache[run.model_id] = m.name if m else f"Model {run.model_id}"
-        if run.benchmark_id not in bench_cache:
-            b = session.get(Benchmark, run.benchmark_id)
-            bench_cache[run.benchmark_id] = b.name if b else f"Bench {run.benchmark_id}"
         items.append({
             "id": r.id,
             "item_index": r.item_index,
@@ -384,8 +375,8 @@ def get_campaign_live_feed(
             "expected": r.expected[:200] if r.expected else None,
             "score": r.score,
             "latency_ms": r.latency_ms,
-            "model_name": model_cache[run.model_id],
-            "benchmark_name": bench_cache[run.benchmark_id],
+            "model_name": model_cache.get(run.model_id, f"Model {run.model_id}"),
+            "benchmark_name": bench_cache.get(run.benchmark_id, f"Bench {run.benchmark_id}"),
         })
 
     # Compute rate from ACTUAL items in DB (including streamed ones during execution)

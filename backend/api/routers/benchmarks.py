@@ -2,7 +2,7 @@
 Benchmarks — CRUD + dataset upload + HuggingFace import.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -14,7 +14,7 @@ from pathlib import Path
 from core.database import get_session
 from core.models import Benchmark, BenchmarkType, BenchmarkFork, BenchmarkCitation, BenchmarkPack
 from core.config import get_settings
-from core.relations import get_benchmark_tags, replace_benchmark_tags
+from core.relations import get_benchmark_tags, replace_benchmark_tags, batch_get_benchmark_tags
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -73,17 +73,25 @@ class BenchmarkCitationCreate(BaseModel):
     year: int
 
 
-def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
+def _to_read(
+    session: Session,
+    b: Benchmark,
+    *,
+    prefetched_tags: list[str] | None = None,
+    prefetched_citation_count: int | None = None,
+) -> BenchmarkRead:
     has_dataset = False
     if b.dataset_path:
         full = Path(settings.bench_library_path) / b.dataset_path
         has_dataset = full.exists()
+    tags = prefetched_tags if prefetched_tags is not None else get_benchmark_tags(session, b)
+    citation_count = prefetched_citation_count if prefetched_citation_count is not None else _get_citation_count(session, b.id)
     return BenchmarkRead(
         id=b.id,
         name=b.name,
         type=b.type,
         description=b.description,
-        tags=get_benchmark_tags(session, b),
+        tags=tags,
         metric=b.metric,
         num_samples=b.num_samples,
         config=json.loads(b.config_json),
@@ -91,7 +99,7 @@ def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
         risk_threshold=b.risk_threshold,
         has_dataset=has_dataset,
         source=getattr(b, "source", "public") or "public",
-        citation_count=_get_citation_count(session, b.id),
+        citation_count=citation_count,
         created_at=b.created_at,
     )
 
@@ -122,7 +130,21 @@ def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
 def _get_citation_count(session: Session, benchmark_id: Optional[int]) -> int:
     if benchmark_id is None:
         return 0
-    return len(session.exec(select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)).all())
+    return session.exec(
+        select(func.count()).select_from(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
+    ).one()
+
+
+def _batch_get_citation_counts(session: Session, benchmark_ids: list[int]) -> dict[int, int]:
+    """Fetch citation counts for all given benchmark IDs in a single query."""
+    if not benchmark_ids:
+        return {}
+    rows = session.exec(
+        select(BenchmarkCitation.benchmark_id, func.count().label("cnt"))
+        .where(BenchmarkCitation.benchmark_id.in_(benchmark_ids))
+        .group_by(BenchmarkCitation.benchmark_id)
+    ).all()
+    return {row[0]: row[1] for row in rows}
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -135,13 +157,39 @@ def list_benchmarks(
     query = select(Benchmark)
     if type:
         query = query.where(Benchmark.type == type)
-    return [_to_read(session, b) for b in session.exec(query).all()]
+    benchmarks = session.exec(query).all()
+    if not benchmarks:
+        return []
+
+    benchmark_ids = [b.id for b in benchmarks if b.id is not None]
+
+    # Batch-fetch tags — eliminates 1 query per benchmark
+    tags_by_bench = batch_get_benchmark_tags(session, benchmark_ids)
+    # Fallback to JSON column for benchmarks with no normalised tag rows
+    for b in benchmarks:
+        if b.id is not None and not tags_by_bench.get(b.id):
+            raw = json.loads(b.tags or "[]") if isinstance(b.tags, str) else []
+            tags_by_bench[b.id] = [str(t) for t in raw if isinstance(t, str)]
+
+    # Batch-fetch citation counts — eliminates 1 query per benchmark
+    cite_by_bench = _batch_get_citation_counts(session, benchmark_ids)
+
+    return [
+        _to_read(
+            session,
+            b,
+            prefetched_tags=tags_by_bench.get(b.id, []),
+            prefetched_citation_count=cite_by_bench.get(b.id, 0),
+        )
+        for b in benchmarks
+    ]
 
 
 @router.post("/packs", status_code=status.HTTP_201_CREATED)
 def publish_benchmark_pack(payload: BenchmarkPackPublish, session: Session = Depends(get_session)):
     bench_ids = list(dict.fromkeys(payload.benchmark_ids))
-    missing = [bid for bid in bench_ids if not session.get(Benchmark, bid)]
+    found_ids = {b.id for b in session.exec(select(Benchmark).where(Benchmark.id.in_(bench_ids))).all()}
+    missing = [bid for bid in bench_ids if bid not in found_ids]
     if missing:
         raise HTTPException(404, detail=f"Benchmarks not found: {missing}")
 
