@@ -230,6 +230,8 @@ class EvalResult(SQLModel, table=True):
     cost_usd: float        = Field(default=0.0)
     metadata_json: str     = Field(default="{}")
     created_at: datetime   = Field(default_factory=datetime.utcnow)
+    # Human review: None = not reviewed, True = correct (false positive), False = confirmed wrong
+    human_verdict: Optional[bool] = Field(default=None)
 
 
 class FailureProfile(SQLModel, table=True):
