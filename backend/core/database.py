@@ -68,6 +68,7 @@ else:
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
     _run_alembic_migrations()
+    _migrate_add_columns()
     _reset_stuck_campaigns()
     _update_has_dataset()
     _seed_builtin_benchmarks()
@@ -75,6 +76,27 @@ def create_db_and_tables() -> None:
 
 def _run_alembic_migrations() -> None:
     """Run Alembic schema migrations."""
+    try:
+        from alembic import command
+        from alembic.config import Config
+    except Exception as e:
+        logger.warning(f"Alembic unavailable, skipping migrations: {e}")
+        return
+
+    base_dir = Path(__file__).resolve().parent.parent
+    alembic_ini = base_dir / "alembic.ini"
+    script_location = base_dir / "alembic"
+    if not alembic_ini.exists() or not script_location.exists():
+        logger.info("Alembic config not found, skipping migrations.")
+        return
+
+    cfg = Config(str(alembic_ini))
+    cfg.set_main_option("script_location", str(script_location))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    command.upgrade(cfg, "head")
+    logger.info("Alembic migrations completed.")
+
+
 def _migrate_add_columns() -> None:
     """Add new columns to existing tables (idempotent). SQLite only — PostgreSQL uses create_all."""
     if not _is_sqlite:
@@ -108,24 +130,17 @@ def _migrate_add_columns() -> None:
     db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")
     if not db_path or db_path == ":memory:":
         return
-    try:
-        from alembic import command
-        from alembic.config import Config
-    except Exception as e:
-        logger.warning(f"Alembic unavailable, skipping migrations: {e}")
-        return
 
-    base_dir = Path(__file__).resolve().parent.parent
-    alembic_ini = base_dir / "alembic.ini"
-    script_location = base_dir / "alembic"
-    if not alembic_ini.exists() or not script_location.exists():
-        logger.info("Alembic config not found, skipping migrations.")
-        return
-
-    cfg = Config(str(alembic_ini))
-    cfg.set_main_option("script_location", str(script_location))
-    cfg.set_main_option("sqlalchemy.url", settings.database_url)
-    command.upgrade(cfg, "head")
+    with sqlite3.connect(db_path) as conn:
+        for table, column, col_type, default in new_columns:
+            try:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type} DEFAULT {default}"
+                )
+                logger.info(f"Added column {table}.{column}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists — idempotent
+        conn.commit()
 
 
 def _reset_stuck_campaigns() -> None:
