@@ -438,6 +438,8 @@ def get_campaign_live_feed(
 @router.get("/campaign/{campaign_id}/failed-items")
 def get_failed_items(
     campaign_id: int,
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
 ):
     """Get all failed/errored items for a campaign with error classification."""
@@ -447,7 +449,7 @@ def get_failed_items(
     ).all()
 
     if not runs:
-        return {"items": [], "total_failed": 0, "failed_runs": []}
+        return {"items": [], "total_failed": 0, "failed_runs": [], "limit": limit, "offset": offset}
 
     run_ids = [r.id for r in runs]
     model_cache = {}
@@ -473,7 +475,10 @@ def get_failed_items(
 
     # Failed items (eval errors: score=0 or response starts with ERROR)
     all_results = session.exec(
-        select(EvalResult).where(EvalResult.run_id.in_(run_ids))
+        select(EvalResult)
+        .where(EvalResult.run_id.in_(run_ids))
+        .offset(offset)
+        .limit(limit)
     ).all()
 
     failed_items = []
@@ -526,6 +531,8 @@ def get_failed_items(
         "items": failed_items,
         "total_failed": len(failed_items),
         "failed_runs": failed_runs,
+        "limit": limit,
+        "offset": offset,
     }
 
 

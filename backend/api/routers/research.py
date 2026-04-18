@@ -9,7 +9,7 @@ import platform
 from datetime import datetime, UTC
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -74,17 +74,22 @@ def create_workspace(payload: WorkspaceCreate, session: Session = Depends(get_se
 
 
 @router.get("/workspaces")
-def list_workspaces(visibility: Optional[str] = None, session: Session = Depends(get_session)):
+def list_workspaces(
+    visibility: Optional[str] = None,
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+):
     query = select(Workspace)
     if visibility:
         query = query.where(Workspace.visibility == visibility)
-    workspaces = session.exec(query.order_by(Workspace.updated_at.desc())).all()
+    workspaces = session.exec(query.order_by(Workspace.updated_at.desc()).offset(offset).limit(limit)).all()
     return {"workspaces": [{
         "id": w.id, "name": w.name, "slug": w.slug,
         "description": w.description[:200], "status": w.status,
         "risk_domain": w.risk_domain, "visibility": w.visibility,
         "fork_count": w.fork_count, "created_at": w.created_at.isoformat(),
-    } for w in workspaces]}
+    } for w in workspaces], "limit": limit, "offset": offset}
 
 
 @router.get("/workspaces/{workspace_id}")
