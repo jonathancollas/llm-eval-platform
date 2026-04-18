@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
-         Dna, Shield, Gavel, Bot,
+         Dna, Shield, Gavel, Bot, Zap,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
          Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ const NAV_PHASE2 = [
   { href: "/genome",  label: "Genomia",      icon: Dna },
   { href: "/judge",   label: "LLM Judge",    icon: Gavel },
   { href: "/agents",  label: "Agents",       icon: Bot },
+  { href: "/vibe",    label: "Vibe Check",   icon: Zap,  badge: "NEW" },
 ];
 
 // Phase 3 — Real World Eval (ALPHA)
@@ -59,12 +60,12 @@ const MercurySymbol = () => (
 );
 
 function NavSection({ items, activeColor = "bg-slate-900 text-white", hoverColor = "hover:bg-slate-100 hover:text-slate-900", onLinkClick }: {
-  items: typeof NAV_FOUNDATION; activeColor?: string; hoverColor?: string; onLinkClick?: () => void;
+  items: (typeof NAV_FOUNDATION[number] & { badge?: string })[]; activeColor?: string; hoverColor?: string; onLinkClick?: () => void;
 }) {
   const pathname = usePathname();
   return (
     <>
-      {items.map(({ href, label, icon: Icon }) => (
+      {items.map(({ href, label, icon: Icon, badge }) => (
         <Link key={href} href={href} onClick={onLinkClick}
           className={cn(
             "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
@@ -72,6 +73,11 @@ function NavSection({ items, activeColor = "bg-slate-900 text-white", hoverColor
               ? `${activeColor} font-medium` : `text-slate-600 ${hoverColor}`
           )}>
           <Icon size={14} />{label}
+          {badge && (
+            <span className="ml-auto text-[8px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-600 font-bold tracking-wide border border-cyan-200">
+              {badge}
+            </span>
+          )}
         </Link>
       ))}
     </>
