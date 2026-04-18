@@ -768,3 +768,75 @@ class EvalEventRecord(SQLModel, table=True):
         # Enforce append-only at ORM level (raise if someone tries to update)
         # Full enforcement requires DB triggers in production
         pass
+
+
+# ══ M3: Capability Taxonomy — flat-first, graph-ready ════════════════════════
+# Hierarchy: Domain → SubCapability → BenchmarkCapabilityMapping → CapabilityEvalScore
+# Schema is graph-DB-compatible: parent_id self-FK enables future Neo4j migration.
+
+class CapabilityDomainRecord(SQLModel, table=True):
+    """Top-level capability domain (e.g. cybersecurity, reasoning)."""
+    __tablename__ = "capability_domains"
+
+    id: Optional[int]    = Field(default=None, primary_key=True)
+    slug: str            = Field(index=True, unique=True)   # machine-readable key
+    display_name: str    = Field(default="")
+    description: str     = Field(default="")
+    sort_order: int      = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CapabilitySubCapabilityRecord(SQLModel, table=True):
+    """Sub-capability node within a domain (e.g. exploit_generation, logical_deduction).
+
+    The ``parent_id`` self-FK is reserved for a future graph migration (Neo4j):
+    it allows sub-capabilities to form a tree/DAG without a schema change.
+    """
+    __tablename__ = "capability_sub_capabilities"
+
+    id: Optional[int]          = Field(default=None, primary_key=True)
+    domain_id: int             = Field(foreign_key="capability_domains.id", index=True)
+    slug: str                  = Field(index=True)              # unique within domain
+    display_name: str          = Field(default="")
+    description: str           = Field(default="")
+    difficulty: str            = Field(default="medium")        # easy | medium | hard | expert
+    risk_level: str            = Field(default="low")           # low | medium | high | critical
+    # Graph-ready: reserved for future tree/DAG expansion
+    parent_id: Optional[int]   = Field(default=None, sa_column_kwargs={"nullable": True})
+    created_at: datetime       = Field(default_factory=datetime.utcnow)
+
+
+class BenchmarkCapabilityMapping(SQLModel, table=True):
+    """Maps a benchmark to one or more sub-capabilities it evaluates.
+
+    ``mapping_source`` distinguishes auto-inferred mappings (from benchmark name
+    hints in the ontology) from manually curated ones — enabling incremental
+    quality improvement without data loss.
+    """
+    __tablename__ = "benchmark_capability_mappings"
+
+    id: Optional[int]            = Field(default=None, primary_key=True)
+    benchmark_id: int            = Field(foreign_key="benchmarks.id", index=True)
+    sub_capability_id: int       = Field(foreign_key="capability_sub_capabilities.id", index=True)
+    mapping_source: str          = Field(default="auto")        # auto | manual
+    created_at: datetime         = Field(default_factory=datetime.utcnow)
+
+
+class CapabilityEvalScore(SQLModel, table=True):
+    """Persisted capability score for a model on a specific sub-capability.
+
+    Stores the score plus a bootstrap confidence interval so the platform can
+    answer "which capabilities has model X not been evaluated on?" and render
+    the heatmap with statistical context.
+    """
+    __tablename__ = "capability_eval_scores"
+
+    id: Optional[int]              = Field(default=None, primary_key=True)
+    model_id: int                  = Field(foreign_key="llm_models.id", index=True)
+    sub_capability_id: int         = Field(foreign_key="capability_sub_capabilities.id", index=True)
+    eval_run_id: Optional[int]     = Field(default=None, foreign_key="eval_runs.id", index=True)
+    score: float                   = Field(default=0.0)
+    ci_lower: float                = Field(default=0.0)
+    ci_upper: float                = Field(default=1.0)
+    n_items: int                   = Field(default=0)
+    scored_at: datetime            = Field(default_factory=datetime.utcnow)
