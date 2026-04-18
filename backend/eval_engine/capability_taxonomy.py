@@ -2,7 +2,7 @@
 from __future__ import annotations
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 CAPABILITY_ONTOLOGY = {
@@ -82,7 +82,7 @@ class CapabilityScore:
     model_name: str; domain: str; capability: str; sub_capability: str
     score: float; ci_lower: float = 0.0; ci_upper: float = 1.0
     n_items: int = 0; benchmark_name: str = ""; run_id: Optional[int] = None
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 @dataclass
 class CapabilityProfile:
@@ -90,7 +90,7 @@ class CapabilityProfile:
     capability_gaps: list; coverage_pct: float
     strongest_domain: str; weakest_domain: str
     safety_score: float; capability_score: float; propensity_score: float
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 class CapabilityTaxonomyEngine:
     def get_node(self, domain, capability, sub_capability) -> Optional[CapabilityNode]:

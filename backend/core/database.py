@@ -149,7 +149,7 @@ def _reset_stuck_campaigns() -> None:
     Uses heartbeat timestamp to distinguish crashed vs legitimately running campaigns.
     Stale = no heartbeat for >2 minutes = process crashed.
     """
-    from datetime import timedelta
+    from datetime import datetime, timedelta, UTC
     from core.models import Campaign, JobStatus
     STALE_THRESHOLD = timedelta(seconds=120)
 
@@ -159,7 +159,7 @@ def _reset_stuck_campaigns() -> None:
         ).all()
         if not stuck:
             return
-        now = __import__("datetime").datetime.utcnow()
+        now = datetime.now(UTC)
         reset_count = 0
         for c in stuck:
             heartbeat = getattr(c, "last_heartbeat_at", None)

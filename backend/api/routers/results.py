@@ -408,9 +408,9 @@ def get_campaign_live_feed(
 
     started_runs = [r for r in runs if r.started_at]
     if started_runs and total_items_in_db > 0:
-        from datetime import datetime
+        from datetime import datetime, UTC
         earliest = min(r.started_at for r in started_runs)
-        elapsed = (datetime.utcnow() - earliest).total_seconds()
+        elapsed = (datetime.now(UTC) - earliest).total_seconds()
         if elapsed > 1:
             items_per_sec = round(total_items_in_db / elapsed, 2)
 

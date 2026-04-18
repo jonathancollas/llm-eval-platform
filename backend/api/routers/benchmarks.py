@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlmodel import Session, func, select
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, UTC
 import json
 import uuid
 import io
@@ -864,7 +864,7 @@ def fork_benchmark(
     # Check unique
     existing = session.exec(select(Benchmark).where(Benchmark.name == fork_name)).first()
     if existing:
-        fork_name = f"{fork_name} {int(datetime.utcnow().timestamp())}"
+        fork_name = f"{fork_name} {int(datetime.now(UTC).timestamp())}"
 
     # Copy dataset if exists
     fork_dataset_path = parent.dataset_path
@@ -880,7 +880,7 @@ def fork_benchmark(
 
     # Parse parent config to add lineage
     parent_config = json.loads(parent.config_json) if parent.config_json else {}
-    forked_at_iso = datetime.utcnow().isoformat()
+    forked_at_iso = datetime.now(UTC).isoformat()
     fork_config = {
         **parent_config,
         "forked_from": {"id": parent.id, "name": parent.name, "forked_at": forked_at_iso},
@@ -949,7 +949,7 @@ def _default_citations_for_benchmark(bench: Benchmark) -> list[dict]:
         defaults.append({
             "paper_doi": url or title.lower().replace(" ", "-"),
             "citing_lab": (p.get("authors") or "").strip(),
-            "year": int(p.get("year") or datetime.utcnow().year),
+            "year": int(p.get("year") or datetime.now(UTC).year),
         })
     return defaults
 
@@ -1055,7 +1055,7 @@ def get_benchmark_citations(benchmark_id: int, session: Session = Depends(get_se
         labs[lab] = labs.get(lab, 0) + 1
     by_year = {}
     for c in citations:
-        y = int(c.get("year") or datetime.utcnow().year)
+        y = int(c.get("year") or datetime.now(UTC).year)
         by_year[y] = by_year.get(y, 0) + 1
 
     fork_children_count = len(

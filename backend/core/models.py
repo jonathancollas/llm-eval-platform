@@ -3,7 +3,7 @@ SQLModel ORM models — all database tables.
 """
 from sqlmodel import Field, SQLModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 
 
@@ -60,8 +60,8 @@ class LLMModel(SQLModel, table=True):
     instruct_type: str         = Field(default="")
     hugging_face_id: str       = Field(default="")
     model_created_at: int      = Field(default=0)  # unix timestamp
-    created_at: datetime       = Field(default_factory=datetime.utcnow)
-    updated_at: datetime       = Field(default_factory=datetime.utcnow)
+    created_at: datetime       = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime       = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class EvalDimension(str, Enum):
@@ -90,7 +90,7 @@ class Benchmark(SQLModel, table=True):
     risk_threshold: Optional[float] = Field(default=None)
     # Source classification: "inesia" | "public" | "community"
     source: str                      = Field(default="public", sa_column_kwargs={"nullable": True})
-    created_at: datetime             = Field(default_factory=datetime.utcnow)
+    created_at: datetime             = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class BenchmarkTag(SQLModel, table=True):
@@ -112,8 +112,8 @@ class BenchmarkPack(SQLModel, table=True):
     changelog: str = Field(default="")
     benchmark_ids_json: str = Field(default="[]")
     is_public: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 class BenchmarkFork(SQLModel, table=True):
     __tablename__ = "benchmark_forks"
 
@@ -122,7 +122,7 @@ class BenchmarkFork(SQLModel, table=True):
     fork_type: str = Field(default="extension", index=True)
     changes_description: str = Field(default="")
     forked_by: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
-    forked_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    forked_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
 
 
 class BenchmarkCitation(SQLModel, table=True):
@@ -133,7 +133,7 @@ class BenchmarkCitation(SQLModel, table=True):
     paper_doi: str = Field(index=True)
     citing_lab: str = Field(default="", index=True)
     year: int = Field(index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class Campaign(SQLModel, table=True):
@@ -163,7 +163,7 @@ class Campaign(SQLModel, table=True):
     # Heartbeat for durable job queue (#S3) — updated every 30s by running campaign
     last_heartbeat_at: Optional[datetime] = Field(default=None, sa_column_kwargs={"nullable": True})
     worker_task_id: Optional[str] = Field(default=None, sa_column_kwargs={"nullable": True})
-    created_at: datetime          = Field(default_factory=datetime.utcnow)
+    created_at: datetime          = Field(default_factory=lambda: datetime.now(UTC))
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
 
@@ -230,7 +230,7 @@ class EvalResult(SQLModel, table=True):
     output_tokens: int     = Field(default=0)
     cost_usd: float        = Field(default=0.0)
     metadata_json: str     = Field(default="{}")
-    created_at: datetime   = Field(default_factory=datetime.utcnow)
+    created_at: datetime   = Field(default_factory=lambda: datetime.now(UTC))
     # Human review: None = not reviewed, True = correct (false positive), False = confirmed wrong
     human_verdict: Optional[bool] = Field(default=None)
 
@@ -246,7 +246,7 @@ class FailureProfile(SQLModel, table=True):
     benchmark_id: int        = Field(foreign_key="benchmarks.id", index=True)
     genome_json: str         = Field(default="{}")   # {failure_type: probability}
     genome_version: str      = Field(default="1.0.0")
-    created_at: datetime     = Field(default_factory=datetime.utcnow)
+    created_at: datetime     = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ModelFingerprint(SQLModel, table=True):
@@ -257,7 +257,7 @@ class ModelFingerprint(SQLModel, table=True):
     model_id: int            = Field(foreign_key="llm_models.id", index=True, unique=True)
     genome_json: str         = Field(default="{}")   # aggregate genome
     stats_json: str          = Field(default="{}")   # {avg_score, refusal_rate, avg_latency, num_runs}
-    updated_at: datetime     = Field(default_factory=datetime.utcnow)
+    updated_at: datetime     = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RedboxExploit(SQLModel, table=True):
@@ -277,7 +277,7 @@ class RedboxExploit(SQLModel, table=True):
     failure_detected: str     = Field(default="")         # actual failure type
     latency_ms: int           = Field(default=0)
     tags: str                 = Field(default="[]")
-    created_at: datetime      = Field(default_factory=datetime.utcnow)
+    created_at: datetime      = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class JudgeEvaluation(SQLModel, table=True):
@@ -292,7 +292,7 @@ class JudgeEvaluation(SQLModel, table=True):
     judge_score: float         = Field(default=0.0)          # 0-1
     judge_reasoning: str       = Field(default="")
     oracle_score: Optional[float] = Field(default=None)      # human label
-    created_at: datetime       = Field(default_factory=datetime.utcnow)
+    created_at: datetime       = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class AgentTrajectory(SQLModel, table=True):
@@ -321,7 +321,7 @@ class AgentTrajectory(SQLModel, table=True):
     score_overall: Optional[float]           = Field(default=None)
     steps_json: str            = Field(default="[]")  # [{thought, action, observation, tool, args, result}]
     metadata_json: str         = Field(default="{}")
-    created_at: datetime       = Field(default_factory=datetime.utcnow)
+    created_at: datetime       = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class TrajectoryStep(SQLModel, table=True):
@@ -366,7 +366,7 @@ class Report(SQLModel, table=True):
     title: str
     content_markdown: str   = Field(default="")
     model_used: str         = Field(default="")
-    created_at: datetime    = Field(default_factory=datetime.utcnow)
+    created_at: datetime    = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ── INFRA-3: Multi-tenant models ──────────────────────────────────────────────
@@ -384,7 +384,7 @@ class Tenant(SQLModel, table=True):
     max_models: int          = Field(default=20)
     is_active: bool          = Field(default=True)
     settings_json: str       = Field(default="{}")  # tenant-specific settings
-    created_at: datetime     = Field(default_factory=datetime.utcnow)
+    created_at: datetime     = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class User(SQLModel, table=True):
@@ -399,7 +399,7 @@ class User(SQLModel, table=True):
     password_hash: str       = Field(default="")
     is_active: bool          = Field(default=True)
     last_login: Optional[datetime] = Field(default=None)
-    created_at: datetime     = Field(default_factory=datetime.utcnow)
+    created_at: datetime     = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ══ RESEARCH OS ═══════════════════════════════════════════════════════════════
@@ -437,8 +437,8 @@ class Workspace(SQLModel, table=True):
     # Metadata
     tags: str                   = Field(default="[]")
     metadata_json: str          = Field(default="{}")
-    created_at: datetime        = Field(default_factory=datetime.utcnow)
-    updated_at: datetime        = Field(default_factory=datetime.utcnow)
+    created_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ExperimentManifest(SQLModel, table=True):
@@ -476,7 +476,7 @@ class ExperimentManifest(SQLModel, table=True):
     judge_agreement_kappa: Optional[float] = Field(default=None)
     confidence_interval: Optional[str] = Field(default=None)  # JSON: {lower, upper, method}
     # Timestamps
-    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    created_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SafetyIncident(SQLModel, table=True):
@@ -509,8 +509,8 @@ class SafetyIncident(SQLModel, table=True):
     reporter: str               = Field(default="")
     status: str                 = Field(default="open")           # open, confirmed, mitigated, closed
     tags: str                   = Field(default="[]")
-    created_at: datetime        = Field(default_factory=datetime.utcnow)
-    updated_at: datetime        = Field(default_factory=datetime.utcnow)
+    created_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class TelemetryEvent(SQLModel, table=True):
@@ -540,7 +540,7 @@ class TelemetryEvent(SQLModel, table=True):
     model_version: str          = Field(default="")
     tool_names: str             = Field(default="[]")            # Tools the model used
     # Timestamp
-    timestamp: datetime         = Field(default_factory=datetime.utcnow)
+    timestamp: datetime         = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ══ RCT / RWD / RWE — Evidence-Based Evaluation ══════════════════════════════
@@ -583,7 +583,7 @@ class EvalTrial(SQLModel, table=True):
     # Linked campaigns (one per arm)
     campaign_ids: str           = Field(default="[]")
     # Timestamps
-    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    created_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: Optional[datetime] = Field(default=None)
 
 
@@ -613,7 +613,7 @@ class RealWorldDataset(SQLModel, table=True):
     # Metadata
     tags: str                   = Field(default="[]")
     metadata_json: str          = Field(default="{}")
-    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    created_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RealWorldEvidence(SQLModel, table=True):
@@ -646,7 +646,7 @@ class RealWorldEvidence(SQLModel, table=True):
     conclusion: str             = Field(default="")
     recommendations: str        = Field(default="")
     # Timestamps
-    created_at: datetime        = Field(default_factory=datetime.utcnow)
+    created_at: datetime        = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ── Multi-Agent Simulation (#60) ───────────────────────────────────────────────
@@ -695,7 +695,7 @@ class MultiAgentSimulation(SQLModel, table=True):
     total_tokens: int                   = Field(default=0)
     total_cost_usd: float               = Field(default=0.0)
 
-    created_at: datetime                = Field(default_factory=datetime.utcnow)
+    created_at: datetime                = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ── Anti-Sandbagging (#80) ─────────────────────────────────────────────────────
@@ -734,7 +734,7 @@ class SandbaggingReport(SQLModel, table=True):
     total_tokens: int               = Field(default=0)
     total_cost_usd: float           = Field(default=0.0)
 
-    created_at: datetime            = Field(default_factory=datetime.utcnow)
+    created_at: datetime            = Field(default_factory=lambda: datetime.now(UTC))
 # ── Event-Sourced Pipeline (#45) ───────────────────────────────────────────────
 
 class EvalEventRecord(SQLModel, table=True):
@@ -765,7 +765,7 @@ class EvalEventRecord(SQLModel, table=True):
 
     sequence: int           = Field(index=True)    # Monotonic per-campaign
     payload_json: str       = Field(default="{}")  # Event-specific data
-    timestamp: datetime     = Field(default_factory=datetime.utcnow, index=True)
+    timestamp: datetime     = Field(default_factory=lambda: datetime.now(UTC), index=True)
 
     class Config:
         # Enforce append-only at ORM level (raise if someone tries to update)

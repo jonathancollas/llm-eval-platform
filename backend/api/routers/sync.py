@@ -7,7 +7,7 @@ Frontend polls GET /sync/startup/status to know when it's done.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
@@ -244,7 +244,7 @@ async def _run_startup_sync_task() -> None:
         if _sync_state["status"] in ("running", "done"):
             return
         _sync_state["status"] = "running"
-        _sync_state["started_at"] = datetime.utcnow().isoformat()
+        _sync_state["started_at"] = datetime.now(UTC).isoformat()
 
     try:
         # Open a fresh session — request session is already closed by this point
@@ -270,7 +270,7 @@ async def _run_startup_sync_task() -> None:
 
         _sync_state.update({
             "status": "done",
-            "finished_at": datetime.utcnow().isoformat(),
+            "finished_at": datetime.now(UTC).isoformat(),
             "benchmarks_added": benches_added,
             "models_added": models_added,
             "total_benchmarks": total_benches,
@@ -285,7 +285,7 @@ async def _run_startup_sync_task() -> None:
         logger.error(f"[startup] Sync failed: {e}")
         _sync_state.update({
             "status": "error",
-            "finished_at": datetime.utcnow().isoformat(),
+            "finished_at": datetime.now(UTC).isoformat(),
             "error": str(e),
         })
 
@@ -421,7 +421,7 @@ async def _ollama_fetch_tags() -> tuple[bool, list]:
     - Returns (available, models_list)
     """
     global _ollama_available, _ollama_last_check
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     # Cache hit: Ollama known unavailable — skip entirely
     if (
@@ -739,7 +739,7 @@ async def _vllm_fetch_models() -> tuple[bool, list]:
     - Returns (available, models_list)
     """
     global _vllm_available, _vllm_last_check
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     if (
         _vllm_available is False

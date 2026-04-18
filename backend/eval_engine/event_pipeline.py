@@ -35,7 +35,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import Any, Callable, Coroutine, Optional
 from uuid import uuid4
@@ -110,7 +110,7 @@ class EvalEvent:
             event_id=str(uuid4()),
             event_type=event_type,
             campaign_id=campaign_id,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             sequence=sequence,
             payload=payload,
             run_id=run_id,
@@ -538,7 +538,7 @@ async def _live_telemetry_subscriber(event: EvalEvent) -> None:
                 campaign.current_item_label = p.get("current_item_label")
 
             elif event.event_type in (EventType.CAMPAIGN_COMPLETED, EventType.CAMPAIGN_FAILED):
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, UTC
                 campaign.completed_at = _dt.utcnow()
 
             session.add(campaign)

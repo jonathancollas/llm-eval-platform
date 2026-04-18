@@ -9,7 +9,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
@@ -288,7 +288,7 @@ async def get_fleet_dashboard(
                 return data
 
     # Get models with recent telemetry
-    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     recent_events = session.exec(
         select(TelemetryEvent.model_id)
         .where(TelemetryEvent.timestamp >= cutoff)
@@ -299,7 +299,7 @@ async def get_fleet_dashboard(
     active_model_ids = list(set(mid for mid in recent_events if mid))
 
     if not active_model_ids:
-        return {"models": [], "window_hours": window_hours, "generated_at": datetime.utcnow().isoformat()}
+        return {"models": [], "window_hours": window_hours, "generated_at": datetime.now(UTC).isoformat()}
 
     engine = ContinuousMonitoringEngine()
     sem = _get_analysis_semaphore()
@@ -346,7 +346,7 @@ async def get_fleet_dashboard(
         "n_active_models": len(fleet),
         "critical_count": sum(1 for m in fleet if m["health_status"] == "critical"),
         "warning_count": sum(1 for m in fleet if m["health_status"] == "warning"),
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
     with _fleet_cache_lock:
         _fleet_cache[window_hours] = (now, response)
@@ -362,7 +362,7 @@ def get_telemetry_feed(
     session: Session = Depends(get_session),
 ):
     """Recent telemetry events — raw feed for debugging."""
-    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     query = (
         select(TelemetryEvent)
         .where(TelemetryEvent.timestamp >= cutoff)
@@ -401,7 +401,7 @@ def get_telemetry_stats(
     session: Session = Depends(get_session),
 ):
     """Aggregate stats for a model over the time window — fast, no ML."""
-    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     query = select(TelemetryEvent).where(TelemetryEvent.timestamp >= cutoff)
     if model_id:
         query = query.where(TelemetryEvent.model_id == model_id)
