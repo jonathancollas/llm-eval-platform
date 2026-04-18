@@ -1,7 +1,7 @@
 """add capability taxonomy tables (M3)
 
-Revision ID: 20260418_0001
-Revises: 20260413_0001
+Revision ID: 20260418_0002
+Revises: 20260418_0001
 Create Date: 2026-04-18
 
 Creates the four tables that form the flat-first, graph-ready capability
@@ -36,8 +36,8 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Connection
 
 
-revision = "20260418_0001"
-down_revision = "20260413_0001"
+revision = "20260418_0002"
+down_revision = "20260418_0001"
 branch_labels = None
 depends_on = None
 
