@@ -82,6 +82,110 @@ def list_benchmarks(
     return [_to_read(b) for b in session.exec(query).all()]
 
 
+# ── Benchmark Packs — versioned publishable collections ────────────────────────
+
+class BenchmarkPackCreate(BaseModel):
+    name: str
+    slug: str
+    version: str = "1.0.0"
+    publisher: str = ""
+    family: str = ""
+    changelog: str = ""
+    benchmark_ids: list[int] = []
+    is_public: bool = False
+
+
+@router.post("/packs", status_code=201)
+def create_benchmark_pack(
+    payload: BenchmarkPackCreate,
+    session: Session = Depends(get_session),
+):
+    """Create or version a benchmark pack. Same slug = new version of existing pack."""
+    from core.models import BenchmarkPack
+    pack = BenchmarkPack(
+        name=payload.name,
+        slug=payload.slug,
+        version=payload.version,
+        publisher=payload.publisher,
+        family=payload.family,
+        changelog=payload.changelog,
+        benchmark_ids_json=json.dumps(payload.benchmark_ids),
+        is_public=payload.is_public,
+    )
+    session.add(pack)
+    session.commit()
+    session.refresh(pack)
+    return {
+        "id": pack.id,
+        "name": pack.name,
+        "slug": pack.slug,
+        "version": pack.version,
+        "publisher": pack.publisher,
+        "family": pack.family,
+        "changelog": pack.changelog,
+        "benchmark_ids": json.loads(pack.benchmark_ids_json),
+        "is_public": pack.is_public,
+        "created_at": pack.created_at.isoformat(),
+    }
+
+
+@router.get("/packs")
+def list_benchmark_packs(
+    family: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """List benchmark packs, optionally filtered by family."""
+    from core.models import BenchmarkPack
+    from sqlmodel import select as sqlselect
+    q = sqlselect(BenchmarkPack).where(BenchmarkPack.is_public == True)
+    if family:
+        q = q.where(BenchmarkPack.family == family)
+    packs = session.exec(q.order_by(BenchmarkPack.created_at.desc())).all()
+    return {
+        "packs": [
+            {
+                "id": p.id, "name": p.name, "slug": p.slug, "version": p.version,
+                "publisher": p.publisher, "family": p.family, "changelog": p.changelog,
+                "benchmark_ids": json.loads(p.benchmark_ids_json),
+                "is_public": p.is_public, "created_at": p.created_at.isoformat(),
+            }
+            for p in packs
+        ]
+    }
+
+
+@router.get("/packs/{slug}")
+def get_benchmark_pack(slug: str, session: Session = Depends(get_session)):
+    """Get all versions of a pack by slug, returns latest + changelog."""
+    from core.models import BenchmarkPack
+    from sqlmodel import select as sqlselect
+    versions = session.exec(
+        sqlselect(BenchmarkPack)
+        .where(BenchmarkPack.slug == slug)
+        .order_by(BenchmarkPack.created_at.desc())
+    ).all()
+    if not versions:
+        raise HTTPException(404, f"Benchmark pack '{slug}' not found.")
+    latest = versions[0]
+    return {
+        "slug": slug,
+        "name": latest.name,
+        "publisher": latest.publisher,
+        "family": latest.family,
+        "latest_version": latest.version,
+        "versions": [
+            {"version": v.version, "changelog": v.changelog, "created_at": v.created_at.isoformat()}
+            for v in versions
+        ],
+        "changelog": [
+            {"version": v.version, "changelog": v.changelog, "created_at": v.created_at.isoformat()}
+            for v in versions
+        ],
+        "benchmark_ids": json.loads(latest.benchmark_ids_json),
+    }
+
+
+
 @router.get("/{benchmark_id}", response_model=BenchmarkRead)
 def get_benchmark(benchmark_id: int, session: Session = Depends(get_session)):
     bench = session.get(Benchmark, benchmark_id)
@@ -124,7 +228,7 @@ async def upload_dataset(
         raise HTTPException(status_code=400, detail="Cannot override built-in benchmark datasets.")
 
     # ── Security hardening (#S2) ──────────────────────────────────────────────
-    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB hard limit
+    MAX_UPLOAD_BYTES = settings.benchmark_upload_max_bytes  # configurable via env
 
     # MIME type whitelist — only JSON and CSV
     allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
@@ -133,8 +237,11 @@ async def upload_dataset(
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
 
     # Filename sanitization — strip all directory components (path traversal prevention)
-    safe_name = Path(file.filename or "dataset.json").name
-    # Remove any remaining path separators and dangerous characters
+    raw_name = file.filename or "dataset.json"
+    # Reject filenames that contain path traversal sequences BEFORE sanitizing
+    if ".." in raw_name or raw_name.startswith("/") or "\\" in raw_name:
+        raise HTTPException(status_code=400, detail="Invalid file path.")
+    safe_name = Path(raw_name).name
     safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:
         safe_name = "dataset.json"
@@ -601,10 +708,17 @@ def list_benchmark_sources():
 
 # ── Benchmark Forking ──────────────────────────────────────────────────────────
 
+class ForkBenchmarkRequest(BaseModel):
+    new_name: Optional[str] = None
+    fork_type: str = "generic"           # multilingual | adversarial | subset | generic
+    changes_description: str = ""
+    forked_by: Optional[int] = None
+
+
 @router.post("/{benchmark_id}/fork")
 def fork_benchmark(
     benchmark_id: int,
-    new_name: Optional[str] = None,
+    payload: ForkBenchmarkRequest = ForkBenchmarkRequest(),
     session: Session = Depends(get_session),
 ):
     """Fork a benchmark — creates a derivative with lineage tracking."""
@@ -612,7 +726,7 @@ def fork_benchmark(
     if not parent:
         raise HTTPException(404, detail="Benchmark not found.")
 
-    fork_name = new_name or f"{parent.name} (fork)"
+    fork_name = payload.new_name or f"{parent.name} (fork)"
 
     # Check unique
     existing = session.exec(select(Benchmark).where(Benchmark.name == fork_name)).first()
@@ -636,6 +750,9 @@ def fork_benchmark(
     fork_config = {
         **parent_config,
         "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
+        "fork_type": payload.fork_type,
+        "changes_description": payload.changes_description,
+        "forked_by": payload.forked_by,
     }
 
     parent_tags = json.loads(parent.tags) if parent.tags else []
@@ -663,9 +780,109 @@ def fork_benchmark(
     return {
         "id": fork.id,
         "name": fork.name,
+        "fork_type": payload.fork_type,
         "forked_from": {"id": parent.id, "name": parent.name},
         "dataset_path": fork_dataset_path,
     }
+
+
+
+
+@router.get("/{benchmark_id}/lineage")
+def get_benchmark_lineage(benchmark_id: int, session: Session = Depends(get_session)):
+    """Return fork lineage for a benchmark — parent and children."""
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(404)
+
+    # Find parent via config_json
+    config = json.loads(bench.config_json) if bench.config_json else {}
+    parent_info = config.get("forked_from")
+
+    # Find children (benchmarks that forked from this one)
+    all_benches = session.exec(select(Benchmark)).all()
+    children = []
+    for b in all_benches:
+        c = json.loads(b.config_json) if b.config_json else {}
+        pf = c.get("forked_from", {})
+        if isinstance(pf, dict) and pf.get("id") == benchmark_id:
+            children.append({
+                "id": b.id,
+                "name": b.name,
+                "fork_type": c.get("fork_type", "generic"),
+                "changes_description": c.get("changes_description", ""),
+                "forked_by": c.get("forked_by"),
+                "forked_at": pf.get("forked_at", ""),
+            })
+
+    return {
+        "benchmark_id": benchmark_id,
+        "benchmark_name": bench.name,
+        "parent": parent_info if parent_info else None,
+        "fork_count": len(children),
+        "children": children,
+    }
+
+
+@router.get("/{benchmark_id}/citations")
+def list_benchmark_citations(benchmark_id: int, session: Session = Depends(get_session)):
+    """List papers that cite this benchmark, with influence score."""
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(404)
+    config = json.loads(bench.config_json) if bench.config_json else {}
+    citations = config.get("citations", [])
+
+    # Build labs list from citations
+    labs = []
+    for c in citations:
+        lab = c.get("citing_lab", "")
+        if lab:
+            labs.append({"name": lab, "year": c.get("year"), "doi": c.get("paper_doi", "")})
+
+    # Count direct children forks for influence
+    all_benches = session.exec(select(Benchmark)).all()
+    fork_count = sum(
+        1 for b in all_benches
+        if b.id != benchmark_id and (json.loads(b.config_json) if b.config_json else {}).get("forked_from", {}).get("id") == benchmark_id
+    )
+    influence_score = len(citations) + fork_count
+
+    return {
+        "benchmark_id": benchmark_id,
+        "citations": citations,
+        "citation_count": len(citations),
+        "count": len(citations),       # legacy alias
+        "labs": labs,
+        "fork_count": fork_count,
+        "influence_score": influence_score,
+    }
+
+
+@router.post("/{benchmark_id}/citations")
+def add_benchmark_citation(
+    benchmark_id: int,
+    payload: dict,
+    session: Session = Depends(get_session),
+):
+    """Record that a paper cites this benchmark."""
+    bench = session.get(Benchmark, benchmark_id)
+    if not bench:
+        raise HTTPException(404)
+    config = json.loads(bench.config_json) if bench.config_json else {}
+    citations = config.get("citations", [])
+    citation_entry = {
+        "paper_doi": payload.get("paper_doi", ""),
+        "citing_lab": payload.get("citing_lab", ""),
+        "year": payload.get("year"),
+        "added_at": datetime.utcnow().isoformat(),
+    }
+    citations.append(citation_entry)
+    config["citations"] = citations
+    bench.config_json = json.dumps(config)
+    session.add(bench)
+    session.commit()
+    return {"benchmark_id": benchmark_id, "citation": citation_entry, "total_citations": len(citations)}
 
 
 # ── Benchmark Card (scientific provenance) ────────────────────────────────────
@@ -886,3 +1103,4 @@ def get_benchmark_versions(benchmark_id: int, session: Session = Depends(get_ses
             f"Current hash: {version_hash}"
         ),
     }
+

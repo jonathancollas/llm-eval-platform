@@ -115,11 +115,51 @@ class Campaign(SQLModel, table=True):
     current_item_index: Optional[int] = Field(default=None)
     current_item_total: Optional[int] = Field(default=None)
     current_item_label: Optional[str] = Field(default=None)
+    # Multi-tenancy
+    tenant_id: Optional[int]       = Field(default=None, foreign_key="tenants.id", index=True,
+                                           sa_column_kwargs={"nullable": True})
+    owner_id: Optional[int]        = Field(default=None, sa_column_kwargs={"nullable": True})
     # Heartbeat for durable job queue (#S3) — updated every 30s by running campaign
     last_heartbeat_at: Optional[datetime] = Field(default=None, sa_column_kwargs={"nullable": True})
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
+
+
+# ── #S4 Normalised join tables ────────────────────────────────────────────────
+# These replace the JSON string fields (model_ids, benchmark_ids) on Campaign.
+# Dual-write approach: new rows go in join tables AND legacy JSON field,
+# so old code keeps working during migration.
+
+class CampaignModel(SQLModel, table=True):
+    """Campaign ↔ LLMModel many-to-many link (normalised, replaces model_ids JSON)."""
+    __tablename__ = "campaign_models"
+    campaign_id: int = Field(foreign_key="campaigns.id", primary_key=True, index=True)
+    model_id: int    = Field(foreign_key="llm_models.id", primary_key=True, index=True)
+
+
+class CampaignBenchmark(SQLModel, table=True):
+    """Campaign ↔ Benchmark many-to-many link (normalised, replaces benchmark_ids JSON)."""
+    __tablename__ = "campaign_benchmarks"
+    campaign_id:   int = Field(foreign_key="campaigns.id",  primary_key=True, index=True)
+    benchmark_id:  int = Field(foreign_key="benchmarks.id", primary_key=True, index=True)
+
+
+class BenchmarkTag(SQLModel, table=True):
+    """Benchmark tags — normalised, replaces tags JSON string on Benchmark."""
+    __tablename__ = "benchmark_tags"
+    id:           Optional[int] = Field(default=None, primary_key=True)
+    benchmark_id: int           = Field(foreign_key="benchmarks.id", index=True)
+    tag:          str           = Field(index=True)
+
+
+class EvalRunMetric(SQLModel, table=True):
+    """Per-metric rows for EvalRun (normalised, replaces metrics_json string)."""
+    __tablename__ = "eval_run_metrics"
+    id:               Optional[int] = Field(default=None, primary_key=True)
+    run_id:           int           = Field(foreign_key="eval_runs.id", index=True)
+    metric_key:       str
+    metric_value_json: str          = Field(default="null")  # JSON-encoded value
 
 
 class EvalRun(SQLModel, table=True):
@@ -702,6 +742,79 @@ class EvalEventRecord(SQLModel, table=True):
         # Full enforcement requires DB triggers in production
         pass
 
+
+
+
+
+class BenchmarkPack(SQLModel, table=True):
+    """
+    Versioned, publishable collection of benchmarks (#research collaboration).
+    Allows labs to publish curated benchmark suites with changelogs.
+    """
+    __tablename__ = "benchmark_packs"
+
+    id:               Optional[int] = Field(default=None, primary_key=True)
+    name:             str           = Field(index=True)
+    slug:             str           = Field(index=True)      # URL-safe identifier
+    version:          str           = Field(default="1.0.0") # semver
+    publisher:        str           = Field(default="")
+    family:           str           = Field(default="", index=True)  # grouping key
+    changelog:        str           = Field(default="")
+    benchmark_ids_json: str         = Field(default="[]")   # JSON list of benchmark IDs
+    is_public:        bool          = Field(default=False)
+    tenant_id:        Optional[int] = Field(default=None, sa_column_kwargs={"nullable": True})
+    created_at:       datetime      = Field(default_factory=datetime.utcnow)
+
+# ── Capability taxonomy tables (M3 — alembic 20260418_0002) ──────────────────
+# Schema matches tests/test_capability_taxonomy_db.py exactly.
+
+class CapabilityDomainRecord(SQLModel, table=True):
+    """Top-level capability domain (e.g. cybersecurity, reasoning)."""
+    __tablename__ = "capability_domains"
+    id:           Optional[int] = Field(default=None, primary_key=True)
+    slug:         str           = Field(index=True, unique=True)   # machine key
+    display_name: str
+    description:  str           = Field(default="")
+    sort_order:   int           = Field(default=0)
+    is_blocking:  bool          = Field(default=False)
+
+
+class CapabilitySubCapabilityRecord(SQLModel, table=True):
+    """Sub-capability within a domain."""
+    __tablename__ = "capability_sub_capabilities"
+    id:          Optional[int] = Field(default=None, primary_key=True)
+    domain_id:   int           = Field(foreign_key="capability_domains.id", index=True)
+    parent_id:   Optional[int] = Field(default=None, sa_column_kwargs={"nullable": True})
+    slug:        str           = Field(index=True)
+    display_name: str
+    description: str           = Field(default="")
+    difficulty:  str           = Field(default="medium")   # easy | medium | hard
+    risk_level:  str           = Field(default="low")      # low | medium | high | critical
+
+
+class BenchmarkCapabilityMapping(SQLModel, table=True):
+    """Links a Benchmark to a sub-capability it evaluates."""
+    __tablename__ = "benchmark_capability_mappings"
+    id:               Optional[int] = Field(default=None, primary_key=True)
+    benchmark_id:     int           = Field(foreign_key="benchmarks.id", index=True)
+    sub_capability_id: int          = Field(foreign_key="capability_sub_capabilities.id", index=True)
+    mapping_source:   str           = Field(default="auto")  # auto | manual
+    weight:           float         = Field(default=1.0)
+
+
+class CapabilityEvalScore(SQLModel, table=True):
+    """Per-model score on a sub-capability."""
+    __tablename__ = "capability_eval_scores"
+    id:               Optional[int]   = Field(default=None, primary_key=True)
+    model_id:         int             = Field(foreign_key="llm_models.id", index=True)
+    sub_capability_id: int            = Field(foreign_key="capability_sub_capabilities.id", index=True)
+    benchmark_id:     Optional[int]   = Field(default=None, sa_column_kwargs={"nullable": True})
+    eval_run_id:      Optional[int]   = Field(default=None, sa_column_kwargs={"nullable": True})
+    score:            float
+    n_items:          int             = Field(default=0)
+    ci_lower:         Optional[float] = Field(default=None, sa_column_kwargs={"nullable": True})
+    ci_upper:         Optional[float] = Field(default=None, sa_column_kwargs={"nullable": True})
+    recorded_at:      datetime        = Field(default_factory=datetime.utcnow)
 
 # ── #S4 JSON field helpers ────────────────────────────────────────────────────
 # Full normalization (JSON → join tables) is tracked in #S4.

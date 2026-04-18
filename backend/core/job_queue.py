@@ -302,10 +302,13 @@ def is_running(campaign_id: int) -> bool:
 def get_queue_status() -> dict:
     """Return a summary dict consumed by the /api/health endpoint."""
     running = get_all_running()
+    active = len([s for s in running.values() if s == "running"])
+    stale  = len([s for s in running.values() if s == "stale"])
     return {
         "mode": "celery",
-        "in_memory_tasks": len([s for s in running.values() if s == "running"]),
-        "stale_tasks": len([s for s in running.values() if s == "stale"]),
+        "running": active,          # used by health endpoint
+        "in_memory_tasks": active,  # legacy key — kept for compat
+        "stale_tasks": stale,
         "total_tracked": len(running),
     }
 
@@ -361,11 +364,4 @@ def recover_stale_campaigns() -> list[int]:
     return recovered
 
 
-def get_queue_status() -> dict:
-    """Return current queue status for health endpoint."""
-    in_process = {cid for cid, t in _running_tasks.items() if not t.done()}
-    return {
-        "mode": "asyncio+heartbeat",
-        "running": len(in_process),
-        "campaign_ids": list(in_process),
-    }
+
