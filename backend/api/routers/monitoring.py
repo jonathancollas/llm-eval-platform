@@ -3,6 +3,7 @@ Continuous Runtime Monitoring API (#79)
 ========================================
 Telemetry ingestion + NIST AI 800-4 compliant monitoring dashboard.
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -116,12 +117,37 @@ async def ingest_telemetry_batch(
     if len(payload.events) > 1000:
         raise HTTPException(400, detail="Max 1000 events per batch.")
 
+    # Parallel safety classification with bounded concurrency.
+    # Short-circuit entirely when Llama Guard is disabled (default) so no
+    # coroutines are created and the loop below never touches the classifier.
+    safety_results: dict[int, tuple[Optional[str], Optional[float]]] = {}
+    if settings.llama_guard_enabled:
+        sem = asyncio.Semaphore(10)
+
+        async def _classify(idx: int, e: TelemetryIngest) -> tuple[int, Optional[str], Optional[float]]:
+            try:
+                async with sem:
+                    flag, conf = await classify_runtime_safety(e.prompt or "", e.response or "")
+                return idx, flag, conf
+            except Exception:
+                return idx, None, None
+
+        classifications = await asyncio.gather(
+            *[
+                _classify(i, e)
+                for i, e in enumerate(payload.events)
+                if e.safety_flag is None
+            ]
+        )
+        for idx, flag, conf in classifications:
+            safety_results[idx] = (flag, conf)
+
     records = []
-    for e in payload.events:
+    for i, e in enumerate(payload.events):
         safety_flag = e.safety_flag
         confidence = e.confidence
-        if safety_flag is None:
-            auto_flag, auto_conf = await classify_runtime_safety(e.prompt or "", e.response or "")
+        if safety_flag is None and i in safety_results:
+            auto_flag, auto_conf = safety_results[i]
             if auto_flag:
                 safety_flag = auto_flag
             if confidence is None and auto_conf is not None:
