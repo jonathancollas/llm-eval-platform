@@ -33,6 +33,12 @@ _dashboard_cache_lock = threading.Lock()
 _DASHBOARD_TTL_RUNNING = 5.0    # seconds — running campaigns change fast
 _DASHBOARD_TTL_COMPLETED = 30.0  # seconds — completed campaigns are stable
 
+# ── In-process TTL cache for stats/summary ───────────────────────────────────
+# This endpoint is polled every 30 s by SWR; caching for 30 s cuts DB load ~50×.
+_stats_cache: tuple[float, object] | None = None
+_stats_cache_lock = threading.Lock()
+_STATS_TTL = 30.0  # seconds
+
 _CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -207,6 +213,15 @@ def get_stats_summary(session: Session = Depends(get_session)):
     Returns the five counters shown on the home page overview:
       models, benchmarks, inesia_benchmarks, campaigns, completed_runs
     """
+    global _stats_cache
+
+    now = time.monotonic()
+    with _stats_cache_lock:
+        if _stats_cache is not None:
+            ts, data = _stats_cache
+            if now - ts < _STATS_TTL:
+                return data
+
     from core.models import LLMModel as _LLMModel, Benchmark as _Benchmark
 
     # Single pass for model count
@@ -224,13 +239,16 @@ def get_stats_summary(session: Session = Depends(get_session)):
         select(func.count()).select_from(Campaign).where(Campaign.status == JobStatus.COMPLETED)
     ).one()
 
-    return {
+    result = {
         "models": model_count,
         "benchmarks": bench_count,
         "inesia_benchmarks": inesia_bench_count,
         "campaigns": campaign_count,
         "completed_runs": completed_count,
     }
+    with _stats_cache_lock:
+        _stats_cache = (now, result)
+    return result
 
 
 @router.get("/run/{run_id}/items")

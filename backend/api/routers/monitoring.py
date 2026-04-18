@@ -3,9 +3,12 @@ Continuous Runtime Monitoring API (#79)
 ========================================
 Telemetry ingestion + NIST AI 800-4 compliant monitoring dashboard.
 """
+import asyncio
 import hashlib
 import json
 import logging
+import threading
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -22,6 +25,13 @@ from eval_engine.safety.llama_guard import classify_runtime_safety
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# ── In-process TTL cache for fleet dashboard ──────────────────────────────────
+# The fleet dashboard runs asyncio.gather × up to 20 NIST analyses per request.
+# Cache per window_hours key for 60 s to avoid repeated heavy computation.
+_fleet_cache: dict[int, tuple[float, object]] = {}
+_fleet_cache_lock = threading.Lock()
+_FLEET_TTL = 60.0  # seconds
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -244,6 +254,14 @@ async def get_fleet_dashboard(
     Fleet-level monitoring dashboard — one row per active model.
     Shows health status, top alert, and key metrics for each model.
     """
+    now = time.monotonic()
+    with _fleet_cache_lock:
+        cached = _fleet_cache.get(window_hours)
+        if cached is not None:
+            ts, data = cached
+            if now - ts < _FLEET_TTL:
+                return data
+
     # Get models with recent telemetry
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
     recent_events = session.exec(
@@ -291,7 +309,7 @@ async def get_fleet_dashboard(
 
     fleet.sort(key=lambda x: x["overall_health"])  # Worst health first
 
-    return {
+    response = {
         "models": fleet,
         "window_hours": window_hours,
         "n_active_models": len(fleet),
@@ -299,6 +317,9 @@ async def get_fleet_dashboard(
         "warning_count": sum(1 for m in fleet if m["health_status"] == "warning"),
         "generated_at": datetime.utcnow().isoformat(),
     }
+    with _fleet_cache_lock:
+        _fleet_cache[window_hours] = (now, response)
+    return response
 
 
 @router.get("/telemetry")
@@ -426,8 +447,6 @@ async def _auto_score_event(event_id: int, prompt: str, response: str) -> None:
     except Exception as e:
         logger.debug(f"[auto-score] Failed for event {event_id}: {e}")
 
-
-import asyncio  # noqa: E402 — needed for fleet dashboard gather
 
 
 # ── #112 OpenTelemetry + Langfuse integration ─────────────────────────────────
