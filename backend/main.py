@@ -37,6 +37,7 @@ from api.routers import plugins as plugins_router
 from api.routers import capability as capability_router
 from api.routers import scenarios as scenarios_router
 from api.routers import forecasting as forecasting_router
+from api.routers import tasks as tasks_router
 from api.routers import failure_patterns as failure_patterns_router
 from api.routers import reward_hacking as reward_hacking_router
 from api.routers import vibe as vibe_router
@@ -318,7 +319,7 @@ tenant_scoped_routers = [
     research.router, evidence.router, deep_analysis.router,
     multiagent.router, events_router.router, monitoring.router, science.router,
     statistics_router.router, plugins_router.router, capability_router.router,
-    scenarios_router.router, forecasting_router.router,
+    scenarios_router.router, forecasting_router.router, tasks_router.router,
     failure_patterns_router.router,
     reward_hacking_router.router,
     vibe_router.router,

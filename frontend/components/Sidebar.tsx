@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot, Zap,
-         Beaker, AlertCircle, Radio, Lock, FlaskConical, List,
-         Menu, X, Rocket, LineChart, Layers, TestTubes, Search,
+         Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
+         Menu, X, Rocket, LineChart, Layers, Search, ClipboardList,
          Crosshair, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
@@ -43,6 +43,7 @@ const NAV_OPERATE = [
 const NAV_LIBRARY = [
   { href: "/models",      label: "Models",      icon: Cpu },
   { href: "/benchmarks",  label: "Benchmarks",  icon: Library },
+  { href: "/tasks",       label: "Task Registry", icon: ClipboardList },
   { href: "/evidence",    label: "Evidence",    icon: TestTubes },
   { href: "/research",    label: "Workspaces",  icon: Beaker },
   { href: "/methodology", label: "Methodology", icon: FlaskConical },

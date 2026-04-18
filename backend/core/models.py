@@ -100,6 +100,44 @@ class BenchmarkTag(SQLModel, table=True):
     tag: str = Field(primary_key=True, index=True)
 
 
+class TaskRegistryEntry(SQLModel, table=True):
+    """Persistent record for a task registry entry (canonical task ID + rich metadata)."""
+    __tablename__ = "task_registry"
+
+    # Canonical ID: namespace:benchmark:task_id
+    canonical_id: str            = Field(primary_key=True, index=True)
+
+    name: str                    = Field(index=True)
+    description: str             = Field(default="")
+
+    # Taxonomy
+    domain: str                  = Field(default="", index=True)
+    capability_tags: str         = Field(default="[]")   # JSON array
+    difficulty: str              = Field(default="medium", index=True)
+
+    # Provenance
+    benchmark_name: str          = Field(default="", index=True)
+    namespace: str               = Field(default="public", index=True)
+    source_url: str              = Field(default="")
+    paper_url: str               = Field(default="")
+    year: Optional[int]          = Field(default=None)
+
+    # Licensing
+    license: str                 = Field(default="unknown")
+    provenance: str              = Field(default="")
+
+    # Contamination risk
+    contamination_risk: str      = Field(default="low", index=True)
+    known_contamination_notes: str = Field(default="")
+
+    # Environment / dependencies
+    required_environment: str    = Field(default="none")
+    dependencies: str            = Field(default="[]")   # JSON array
+
+    created_at: datetime         = Field(default_factory=datetime.utcnow)
+    updated_at: datetime         = Field(default_factory=datetime.utcnow)
+
+
 class BenchmarkPack(SQLModel, table=True):
     __tablename__ = "benchmark_packs"
 
