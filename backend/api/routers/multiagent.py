@@ -563,7 +563,6 @@ def _get_sample_questions(benchmark, n_samples: int, session: Session) -> list[d
     # Fallback: load from benchmark dataset file
     if benchmark.dataset_path:
         import json as _json
-        from pathlib import Path
         from core.config import get_settings as _gs
         from core.security import safe_bench_path
         try:

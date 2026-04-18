@@ -23,7 +23,6 @@ Human validation gate:
   enters the canonical failure taxonomy.  Confirmed patterns can then be used
   to guide (but never auto-generate) new eval cases.
 """
-from __future__ import annotations
 
 import logging
 import uuid
@@ -34,7 +33,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from eval_engine.failure_clustering import FailureClusteringEngine, FailureCluster, ClusteringReport
-from eval_engine.anomaly_detection import AnomalyDetectionEngine, AnomalyReport
+from eval_engine.anomaly_detection import AnomalyDetectionEngine
 
 router = APIRouter(prefix="/failure-patterns", tags=["failure-patterns"])
 logger = logging.getLogger(__name__)

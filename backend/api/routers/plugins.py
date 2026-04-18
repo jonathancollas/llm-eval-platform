@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, List
-from sqlmodel import Session, select
+from typing import Optional
+from sqlmodel import Session
 from core.database import get_session
 from core.models import EvalRun
-from eval_engine.plugin_sdk import plugin_registry, ValidationResult
+from eval_engine.plugin_sdk import plugin_registry
 from eval_engine.plugin_sdk.validator import validate_benchmark_plugin
 from eval_engine.research_export import ExportConfig, export_json_ld, export_csv, export_latex_table, export_bibtex, export_helm, export_eval_card
 
