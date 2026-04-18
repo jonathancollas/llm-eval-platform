@@ -346,6 +346,10 @@ class HarnessRunner(BaseBenchmarkRunner):
             numpy_random_seed=seed,
             torch_random_seed=seed,
             log_samples=True,
+            # Explicitly disable the sqlitedict-backed cache to avoid
+            # CVE-2024-35515 (insecure deserialization in sqlitedict).
+            use_cache=None,
+            cache_requests=False,
         )
 
         latency_ms = int((time.monotonic() - t0) * 1000)
