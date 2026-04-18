@@ -89,7 +89,7 @@ class ForecastCalibrationRecord:
     actual_score: float
     horizon_label: str
     absolute_error: float
-    recorded_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    recorded_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
