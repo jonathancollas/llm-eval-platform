@@ -1,8 +1,9 @@
 """
 Benchmarks — CRUD + dataset upload + HuggingFace import.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -17,6 +18,7 @@ from core.config import get_settings
 from core.relations import get_benchmark_tags, replace_benchmark_tags
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
+logger = logging.getLogger(__name__)
 settings = get_settings()
 UPLOAD_CHUNK_BYTES = 1024 * 1024  # 1MB
 
@@ -116,13 +118,16 @@ def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
         parent_id = parent.get("id")
         return int(parent_id) if parent_id is not None else None
     except Exception:
+        logger.debug("[benchmarks] failed to extract parent id from config for benchmark %s", bench.id, exc_info=True)
         return None
 
 
 def _get_citation_count(session: Session, benchmark_id: Optional[int]) -> int:
     if benchmark_id is None:
         return 0
-    return len(session.exec(select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)).all())
+    return session.exec(
+        select(func.count()).select_from(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
+    ).one()
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -408,7 +413,8 @@ async def get_benchmark_items(
 
     # 1. Try local JSON file first
     if benchmark.dataset_path:
-        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        from core.security import safe_bench_path
+        full_path = safe_bench_path(settings.bench_library_path, benchmark.dataset_path)
         if full_path.exists():
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
@@ -417,6 +423,8 @@ async def get_benchmark_items(
                 # Cap in-memory items to prevent DoS on very large files
                 items = all_items[:10_000]
                 source = "local"
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
 
@@ -496,6 +504,7 @@ def _load_hf_items(task_name: str, limit: int = 60) -> list[dict]:
                         item["_answer"] = task.doc_to_target(doc)
                     items.append(item)
                 except Exception:
+                    logger.debug("[benchmarks] failed to render prompt/answer for doc; using raw doc", exc_info=True)
                     items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
             else:
                 items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
@@ -887,6 +896,7 @@ def get_benchmark_lineage(benchmark_id: int, session: Session = Depends(get_sess
         try:
             meta = json.loads(candidate.config_json or "{}").get("fork_metadata", {}) or {}
         except Exception:
+            logger.debug("[benchmarks] failed to parse fork_metadata for benchmark %s", candidate.id, exc_info=True)
             meta = {}
         children.append({
             "id": candidate.id,
@@ -1164,6 +1174,7 @@ def _get_threat_domains(name: str) -> list[dict]:
         from eval_engine.threat_taxonomy import get_threat_domains
         return get_threat_domains(name)
     except Exception:
+        logger.debug("[benchmarks] failed to get threat domains for %r", name, exc_info=True)
         return []
 
 def _is_blocking(name: str) -> bool:
@@ -1171,6 +1182,7 @@ def _is_blocking(name: str) -> bool:
         from eval_engine.threat_taxonomy import is_blocking
         return is_blocking(name)
     except Exception:
+        logger.debug("[benchmarks] failed to check is_blocking for %r", name, exc_info=True)
         return False
 
 @router.get("/{benchmark_id}/card")

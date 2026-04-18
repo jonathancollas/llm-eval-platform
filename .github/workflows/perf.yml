@@ -1,0 +1,43 @@
+name: Performance Baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'backend/**'
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start backend
+        run: docker compose up -d backend
+
+      - name: Wait for backend
+        run: python -c "import time; time.sleep(10)"
+
+      - name: Run perf baseline
+        run: |
+          cd backend
+          pip install httpx
+          python tests/perf_baseline.py --runs 5 --output /tmp/perf.json
+
+      - name: Check regression
+        run: |
+          cd backend
+          python tests/perf_baseline.py --check-regression \
+            --threshold-p95 2000 \
+            --input /tmp/perf.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-baseline
+          path: /tmp/perf.json

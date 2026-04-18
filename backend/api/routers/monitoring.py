@@ -3,6 +3,7 @@ Continuous Runtime Monitoring API (#79)
 ========================================
 Telemetry ingestion + NIST AI 800-4 compliant monitoring dashboard.
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -116,12 +117,37 @@ async def ingest_telemetry_batch(
     if len(payload.events) > 1000:
         raise HTTPException(400, detail="Max 1000 events per batch.")
 
+    # Parallel safety classification with bounded concurrency.
+    # Short-circuit entirely when Llama Guard is disabled (default) so no
+    # coroutines are created and the loop below never touches the classifier.
+    safety_results: dict[int, tuple[Optional[str], Optional[float]]] = {}
+    if settings.llama_guard_enabled:
+        sem = asyncio.Semaphore(10)
+
+        async def _classify(idx: int, e: TelemetryIngest) -> tuple[int, Optional[str], Optional[float]]:
+            try:
+                async with sem:
+                    flag, conf = await classify_runtime_safety(e.prompt or "", e.response or "")
+                return idx, flag, conf
+            except Exception:
+                return idx, None, None
+
+        classifications = await asyncio.gather(
+            *[
+                _classify(i, e)
+                for i, e in enumerate(payload.events)
+                if e.safety_flag is None
+            ]
+        )
+        for idx, flag, conf in classifications:
+            safety_results[idx] = (flag, conf)
+
     records = []
-    for e in payload.events:
+    for i, e in enumerate(payload.events):
         safety_flag = e.safety_flag
         confidence = e.confidence
-        if safety_flag is None:
-            auto_flag, auto_conf = await classify_runtime_safety(e.prompt or "", e.response or "")
+        if safety_flag is None and i in safety_results:
+            auto_flag, auto_conf = safety_results[i]
             if auto_flag:
                 safety_flag = auto_flag
             if confidence is None and auto_conf is not None:
@@ -244,6 +270,13 @@ async def get_fleet_dashboard(
     Fleet-level monitoring dashboard — one row per active model.
     Shows health status, top alert, and key metrics for each model.
     """
+    # Serve from cache if fresh
+    cached = _dashboard_cache.get(window_hours)
+    if cached is not None:
+        result, ts = cached
+        if datetime.utcnow() - ts < _DASHBOARD_CACHE_TTL:
+            return result
+
     # Get models with recent telemetry
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
     recent_events = session.exec(
@@ -259,8 +292,14 @@ async def get_fleet_dashboard(
         return {"models": [], "window_hours": window_hours, "generated_at": datetime.utcnow().isoformat()}
 
     engine = ContinuousMonitoringEngine()
+    sem = _get_analysis_semaphore()
+
+    async def analyze_bounded(mid: int):
+        async with sem:
+            return await engine.analyze(mid, window_hours)
+
     results = await asyncio.gather(
-        *[engine.analyze(mid, window_hours) for mid in active_model_ids[:20]],  # Cap at 20
+        *[analyze_bounded(mid) for mid in active_model_ids[:20]],  # Cap at 20
         return_exceptions=True,
     )
 
@@ -291,7 +330,7 @@ async def get_fleet_dashboard(
 
     fleet.sort(key=lambda x: x["overall_health"])  # Worst health first
 
-    return {
+    response = {
         "models": fleet,
         "window_hours": window_hours,
         "n_active_models": len(fleet),
@@ -299,6 +338,8 @@ async def get_fleet_dashboard(
         "warning_count": sum(1 for m in fleet if m["health_status"] == "warning"),
         "generated_at": datetime.utcnow().isoformat(),
     }
+    _dashboard_cache[window_hours] = (response, datetime.utcnow())
+    return response
 
 
 @router.get("/telemetry")
@@ -428,6 +469,21 @@ async def _auto_score_event(event_id: int, prompt: str, response: str) -> None:
 
 
 import asyncio  # noqa: E402 — needed for fleet dashboard gather
+
+# ── Fleet dashboard — concurrency + cache ─────────────────────────────────────
+# Limit concurrent NIST analyses to avoid exhausting the DB connection pool
+# (pool_size=5 + max_overflow=10 → max 15 connections; cap at 5 concurrent analyses).
+_analysis_semaphore: asyncio.Semaphore | None = None
+
+def _get_analysis_semaphore() -> asyncio.Semaphore:
+    global _analysis_semaphore
+    if _analysis_semaphore is None:
+        _analysis_semaphore = asyncio.Semaphore(5)
+    return _analysis_semaphore
+
+# Simple TTL cache: window_hours → (result_dict, computed_at)
+_dashboard_cache: dict[int, tuple[dict, datetime]] = {}
+_DASHBOARD_CACHE_TTL = timedelta(seconds=120)
 
 
 # ── #112 OpenTelemetry + Langfuse integration ─────────────────────────────────
