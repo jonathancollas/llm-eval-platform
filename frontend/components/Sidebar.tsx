@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
-         Menu, X } from "lucide-react";
+         Menu, X, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -36,6 +36,11 @@ const NAV_PHASE3 = [
   { href: "/research",   label: "Workspaces",        icon: Beaker },
   { href: "/incidents",  label: "Incidents (SIX)",   icon: AlertCircle },
   { href: "/telemetry",  label: "Monitoring",         icon: Radio },
+];
+
+// Phase 5 — Frontier Research (M5)
+const NAV_PHASE5 = [
+  { href: "/forecasting", label: "Forecasting", icon: TrendingUp },
 ];
 
 const MercurySymbol = () => (
@@ -120,6 +125,12 @@ function NavContent({ onLinkClick }: { onLinkClick?: () => void }) {
       <div className="pt-2 mt-2 border-t border-slate-100">
         <PhaseHeader number={3} label="Real World Eval" color="bg-violet-700" badge="ALPHA" />
         <NavSection items={NAV_PHASE3} activeColor="bg-violet-700 text-white" hoverColor="hover:bg-violet-50 hover:text-violet-700" onLinkClick={onLinkClick} />
+      </div>
+
+      {/* Phase 5 — Frontier Research (M5) */}
+      <div className="pt-2 mt-2 border-t border-slate-100">
+        <PhaseHeader number={5} label="Frontier Research" color="bg-rose-700" badge="M5" />
+        <NavSection items={NAV_PHASE5} activeColor="bg-rose-700 text-white" hoverColor="hover:bg-rose-50 hover:text-rose-700" onLinkClick={onLinkClick} />
       </div>
 
       {/* About */}

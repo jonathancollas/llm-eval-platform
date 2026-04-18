@@ -233,3 +233,73 @@ export const judgeApi = {
   bias: (campaignId: number) => apiFetch<any>(`/judge/bias/${campaignId}`),
   summary: (campaignId: number) => apiFetch<any>(`/judge/summary/${campaignId}`),
 };
+
+export const forecastingApi = {
+  capabilities: () => apiFetch<string[]>("/forecasting/capabilities"),
+  forecast: (
+    dataPoints: Record<string, unknown>[],
+    capability: string,
+    horizonSteps = 3,
+  ) =>
+    apiFetch<any>("/forecasting/forecast", {
+      method: "POST",
+      body: JSON.stringify({
+        data_points: dataPoints,
+        capability,
+        horizon_steps: horizonSteps,
+      }),
+    }),
+  report: (dataPoints: Record<string, unknown>[], capabilities?: string[]) =>
+    apiFetch<any>("/forecasting/report", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, capabilities }),
+    }),
+  fitScalingLaw: (dataPoints: Record<string, unknown>[], method = "auto") =>
+    apiFetch<any>("/forecasting/fit", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, method }),
+    }),
+  fitChinchilla: (dataPoints: Record<string, unknown>[]) =>
+    apiFetch<any>("/forecasting/fit/chinchilla", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints }),
+    }),
+  aggregate: (dataPoints: Record<string, unknown>[], validate = true) =>
+    apiFetch<any>("/forecasting/aggregate", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, validate }),
+    }),
+  residuals: (dataPoints: Record<string, unknown>[], capability: string, method = "auto") =>
+    apiFetch<any>("/forecasting/scaling/residuals", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, capability, method }),
+    }),
+  frontierGaps: (dataPoints: Record<string, unknown>[], capabilities?: string[]) =>
+    apiFetch<any>("/forecasting/gaps/frontier", {
+      method: "POST",
+      body: JSON.stringify({ data_points: dataPoints, capabilities }),
+    }),
+  recordCalibration: (
+    capability: string,
+    predictedScore: number,
+    actualScore: number,
+    horizonLabel = "unknown",
+  ) =>
+    apiFetch<any>("/forecasting/calibration/record", {
+      method: "POST",
+      body: JSON.stringify({
+        capability,
+        predicted_score: predictedScore,
+        actual_score: actualScore,
+        horizon_label: horizonLabel,
+      }),
+    }),
+  calibrationHistory: (capability?: string) =>
+    apiFetch<any>(
+      `/forecasting/calibration${capability ? `?capability=${encodeURIComponent(capability)}` : ""}`,
+    ),
+  longHorizonTasks: (domain?: string) =>
+    apiFetch<any[]>(
+      `/forecasting/long-horizon/tasks${domain ? `?domain=${domain}` : ""}`,
+    ),
+};
