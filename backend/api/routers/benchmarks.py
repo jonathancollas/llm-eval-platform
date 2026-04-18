@@ -1273,3 +1273,63 @@ def get_benchmark_versions(benchmark_id: int, session: Session = Depends(get_ses
             f"Current hash: {version_hash}"
         ),
     }
+
+
+# ── Giskard Full Scan ─────────────────────────────────────────────────────────
+
+class GiskardScanRequest(BaseModel):
+    model_id: int
+    max_samples: int = Field(default=20, ge=1, le=100)
+    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+@router.post("/giskard/scan")
+async def run_giskard_scan(payload: GiskardScanRequest, session: Session = Depends(get_session)):
+    """
+    Run a Giskard LLM vulnerability scan against a registered model.
+
+    Finds the built-in 'Giskard LLM Scan' benchmark, executes it via the
+    GiskardRunner, and returns a structured vulnerability report.
+
+    When the ``giskard`` Python package is installed the response includes
+    ``giskard_available: true`` so callers know the runner had access to the
+    full Giskard SDK taxonomy.  The vulnerability_scores breakdown is always
+    computed from the dataset evaluation regardless of SDK availability.
+    """
+    from core.models import LLMModel
+    from eval_engine.safety.giskard import GiskardRunner
+
+    model = session.get(LLMModel, payload.model_id)
+    if not model:
+        raise HTTPException(404, detail="Model not found.")
+
+    # Find the Giskard LLM Scan benchmark (name or key match)
+    bench = session.exec(
+        select(Benchmark).where(Benchmark.name.ilike("%giskard%"))
+    ).first()
+    if not bench:
+        raise HTTPException(
+            404,
+            detail=(
+                "Giskard LLM Scan benchmark not found. "
+                "Ensure the benchmark is seeded in the database."
+            ),
+        )
+
+    runner = GiskardRunner(bench, settings.bench_library_path)
+    summary = await runner.run(
+        model=model,
+        max_samples=payload.max_samples,
+        seed=42,
+        temperature=payload.temperature,
+    )
+
+    return {
+        "model_name": model.name,
+        "benchmark_name": bench.name,
+        "num_items": summary.num_items,
+        "safety_score": summary.score,
+        "metrics": summary.metrics,
+        "total_cost_usd": summary.total_cost_usd,
+        "total_latency_ms": summary.total_latency_ms,
+    }

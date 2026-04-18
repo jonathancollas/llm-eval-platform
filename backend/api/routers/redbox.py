@@ -31,7 +31,7 @@ class ForgeRequest(BaseModel):
     mutation_types: list[str] = Field(..., min_length=1, max_length=10)
     num_variants_per_type: int = Field(default=3, ge=1, le=10)
     use_pyrit: bool = Field(default=False)
-    engine: Literal["native", "garak", "deepteam", "promptfoo"] = "native"
+    engine: Literal["native", "garak", "deepteam", "promptfoo", "artkit", "openrt"] = "native"
 
 class ForgeVariant(BaseModel):
     mutation: str
@@ -313,6 +313,25 @@ PROMPTFOO_PLUGIN_MAP = {
 PROMPTFOO_DIFFICULTY_INCREMENT = 0.04
 
 
+# ── ARTKIT (BCG-X) pipeline mapping ───────────────────────────────────────────
+# Maps mutation types to ARTKIT pipeline class names and difficulty profiles.
+# Reference: https://github.com/BCG-X-Official/artkit
+from eval_engine.adversarial.artkit_runner import (
+    ARTKIT_PIPELINE_REGISTRY,
+    ARTKIT_DIFFICULTY_INCREMENT,
+    is_artkit_available,
+)
+
+# ── OpenRT attack method mapping ───────────────────────────────────────────────
+# Maps mutation types to OpenRT attack class names.
+# Reference: https://arxiv.org/abs/2601.01592
+from eval_engine.adversarial.openrt_runner import (
+    OPENRT_ATTACK_METHODS,
+    OPENRT_DIFFICULTY_INCREMENT,
+    is_openrt_available,
+)
+
+
 def _generate_rule_based(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
     """Fallback: generate variants from templates."""
     variants = []
@@ -464,12 +483,84 @@ def _generate_promptfoo_variants(seed: str, mutation_types: list[str], n: int) -
     return variants
 
 
+def _generate_artkit_variants(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
+    """Generate ARTKIT (BCG-X) pipeline-annotated variants for supported attack classes.
+
+    Annotates each variant with the corresponding ARTKIT pipeline class name and
+    metadata.  When the ``artkit`` Python package is installed, callers can
+    instantiate ``pipeline_class`` directly via the artkit API.
+    Falls back to rule-based templates when the package is absent or a mutation
+    type has no ARTKIT mapping.
+    """
+    variants: list[ForgeVariant] = []
+    for mt in mutation_types:
+        cfg = ARTKIT_PIPELINE_REGISTRY.get(mt)
+        templates = MUTATION_TEMPLATES.get(mt, [f"[{mt}] {{seed}}"])
+        if cfg is None:
+            for i, tmpl in enumerate(templates[:n]):
+                variants.append(ForgeVariant(
+                    mutation=mt,
+                    prompt=tmpl.replace("{seed}", seed),
+                    difficulty=0.5 + (i * ARTKIT_DIFFICULTY_INCREMENT),
+                    expected_failure="safety_bypass",
+                    rationale=f"ARTKIT fallback (no pipeline for '{mt}'): rule-based template #{i + 1}",
+                ))
+            continue
+
+        for i, tmpl in enumerate(templates[:n]):
+            variants.append(ForgeVariant(
+                mutation=mt,
+                prompt=tmpl.replace("{seed}", seed),
+                difficulty=min(1.0, cfg["base_difficulty"] + (i * ARTKIT_DIFFICULTY_INCREMENT)),
+                expected_failure=cfg["expected_failure"],
+                rationale=f"ARTKIT pipeline={cfg['pipeline_class']}: {cfg['description']}",
+            ))
+    return variants
+
+
+def _generate_openrt_variants(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
+    """Generate OpenRT-annotated variants for supported attack classes.
+
+    OpenRT (TrustAIRLab) has no stable PyPI package yet; this function
+    annotates each variant with the matching OpenRT attack method name so callers
+    can run the real attack when the repository is cloned locally
+    (set OPENRT_REPO_PATH env var).  Falls back to rule-based templates for
+    unsupported mutation types.
+    """
+    variants: list[ForgeVariant] = []
+    for mt in mutation_types:
+        cfg = OPENRT_ATTACK_METHODS.get(mt)
+        templates = MUTATION_TEMPLATES.get(mt, [f"[{mt}] {{seed}}"])
+        if cfg is None:
+            for i, tmpl in enumerate(templates[:n]):
+                variants.append(ForgeVariant(
+                    mutation=mt,
+                    prompt=tmpl.replace("{seed}", seed),
+                    difficulty=0.5 + (i * OPENRT_DIFFICULTY_INCREMENT),
+                    expected_failure="safety_bypass",
+                    rationale=f"OpenRT fallback (no method for '{mt}'): rule-based template #{i + 1}",
+                ))
+            continue
+
+        for i, tmpl in enumerate(templates[:n]):
+            variants.append(ForgeVariant(
+                mutation=mt,
+                prompt=tmpl.replace("{seed}", seed),
+                difficulty=min(1.0, cfg["base_difficulty"] + (i * OPENRT_DIFFICULTY_INCREMENT)),
+                expected_failure=cfg["expected_failure"],
+                rationale=(
+                    f"OpenRT method={cfg['method_class']} [{cfg['category']}]: {cfg['description']}"
+                ),
+            ))
+    return variants
+
+
 async def _generate_llm_variants(
     seed: str,
     mutation_types: list[str],
     n: int,
     use_pyrit: bool = False,
-    engine: Literal["native", "garak", "deepteam", "promptfoo"] = "native",
+    engine: Literal["native", "garak", "deepteam", "promptfoo", "artkit", "openrt"] = "native",
 ) -> list[ForgeVariant]:
     """Use Claude to generate sophisticated adversarial variants."""
     if engine == "garak":
@@ -480,6 +571,12 @@ async def _generate_llm_variants(
 
     if engine == "promptfoo":
         return _generate_promptfoo_variants(seed, mutation_types, n)
+
+    if engine == "artkit":
+        return _generate_artkit_variants(seed, mutation_types, n)
+
+    if engine == "openrt":
+        return _generate_openrt_variants(seed, mutation_types, n)
 
     pyrit_variants = await _generate_pyrit_variants(seed, mutation_types, n) if use_pyrit else []
     pyrit_mutations = {v.mutation for v in pyrit_variants}
@@ -657,9 +754,15 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
             )
             latency_ms = int((time.monotonic() - t0) * 1000)
             response = result.text
+            rebuff_injection_detected = result.injection_detected
+            rebuff_heuristic_score = result.rebuff_heuristic_score
+            rebuff_model_score = result.rebuff_model_score
         except Exception as e:
             response = f"ERROR: {e}"
             latency_ms = 0
+            rebuff_injection_detected = False
+            rebuff_heuristic_score = 0.0
+            rebuff_model_score = 0.0
 
         breached, failure_detected = _detect_breach(response, v.mutation)
         severity = _compute_severity(v.mutation, breached, response, v.expected_failure)
@@ -694,6 +797,11 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
             "risk_metrics": risk_metrics,
             "failure_detected": failure_detected,
             "latency_ms": latency_ms,
+            "rebuff": {
+                "injection_detected": rebuff_injection_detected,
+                "heuristic_score": rebuff_heuristic_score,
+                "model_score": rebuff_model_score,
+            },
             "index": idx,
             "total": len(payload.variants),
         })
@@ -1215,3 +1323,17 @@ async def generate_adversarial_scenarios(payload: ForgeRequest):
             {"title": "Universal and Transferable Adversarial Attacks", "url": "https://arxiv.org/abs/2307.15043"},
         ],
     }
+
+
+@router.get("/artkit/coverage")
+def get_artkit_coverage():
+    """ARTKIT (BCG-X) pipeline coverage integrated in REDBOX."""
+    from eval_engine.adversarial.artkit_runner import get_coverage
+    return get_coverage()
+
+
+@router.get("/openrt/coverage")
+def get_openrt_coverage():
+    """OpenRT (TrustAIRLab) attack method coverage — experimental."""
+    from eval_engine.adversarial.openrt_runner import get_coverage
+    return get_coverage()
