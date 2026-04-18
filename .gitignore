@@ -4,4 +4,7 @@ node_modules/
 **/__pycache__/
 *.pyc
 *.db
+*.db-shm
+*.db-wal
 backend/data/
+data/

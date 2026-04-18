@@ -754,7 +754,14 @@ async def _vllm_fetch_models() -> tuple[bool, list]:
 
 
 async def sync_vllm_models(session: Session) -> tuple[int, bool]:
-    """Discover and import models from a local vLLM server. Uses circuit-breaker — never blocks > 2s."""
+    """Discover and import models from a local vLLM server. Uses circuit-breaker — never blocks > 2s.
+
+    Args:
+        session: Database session for model persistence.
+
+    Returns:
+        Tuple of (number of new models added, vLLM availability status).
+    """
     available, models_data = await _vllm_fetch_models()
     if not available:
         logger.info(f"vLLM not available at {settings.vllm_base_url}")
