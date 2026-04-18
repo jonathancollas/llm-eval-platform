@@ -10,14 +10,12 @@ from typing import Optional
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core.database import get_session
 from core.config import get_settings
 from core.models import EvalRun, LLMModel, Benchmark, JobStatus
-from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 settings = get_settings()
