@@ -22,7 +22,7 @@ def _extract_json_object(text: str) -> Optional[dict]:
     try:
         return json.loads(text)
     except Exception:
-        pass
+        logger.debug("[llama-guard] direct JSON parse failed, trying regex extraction", exc_info=True)
 
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
@@ -30,6 +30,7 @@ def _extract_json_object(text: str) -> Optional[dict]:
     try:
         return json.loads(match.group(0))
     except Exception:
+        logger.debug("[llama-guard] failed to parse regex-extracted JSON object", exc_info=True)
         return None
 
 
@@ -85,6 +86,7 @@ async def classify_runtime_safety(prompt: str, response: str) -> Tuple[Optional[
         if raw_conf is not None:
             confidence = max(0.0, min(1.0, float(raw_conf)))
     except Exception:
+        logger.debug("[llama-guard] failed to parse confidence value %r", raw_conf, exc_info=True)
         confidence = None
 
     label = str(parsed.get("label", "")).strip().lower()

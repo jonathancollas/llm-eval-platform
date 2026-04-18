@@ -84,6 +84,7 @@ class InferenceAdapter(ABC):
             )
             return result.error is None
         except Exception:
+            logger.debug("[adapter] health_check failed for %r", self, exc_info=True)
             return False
 
     def __repr__(self) -> str:
@@ -269,6 +270,7 @@ class OllamaAdapter(InferenceAdapter):
                 r = await client.get(f"{self.base_url}/api/tags")
                 return r.status_code == 200
         except Exception:
+            logger.debug("[adapter] Ollama health_check failed for %r", self, exc_info=True)
             return False
 
     async def list_models(self) -> list[str]:
