@@ -12,8 +12,7 @@ from sqlmodel import Session, select
 from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, FailureProfile, ModelFingerprint, JobStatus
 from core.utils import safe_json_load
-from core.relations import get_benchmark_tags
-from eval_engine.failure_genome.ontology import ONTOLOGY, GENOME_KEYS, FAILURE_GENOME_VERSION
+from eval_engine.failure_genome.ontology import ONTOLOGY, FAILURE_GENOME_VERSION
 from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome, classify_run_hybrid
 from core.utils import safe_extract_text
 
@@ -259,7 +258,7 @@ def get_safety_heatmap(session: Session = Depends(get_session)):
             if now - ts < _HEATMAP_TTL:
                 return data
 
-    from core.models import FailureProfile, EvalRun, LLMModel, Benchmark, BenchmarkType
+    from core.models import FailureProfile, EvalRun, LLMModel, Benchmark
 
     CAPABILITY_MAP = {
         "academic": "Raisonnement académique",

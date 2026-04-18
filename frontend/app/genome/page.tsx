@@ -1,11 +1,10 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
-import { campaignsApi } from "@/lib/api";
 import { API_BASE } from "@/lib/config";
-import type { Campaign } from "@/lib/api";
+import { useCampaigns, useGenome, useGenomeModels, useGenomeSafetyHeatmap } from "@/lib/useApi";
 import Link from "next/link";
 
 interface GenomeData {
@@ -168,51 +167,23 @@ function SignalRow({ sigKey, meta, pct }: {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 function GenomePage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [genome, setGenome] = useState<GenomeData | null>(null);
-  const [heatmap, setHeatmap] = useState<any | null>(null);
-  const [fingerprints, setFingerprints] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [computing, setComputing] = useState(false);
   const [computeError, setComputeError] = useState<string | null>(null);
   const [tab, setTab] = useState<"genome" | "heatmap" | "fingerprints">("genome");
 
-  const reload = useCallback(() => {
-    fetch(`${API_BASE}/genome/models`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setFingerprints(d.fingerprints ?? []))
-      .catch(() => {});
-    fetch(`${API_BASE}/genome/safety-heatmap`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setHeatmap(d))
-      .catch(() => {});
-  }, []);
+  const { campaigns: allCampaigns } = useCampaigns();
+  const campaigns = allCampaigns.filter(c => c.status === "completed");
+  const { genome, isLoading: loading, refresh: refreshGenome } = useGenome(selectedId);
+  const { fingerprints, refresh: refreshFingerprints } = useGenomeModels();
+  const { heatmap, refresh: refreshHeatmap } = useGenomeSafetyHeatmap();
 
-  const fetchGenome = useCallback((id: number) => {
-    setLoading(true);
-    setComputeError(null);
-    fetch(`${API_BASE}/genome/campaigns/${id}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => setGenome(d ?? null))
-      .catch(e => setComputeError(String(e)))
-      .finally(() => setLoading(false));
-  }, []);
-
+  // Select the first completed campaign on initial load
   useEffect(() => {
-    campaignsApi.list()
-      .then(cs => {
-        const completed = cs.filter(c => c.status === "completed");
-        setCampaigns(completed);
-        if (completed.length) { setSelectedId(completed[0].id); }
-      })
-      .catch(() => {});
-    reload();
-  }, [reload]);
-
-  useEffect(() => {
-    if (selectedId) fetchGenome(selectedId);
-  }, [selectedId, fetchGenome]);
+    if (campaigns.length && selectedId === null) {
+      setSelectedId(campaigns[0].id);
+    }
+  }, [campaigns, selectedId]);
 
   const handleCompute = async (hybrid = false) => {
     if (!selectedId) return;
@@ -227,8 +198,9 @@ function GenomePage() {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(err.detail ?? `HTTP ${res.status}`);
       }
-      fetchGenome(selectedId);
-      reload();
+      refreshGenome();
+      refreshFingerprints();
+      refreshHeatmap();
     } catch (e: any) {
       setComputeError(e.message ?? String(e));
     } finally {
