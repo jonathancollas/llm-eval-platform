@@ -36,6 +36,68 @@ def get_campaign_benchmark_ids(session: Session, campaign: Campaign) -> list[int
     return [int(v) for v in safe_json_load(campaign.benchmark_ids, []) if isinstance(v, int)]
 
 
+def get_campaigns_model_ids_bulk(
+    session: Session, campaigns: list[Campaign]
+) -> dict[int, list[int]]:
+    """Return a mapping of campaign_id → sorted model_id list for all given campaigns.
+
+    Uses a single IN query instead of one query per campaign, then falls back to
+    the legacy JSON field for campaigns that have no normalised link rows.
+    """
+    if not campaigns:
+        return {}
+    campaign_ids = [c.id for c in campaigns]
+    links = session.exec(
+        select(CampaignModel)
+        .where(CampaignModel.campaign_id.in_(campaign_ids))
+        .order_by(CampaignModel.campaign_id, CampaignModel.model_id)
+    ).all()
+    result: dict[int, list[int]] = {c.id: [] for c in campaigns}
+    for link in links:
+        result[link.campaign_id].append(link.model_id)
+    # Fall back to legacy JSON field for campaigns with no normalised rows.
+    campaign_map = {c.id: c for c in campaigns}
+    for cid, ids in result.items():
+        if not ids:
+            result[cid] = [
+                int(v)
+                for v in safe_json_load(campaign_map[cid].model_ids, [])
+                if isinstance(v, int)
+            ]
+    return result
+
+
+def get_campaigns_benchmark_ids_bulk(
+    session: Session, campaigns: list[Campaign]
+) -> dict[int, list[int]]:
+    """Return a mapping of campaign_id → sorted benchmark_id list for all given campaigns.
+
+    Uses a single IN query instead of one query per campaign, then falls back to
+    the legacy JSON field for campaigns that have no normalised link rows.
+    """
+    if not campaigns:
+        return {}
+    campaign_ids = [c.id for c in campaigns]
+    links = session.exec(
+        select(CampaignBenchmark)
+        .where(CampaignBenchmark.campaign_id.in_(campaign_ids))
+        .order_by(CampaignBenchmark.campaign_id, CampaignBenchmark.benchmark_id)
+    ).all()
+    result: dict[int, list[int]] = {c.id: [] for c in campaigns}
+    for link in links:
+        result[link.campaign_id].append(link.benchmark_id)
+    # Fall back to legacy JSON field for campaigns with no normalised rows.
+    campaign_map = {c.id: c for c in campaigns}
+    for cid, ids in result.items():
+        if not ids:
+            result[cid] = [
+                int(v)
+                for v in safe_json_load(campaign_map[cid].benchmark_ids, [])
+                if isinstance(v, int)
+            ]
+    return result
+
+
 def replace_campaign_links(
     session: Session,
     campaign_id: int,

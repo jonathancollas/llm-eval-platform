@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 
@@ -58,7 +58,7 @@ class LongHorizonResult:
     within_budget: bool
     efficiency_ratio: float
     frontier_metrics: dict
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 LONG_HORIZON_TASKS = [

@@ -6,10 +6,10 @@ import json
 import hashlib
 import logging
 import platform
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -17,7 +17,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import (
     Workspace, ExperimentManifest, SafetyIncident, TelemetryEvent,
-    Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus,
+    Campaign, EvalRun, LLMModel, Benchmark, JobStatus,
 )
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -55,7 +55,7 @@ def create_workspace(payload: WorkspaceCreate, session: Session = Depends(get_se
 
     existing = session.exec(select(Workspace).where(Workspace.slug == slug)).first()
     if existing:
-        slug = f"{slug}-{int(datetime.utcnow().timestamp())}"
+        slug = f"{slug}-{int(datetime.now(UTC).timestamp())}"
 
     ws = Workspace(
         name=payload.name,
@@ -74,17 +74,22 @@ def create_workspace(payload: WorkspaceCreate, session: Session = Depends(get_se
 
 
 @router.get("/workspaces")
-def list_workspaces(visibility: Optional[str] = None, session: Session = Depends(get_session)):
+def list_workspaces(
+    visibility: Optional[str] = None,
+    limit: int = Query(default=100, le=1000),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_session),
+):
     query = select(Workspace)
     if visibility:
         query = query.where(Workspace.visibility == visibility)
-    workspaces = session.exec(query.order_by(Workspace.updated_at.desc())).all()
+    workspaces = session.exec(query.order_by(Workspace.updated_at.desc()).offset(offset).limit(limit)).all()
     return {"workspaces": [{
         "id": w.id, "name": w.name, "slug": w.slug,
         "description": w.description[:200], "status": w.status,
         "risk_domain": w.risk_domain, "visibility": w.visibility,
         "fork_count": w.fork_count, "created_at": w.created_at.isoformat(),
-    } for w in workspaces]}
+    } for w in workspaces], "limit": limit, "offset": offset}
 
 
 @router.get("/workspaces/{workspace_id}")
@@ -128,7 +133,7 @@ def update_workspace(workspace_id: int, payload: WorkspaceUpdate, session: Sessi
             setattr(ws, field, json.dumps(value))
         else:
             setattr(ws, field, value)
-    ws.updated_at = datetime.utcnow()
+    ws.updated_at = datetime.now(UTC)
     session.add(ws)
     session.commit()
     return {"updated": True}
@@ -140,7 +145,7 @@ def fork_workspace(workspace_id: int, new_name: str = "Fork", session: Session =
     if not parent:
         raise HTTPException(404, detail="Workspace not found.")
 
-    slug = f"{parent.slug}-fork-{int(datetime.utcnow().timestamp())}"
+    slug = f"{parent.slug}-fork-{int(datetime.now(UTC).timestamp())}"
     fork = Workspace(
         name=f"{new_name} (fork of {parent.name})",
         slug=slug,
@@ -172,19 +177,22 @@ def generate_manifest(campaign_id: int, workspace_id: Optional[int] = None, sess
 
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
 
-    # Build config snapshots
-    model_configs = []
-    for mid in set(r.model_id for r in runs):
-        m = session.get(LLMModel, mid)
-        if m:
-            model_configs.append({"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id})
+    # Build config snapshots — fetch all models and benchmarks in one query each
+    model_ids = list(set(r.model_id for r in runs))
+    benchmark_ids = list(set(r.benchmark_id for r in runs))
 
-    bench_configs = []
-    for bid in set(r.benchmark_id for r in runs):
-        b = session.get(Benchmark, bid)
-        if b:
-            bench_configs.append({"bench_id": b.id, "name": b.name, "metric": b.metric,
-                                  "dataset_path": b.dataset_path, "eval_dimension": getattr(b, "eval_dimension", "capability")})
+    models = session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()
+    benchmarks = session.exec(select(Benchmark).where(Benchmark.id.in_(benchmark_ids))).all()
+
+    model_configs = [
+        {"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id}
+        for m in models
+    ]
+    bench_configs = [
+        {"bench_id": b.id, "name": b.name, "metric": b.metric,
+         "dataset_path": b.dataset_path, "eval_dimension": getattr(b, "eval_dimension", "capability")}
+        for b in benchmarks
+    ]
 
     completed = [r for r in runs if r.status == JobStatus.COMPLETED]
     total_items = sum(r.num_items for r in completed)
@@ -271,7 +279,7 @@ class IncidentCreate(BaseModel):
 @router.post("/incidents")
 def create_incident(payload: IncidentCreate, session: Session = Depends(get_session)):
     # Generate incident ID: MRX-YYYY-NNN
-    year = datetime.utcnow().year
+    year = datetime.now(UTC).year
     existing = session.exec(
         select(SafetyIncident).where(SafetyIncident.incident_id.like(f"MRX-{year}-%"))
     ).all()
@@ -389,9 +397,9 @@ def telemetry_dashboard(
     session: Session = Depends(get_session),
 ):
     """Drift detection dashboard — aggregated telemetry signals."""
-    from datetime import timedelta
+    from datetime import timedelta, UTC
 
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
     query = select(TelemetryEvent).where(TelemetryEvent.timestamp >= cutoff)
     if model_id:
         query = query.where(TelemetryEvent.model_id == model_id)
@@ -574,6 +582,7 @@ def request_replication(
     try:
         reps = _json.loads(reps_raw)
     except Exception:
+        logger.debug("[research] failed to parse replication tags for workspace %s", workspace_id, exc_info=True)
         reps = []
     for rep in reps:
         if rep.get("type") == "replication_request" and rep.get("lab") == payload.replicating_lab and rep.get("status") == "pending":
@@ -582,7 +591,7 @@ def request_replication(
         "type": "replication_request",
         "lab": payload.replicating_lab,
         "notes": payload.notes,
-        "requested_at": datetime.utcnow().isoformat(),
+        "requested_at": datetime.now(UTC).isoformat(),
         "status": "pending",
     })
     ws.tags = _json.dumps(reps)
@@ -611,6 +620,7 @@ def submit_replication_result(
     try:
         reps = _json.loads(reps_raw)
     except Exception:
+        logger.debug("[research] failed to parse replication tags for workspace %s", workspace_id, exc_info=True)
         reps = []
     concordance = _compute_concordance(
         payload.concordance_score,
@@ -628,7 +638,7 @@ def submit_replication_result(
                 "delta_capability": payload.delta_capability,
                 "delta_propensity": payload.delta_propensity,
                 "notes": payload.notes,
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
             })
             found = True
             break
@@ -641,7 +651,7 @@ def submit_replication_result(
             "delta_capability": payload.delta_capability,
             "delta_propensity": payload.delta_propensity,
             "notes": payload.notes,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(UTC).isoformat(),
         })
     ws.tags = _json.dumps(reps)
     session.add(ws)
@@ -676,6 +686,7 @@ def get_replications(workspace_id: int, session: Session = Depends(get_session))
     try:
         reps = _json.loads(getattr(ws, "tags", "[]") or "[]")
     except Exception:
+        logger.debug("[research] failed to parse replication tags for workspace %s", workspace_id, exc_info=True)
         reps = []
     replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
     completed = _get_completed_replications(replications)
@@ -726,6 +737,7 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
         replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
         confidence = _compute_scientific_confidence(workspace_id, replications)
     except Exception:
+        logger.debug("[research] failed to load replication data for workspace %s", workspace_id, exc_info=True)
         replications = []
         confidence = ScientificConfidence(
             workspace_id=workspace_id,
@@ -798,7 +810,7 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
                 "generate_manifest": f"POST /api/research/manifests/generate/{{campaign_id}}",
             },
 
-            "published_at": datetime.utcnow().isoformat(),
+            "published_at": datetime.now(UTC).isoformat(),
             "visibility": "public",
         }
     }

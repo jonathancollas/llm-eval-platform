@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math, random
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 
@@ -15,7 +15,7 @@ class ScalingDataPoint:
     ci_upper: float = 1.0
     parameter_count: Optional[float] = None
     training_tokens: Optional[float] = None
-    date: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    date: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
@@ -42,7 +42,7 @@ class CapabilityForecast:
     scaling_law_type: str
     trend_direction: str
     key_assumptions: list = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
@@ -55,7 +55,7 @@ class ForecastReport:
     plateau_capabilities: list
     emerging_capabilities: list
     recommendations: list
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 def _mean(x):

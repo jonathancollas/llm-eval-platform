@@ -214,21 +214,21 @@ class TestLeaderboardCache:
         import api.routers.leaderboard as mod
         # Manually populate the cache.
         fake = MagicMock()
-        mod._leaderboard_cache["global"] = (fake, time.monotonic())
+        mod._leaderboard_cache["global"] = (time.monotonic(), fake)
         # Retrieve — should be the same object.
-        cached, ts = mod._leaderboard_cache["global"]
-        assert time.monotonic() - ts < mod._CACHE_TTL_SECONDS
+        ts, cached = mod._leaderboard_cache["global"]
+        assert time.monotonic() - ts < mod._LEADERBOARD_TTL
         assert cached is fake
 
     def test_cache_expires_after_ttl(self):
         import api.routers.leaderboard as mod
         fake = MagicMock()
         # Store with a timestamp in the past (well beyond TTL).
-        old_ts = time.monotonic() - mod._CACHE_TTL_SECONDS - 1
-        mod._leaderboard_cache["global"] = (fake, old_ts)
-        _, ts = mod._leaderboard_cache["global"]
-        assert time.monotonic() - ts >= mod._CACHE_TTL_SECONDS
+        old_ts = time.monotonic() - mod._LEADERBOARD_TTL - 1
+        mod._leaderboard_cache["global"] = (old_ts, fake)
+        ts, _ = mod._leaderboard_cache["global"]
+        assert time.monotonic() - ts >= mod._LEADERBOARD_TTL
 
     def test_cache_ttl_default_is_300(self):
         import api.routers.leaderboard as mod
-        assert mod._CACHE_TTL_SECONDS == 300
+        assert mod._LEADERBOARD_TTL == 300
