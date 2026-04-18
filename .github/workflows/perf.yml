@@ -17,6 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Create .env file
+        run: |
+          cp .env.example .env
+          sed -i "s|^SECRET_KEY=.*|SECRET_KEY=test-secret-key-for-ci-$(openssl rand -hex 16)|" .env
+
       - name: Start backend
         run: docker compose up -d backend
 
