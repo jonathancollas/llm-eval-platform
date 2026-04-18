@@ -231,6 +231,8 @@ class EvalResult(SQLModel, table=True):
     cost_usd: float        = Field(default=0.0)
     metadata_json: str     = Field(default="{}")
     created_at: datetime   = Field(default_factory=datetime.utcnow)
+    # Human review: None = not reviewed, True = correct (false positive), False = confirmed wrong
+    human_verdict: Optional[bool] = Field(default=None)
 
 
 class FailureProfile(SQLModel, table=True):
@@ -458,7 +460,7 @@ class ExperimentManifest(SQLModel, table=True):
     # Execution parameters
     seed: int                   = Field(default=42)
     temperature: float          = Field(default=0.0)
-    max_tokens: int             = Field(default=256)
+    max_tokens: int             = Field(default=2048)
     # Environment
     platform_version: str       = Field(default="")         # Mercury version
     litellm_version: str        = Field(default="")

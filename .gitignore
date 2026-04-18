@@ -8,3 +8,7 @@ node_modules/
 *.db-wal
 backend/data/
 data/
+
+# Secrets — never commit
+.env
+.env.*

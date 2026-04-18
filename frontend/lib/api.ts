@@ -161,6 +161,7 @@ export interface FailedItem {
   id: number; item_index: number; prompt: string; response: string;
   expected: string | null; score: number; latency_ms: number;
   model_name: string; benchmark_name: string; error_type: string;
+  human_verdict?: boolean | null;
 }
 export interface FailedRun {
   run_id: number; model_name: string; benchmark_name: string;
@@ -208,6 +209,11 @@ export const resultsApi = {
   insights: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/insights`),
   contamination: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/contamination`),
   exportUrl: (campaignId: number) => `${API_BASE}/results/campaign/${campaignId}/export.csv`,
+  humanReview: (resultId: number, verdict: boolean | null) =>
+    apiFetch<{ id: number; human_verdict: boolean | null }>(`/results/${resultId}/human-review`, {
+      method: "PATCH",
+      body: JSON.stringify({ verdict }),
+    }),
 };
 
 export const reportsApi = {
@@ -229,6 +235,62 @@ export const genomeApi = {
   signals: (runId: number) => apiFetch<{ items: any[] }>(`/genome/signals/${runId}`),
   regressionCompare: (baselineId: number, candidateId: number) => apiFetch<any>(`/genome/regression/compare?baseline_id=${baselineId}&candidate_id=${candidateId}`),
   regressionExplain: (baselineId: number, candidateId: number) => apiFetch<any>(`/genome/regression/explain?baseline_id=${baselineId}&candidate_id=${candidateId}`, { method: "POST", timeoutMs: 60000 }),
+};
+
+export const statisticsApi = {
+  compareRuns: (runIdA: number, runIdB: number, method = "both") =>
+    apiFetch<any>("/statistics/compare-runs", {
+      method: "POST",
+      body: JSON.stringify({ run_id_a: runIdA, run_id_b: runIdB, method }),
+    }),
+  powerAnalysis: (effectSize: number, alpha = 0.05, power = 0.8) =>
+    apiFetch<any>("/statistics/power-analysis", {
+      method: "POST",
+      body: JSON.stringify({ effect_size: effectSize, alpha, power }),
+    }),
+  runConfidence: (runId: number) =>
+    apiFetch<any>(`/statistics/run/${runId}/confidence`),
+};
+
+export const capabilityApi = {
+  taxonomy: () => apiFetch<Record<string, any>>("/capability/taxonomy"),
+  profile: (modelId: number) => apiFetch<any>(`/capability/profile/${modelId}`),
+  gaps: (modelId: number) => apiFetch<any[]>(`/capability/gaps/${modelId}`),
+  analyzeTrajectory: (steps: Record<string, unknown>[]) =>
+    apiFetch<any>("/capability/trajectory/analyze", {
+      method: "POST",
+      body: JSON.stringify({ steps }),
+    }),
+};
+
+export const scenariosApi = {
+  examples: () => apiFetch<any[]>("/scenarios/examples"),
+  validate: (scenario: Record<string, unknown>) =>
+    apiFetch<{ valid: boolean; errors: string[] }>("/scenarios/validate", {
+      method: "POST",
+      body: JSON.stringify(scenario),
+    }),
+};
+
+export const forecastingApi = {
+  capabilities: () => apiFetch<string[]>("/forecasting/capabilities"),
+  forecast: (
+    dataPoints: Record<string, unknown>[],
+    capability: string,
+    horizonSteps = 3,
+  ) =>
+    apiFetch<any>("/forecasting/forecast", {
+      method: "POST",
+      body: JSON.stringify({
+        data_points: dataPoints,
+        capability,
+        horizon_steps: horizonSteps,
+      }),
+    }),
+  longHorizonTasks: (domain?: string) =>
+    apiFetch<any[]>(
+      `/forecasting/long-horizon/tasks${domain ? `?domain=${domain}` : ""}`,
+    ),
 };
 
 export const judgeApi = {
