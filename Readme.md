@@ -8,7 +8,7 @@
 # MERCURY RETROGRADE
 **Research Operating System for Frontier AI Evaluation**  
 
-[Architecture](Architecture.md) · [Manifesto](Manifesto.md) · [License](License.md)
+[Architecture](docs/architecture.md) · [Manifesto](Manifesto.md) · [License](License)
 
 </div>
 

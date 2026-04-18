@@ -1,8 +1,9 @@
 """
 Benchmarks — CRUD + dataset upload + HuggingFace import.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -17,6 +18,7 @@ from core.config import get_settings
 from core.relations import get_benchmark_tags, replace_benchmark_tags
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
+logger = logging.getLogger(__name__)
 settings = get_settings()
 UPLOAD_CHUNK_BYTES = 1024 * 1024  # 1MB
 
@@ -116,13 +118,16 @@ def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
         parent_id = parent.get("id")
         return int(parent_id) if parent_id is not None else None
     except Exception:
+        logger.debug("[benchmarks] failed to extract parent id from config for benchmark %s", bench.id, exc_info=True)
         return None
 
 
 def _get_citation_count(session: Session, benchmark_id: Optional[int]) -> int:
     if benchmark_id is None:
         return 0
-    return len(session.exec(select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)).all())
+    return session.exec(
+        select(func.count()).select_from(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
+    ).one()
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -408,7 +413,8 @@ async def get_benchmark_items(
 
     # 1. Try local JSON file first
     if benchmark.dataset_path:
-        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        from core.security import safe_bench_path
+        full_path = safe_bench_path(settings.bench_library_path, benchmark.dataset_path)
         if full_path.exists():
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
@@ -417,6 +423,8 @@ async def get_benchmark_items(
                 # Cap in-memory items to prevent DoS on very large files
                 items = all_items[:10_000]
                 source = "local"
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
 
@@ -496,6 +504,7 @@ def _load_hf_items(task_name: str, limit: int = 60) -> list[dict]:
                         item["_answer"] = task.doc_to_target(doc)
                     items.append(item)
                 except Exception:
+                    logger.debug("[benchmarks] failed to render prompt/answer for doc; using raw doc", exc_info=True)
                     items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
             else:
                 items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
@@ -514,9 +523,70 @@ class HuggingFaceImportRequest(BaseModel):
     repo_id: str = Field(..., description="HuggingFace repo ID (e.g. 'cais/mmlu', 'tatsu-lab/alpaca_eval')")
     split: str = Field(default="test", description="Dataset split: train, test, validation")
     subset: Optional[str] = Field(default=None, description="Dataset subset/config name")
-    max_items: int = Field(default=500, ge=10, le=5000)
+    max_items: int = Field(
+        default=10000,
+        ge=1,
+        le=500000,
+        description=(
+            "Maximum number of items to import. Ignored when full_dataset=True. "
+            "Raise this to get a complete dataset for benchmarks with more than 10 000 rows."
+        ),
+    )
+    full_dataset: bool = Field(
+        default=False,
+        description=(
+            "When True, download ALL rows in the split regardless of max_items. "
+            "The total row count is first queried from the HuggingFace datasets-server so the "
+            "effective limit is set automatically. Use this to guarantee a complete benchmark."
+        ),
+    )
     benchmark_name: Optional[str] = Field(default=None, description="Custom name, defaults to repo_id")
     benchmark_type: BenchmarkType = Field(default=BenchmarkType.CUSTOM)
+
+
+async def _fetch_hf_split_total_rows(
+    client,
+    repo_id: str,
+    split: str,
+    subset: Optional[str],
+) -> Optional[int]:
+    """Query the HuggingFace datasets-server for the total number of rows in a split.
+
+    Returns the row count, or None if the information is unavailable (the caller
+    should then fall back to downloading until the server returns an empty page).
+    """
+    splits_url = "https://datasets-server.huggingface.co/splits"
+    params: dict = {"dataset": repo_id}
+    if subset:
+        params["config"] = subset
+    try:
+        resp = await client.get(splits_url, params=params, timeout=15.0)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        for entry in data.get("splits", []):
+            if entry.get("split") == split:
+                # The /splits response includes num_rows when available
+                num_rows = entry.get("num_rows") or entry.get("num_examples")
+                if num_rows is not None:
+                    return int(num_rows)
+        # Fallback: try /info endpoint
+        info_url = "https://datasets-server.huggingface.co/info"
+        info_params: dict = {"dataset": repo_id}
+        if subset:
+            info_params["config"] = subset
+        info_resp = await client.get(info_url, params=info_params, timeout=15.0)
+        if info_resp.status_code == 200:
+            info = info_resp.json()
+            dataset_info = info.get("dataset_info", {})
+            # dataset_info may be nested under config name
+            if isinstance(dataset_info, dict):
+                splits_info = dataset_info.get("splits", {})
+                if isinstance(splits_info, dict) and split in splits_info:
+                    return int(splits_info[split].get("num_examples", 0) or 0) or None
+    except Exception:
+        pass
+    return None
 
 
 @router.post("/import-huggingface")
@@ -524,7 +594,13 @@ async def import_huggingface_dataset(
     payload: HuggingFaceImportRequest,
     session: Session = Depends(get_session),
 ):
-    """Import a dataset from HuggingFace Hub and create a benchmark."""
+    """Import a dataset from HuggingFace Hub and create a benchmark.
+
+    Set ``full_dataset=True`` to download the **complete** split without any
+    item-count limit.  The endpoint first queries the HuggingFace datasets-server
+    for the total row count so that pagination terminates correctly even for very
+    large datasets.
+    """
     import httpx
     import logging as _log
 
@@ -532,25 +608,40 @@ async def import_huggingface_dataset(
 
     # Build HuggingFace API URL
     base = "https://datasets-server.huggingface.co/rows"
-    params = {
+    rows_params: dict = {
         "dataset": payload.repo_id,
         "split": payload.split,
         "offset": 0,
-        "length": min(payload.max_items, 100),  # API max 100 per page
+        "length": 100,  # API max 100 per page
     }
     if payload.subset:
-        params["config"] = payload.subset
+        rows_params["config"] = payload.subset
 
-    all_items = []
+    all_items: list[dict] = []
     offset = 0
+    total_rows_in_split: Optional[int] = None
+    truncated = False
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            while len(all_items) < payload.max_items:
-                params["offset"] = offset
-                params["length"] = min(100, payload.max_items - len(all_items))
+            # ── Determine the effective item limit ────────────────────────────
+            if payload.full_dataset:
+                # Ask the server how many rows exist so we can set an exact cap.
+                total_rows_in_split = await _fetch_hf_split_total_rows(
+                    client, payload.repo_id, payload.split, payload.subset
+                )
+                # Use the server's count (+ a small buffer) as the effective limit.
+                # If the count is unavailable we use a very large sentinel so the
+                # loop runs until the server returns an empty page.
+                effective_max = (total_rows_in_split + 10) if total_rows_in_split else 10_000_000
+            else:
+                effective_max = payload.max_items
 
-                resp = await client.get(base, params=params)
+            while len(all_items) < effective_max:
+                rows_params["offset"] = offset
+                rows_params["length"] = min(100, effective_max - len(all_items))
+
+                resp = await client.get(base, params=rows_params)
                 if resp.status_code == 404:
                     raise HTTPException(404, detail=f"Dataset '{payload.repo_id}' not found on HuggingFace.")
                 resp.raise_for_status()
@@ -563,7 +654,7 @@ async def import_huggingface_dataset(
                 for row in rows:
                     item = row.get("row", {})
                     # Normalize common field names
-                    normalized = {}
+                    normalized: dict = {}
                     for k, v in item.items():
                         normalized[k] = v
                     # Try to detect question/answer fields
@@ -580,8 +671,18 @@ async def import_huggingface_dataset(
                     all_items.append(normalized)
 
                 offset += len(rows)
-                if len(rows) < params["length"]:
-                    break  # No more data
+                if len(rows) < rows_params["length"]:
+                    break  # Server returned fewer rows than requested → end of dataset
+
+            # Detect truncation: we hit our limit before the dataset was exhausted
+            if not payload.full_dataset and total_rows_in_split is None:
+                # Re-fetch the total count for the truncation warning
+                async with httpx.AsyncClient(timeout=15.0) as info_client:
+                    total_rows_in_split = await _fetch_hf_split_total_rows(
+                        info_client, payload.repo_id, payload.split, payload.subset
+                    )
+            if total_rows_in_split and len(all_items) < total_rows_in_split:
+                truncated = True
 
     except httpx.HTTPError as e:
         raise HTTPException(502, detail=f"HuggingFace API error: {str(e)[:200]}")
@@ -621,7 +722,7 @@ async def import_huggingface_dataset(
             tags=json.dumps(["huggingface", payload.repo_id.split("/")[0], payload.split]),
             dataset_path=f"custom/{filename}",
             metric="accuracy",
-            num_samples=min(len(all_items), 50),
+            num_samples=len(all_items),
             config_json=json.dumps({"source": "huggingface", "repo_id": payload.repo_id, "split": payload.split, "subset": payload.subset}),
             is_builtin=False,
             has_dataset=True,
@@ -634,15 +735,23 @@ async def import_huggingface_dataset(
     sample = all_items[0] if all_items else {}
     detected_fields = list(sample.keys())[:10]
 
-    return {
+    response: dict = {
         "benchmark_id": bench.id,
         "benchmark_name": bench.name,
         "items_imported": len(all_items),
+        "total_rows_in_split": total_rows_in_split,
+        "complete": not truncated,
         "dataset_path": f"custom/{filename}",
         "detected_fields": detected_fields,
         "sample_item": {k: str(v)[:200] for k, v in sample.items()} if sample else {},
         "source": f"huggingface:{payload.repo_id}/{payload.split}",
     }
+    if truncated:
+        response["warning"] = (
+            f"Dataset was truncated: only {len(all_items)} of {total_rows_in_split} rows were imported. "
+            f"Re-import with full_dataset=true to download the complete benchmark."
+        )
+    return response
 
 
 # ── External Benchmark Sources (routing + discovery) ───────────────────────────
@@ -887,6 +996,7 @@ def get_benchmark_lineage(benchmark_id: int, session: Session = Depends(get_sess
         try:
             meta = json.loads(candidate.config_json or "{}").get("fork_metadata", {}) or {}
         except Exception:
+            logger.debug("[benchmarks] failed to parse fork_metadata for benchmark %s", candidate.id, exc_info=True)
             meta = {}
         children.append({
             "id": candidate.id,
@@ -1164,6 +1274,7 @@ def _get_threat_domains(name: str) -> list[dict]:
         from eval_engine.threat_taxonomy import get_threat_domains
         return get_threat_domains(name)
     except Exception:
+        logger.debug("[benchmarks] failed to get threat domains for %r", name, exc_info=True)
         return []
 
 def _is_blocking(name: str) -> bool:
@@ -1171,6 +1282,7 @@ def _is_blocking(name: str) -> bool:
         from eval_engine.threat_taxonomy import is_blocking
         return is_blocking(name)
     except Exception:
+        logger.debug("[benchmarks] failed to check is_blocking for %r", name, exc_info=True)
         return False
 
 @router.get("/{benchmark_id}/card")
@@ -1263,4 +1375,64 @@ def get_benchmark_versions(benchmark_id: int, session: Session = Depends(get_ses
             "Include this hash in your experiment manifest for full reproducibility. "
             f"Current hash: {version_hash}"
         ),
+    }
+
+
+# ── Giskard Full Scan ─────────────────────────────────────────────────────────
+
+class GiskardScanRequest(BaseModel):
+    model_id: int
+    max_samples: int = Field(default=20, ge=1, le=100)
+    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+@router.post("/giskard/scan")
+async def run_giskard_scan(payload: GiskardScanRequest, session: Session = Depends(get_session)):
+    """
+    Run a Giskard LLM vulnerability scan against a registered model.
+
+    Finds the built-in 'Giskard LLM Scan' benchmark, executes it via the
+    GiskardRunner, and returns a structured vulnerability report.
+
+    When the ``giskard`` Python package is installed the response includes
+    ``giskard_available: true`` so callers know the runner had access to the
+    full Giskard SDK taxonomy.  The vulnerability_scores breakdown is always
+    computed from the dataset evaluation regardless of SDK availability.
+    """
+    from core.models import LLMModel
+    from eval_engine.safety.giskard import GiskardRunner
+
+    model = session.get(LLMModel, payload.model_id)
+    if not model:
+        raise HTTPException(404, detail="Model not found.")
+
+    # Find the Giskard LLM Scan benchmark (name or key match)
+    bench = session.exec(
+        select(Benchmark).where(Benchmark.name.ilike("%giskard%"))
+    ).first()
+    if not bench:
+        raise HTTPException(
+            404,
+            detail=(
+                "Giskard LLM Scan benchmark not found. "
+                "Ensure the benchmark is seeded in the database."
+            ),
+        )
+
+    runner = GiskardRunner(bench, settings.bench_library_path)
+    summary = await runner.run(
+        model=model,
+        max_samples=payload.max_samples,
+        seed=42,
+        temperature=payload.temperature,
+    )
+
+    return {
+        "model_name": model.name,
+        "benchmark_name": bench.name,
+        "num_items": summary.num_items,
+        "safety_score": summary.score,
+        "metrics": summary.metrics,
+        "total_cost_usd": summary.total_cost_usd,
+        "total_latency_ms": summary.total_latency_ms,
     }
