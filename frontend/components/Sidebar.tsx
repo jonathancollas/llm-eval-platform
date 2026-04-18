@@ -6,7 +6,7 @@ import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot, Zap,
          Beaker, AlertCircle, Radio, Lock, FlaskConical, List,
          Menu, X, Rocket, LineChart, Layers, TestTubes, Search,
-         Crosshair } from "lucide-react";
+         Crosshair, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -32,10 +32,11 @@ const NAV_ANALYSE = [
 
 // ── Opérer — production & compliance ──────────────────────────────────────────
 const NAV_OPERATE = [
-  { href: "/telemetry",  label: "Monitoring",  icon: Radio },
-  { href: "/incidents",  label: "Incidents",   icon: AlertCircle },
-  { href: "/policy",     label: "Compliance",  icon: Shield },
-  { href: "/scenarios",  label: "Scenarios",   icon: Layers },
+  { href: "/telemetry",        label: "Monitoring",      icon: Radio },
+  { href: "/incidents",        label: "Incidents",       icon: AlertCircle },
+  { href: "/policy",           label: "Compliance",      icon: Shield },
+  { href: "/scenarios",        label: "Scenarios",       icon: Layers },
+  { href: "/failure-patterns", label: "Failure Patterns", icon: GitBranch },
 ];
 
 // ── Bibliothèque — primitives & reference ─────────────────────────────────────
