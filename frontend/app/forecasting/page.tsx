@@ -635,8 +635,7 @@ export default function ForecastingPage() {
                 )}
               </div>
             ))
-          )}
-        </div>
+          )}        </div>
       )}
     </div>
   );

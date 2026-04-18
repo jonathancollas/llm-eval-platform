@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math, random
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional, List, Dict, Tuple
 
 
@@ -18,7 +18,7 @@ class ScalingDataPoint:
     compute_flops: Optional[float] = None
     # capability_score vs propensity_score tracking
     score_type: str = "capability"  # "capability" | "propensity"
-    date: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    date: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
@@ -50,7 +50,7 @@ class CapabilityForecast:
     propensity_score: float = 0.0
     gap_to_frontier: float = 0.0
     key_assumptions: list = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
@@ -65,7 +65,7 @@ class ForecastReport:
     recommendations: list
     frontier_gaps: dict = field(default_factory=dict)
     calibration_mae: float = 0.0
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass

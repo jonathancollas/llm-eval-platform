@@ -1,13 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
-import { modelsApi } from "@/lib/api";
-import type { LLMModel, LLMModelSlim } from "@/lib/api";
+import { useState } from "react";
+import type { LLMModelSlim } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { ChevronDown, ChevronUp, Play, Zap, CheckCircle2, XCircle, ArrowRight,
          Shield, AlertTriangle, Network, Brain, Target, TrendingDown } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
+import { useModels, useBenchmarks, useAgentTrajectories, useAgentDashboard, useMultiagentPayloads } from "@/lib/useApi";
 
 interface Trajectory {
   id: number; model_name: string; task_description: string; task_type: string;
@@ -98,10 +98,7 @@ function StepTimeline({ steps }: { steps: Step[] }) {
 
 export default function AgentsPage() {
   const [tab, setTab] = useState<Tab>("trajectories");
-  const [trajectories, setTrajectories] = useState<Trajectory[]>([]);
   const [selectedTraj, setSelectedTraj] = useState<TrajectoryDetail | null>(null);
-  const [models, setModels] = useState<LLMModelSlim[]>([]);
-  const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
 
@@ -109,16 +106,9 @@ export default function AgentsPage() {
   const [uploadJson, setUploadJson] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  const loadTrajectories = () => {
-    fetch(`${API_BASE}/agents/trajectories`).then(r => r.json())
-      .then(d => setTrajectories(d.trajectories ?? [])).catch(() => {});
-  };
-
-  useEffect(() => {
-    loadTrajectories();
-    modelsApi.list().then(setModels).catch(() => {});
-    fetch(`${API_BASE}/agents/dashboard`).then(r => r.json()).then(setDashboard).catch(() => {});
-  }, []);
+  const { models } = useModels();
+  const { trajectories, refresh: refreshTrajectories } = useAgentTrajectories();
+  const { dashboard } = useAgentDashboard();
 
   const viewTrajectory = async (id: number) => {
     setLoading(true);
@@ -136,7 +126,7 @@ export default function AgentsPage() {
         body: JSON.stringify({ trajectory_id: id, use_llm_judge: true }),
       });
       await viewTrajectory(id);
-      loadTrajectories();
+      refreshTrajectories();
     } finally { setEvaluating(false); }
   };
 
@@ -149,7 +139,7 @@ export default function AgentsPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (res.ok) { setUploadJson(""); loadTrajectories(); setTab("trajectories"); }
+      if (res.ok) { setUploadJson(""); refreshTrajectories(); setTab("trajectories"); }
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setUploading(false); }
   };
@@ -361,21 +351,17 @@ function MultiAgentLab({ models }: { models: LLMModelSlim[] }) {
   const [simRunning, setSimRunning]           = useState(false);
   const [simResult, setSimResult]             = useState<SimResult | null>(null);
   const [simError, setSimError]               = useState<string | null>(null);
-  const [payloads, setPayloads]               = useState<any[]>([]);
 
   // Sandbagging state
   const [sbModelId, setSbModelId]             = useState<number | "">("");
-  const [sbBenchmarks, setSbBenchmarks]       = useState<any[]>([]);
   const [sbBenchId, setSbBenchId]             = useState<number | "">("");
   const [sbSamples, setSbSamples]             = useState(10);
   const [sbRunning, setSbRunning]             = useState(false);
   const [sbResult, setSbResult]               = useState<SandbaggingResult | null>(null);
   const [sbError, setSbError]                 = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch(`${API_BASE}/multiagent/payloads`).then(r => r.json()).then(d => setPayloads(d.payloads || [])).catch(() => {});
-    fetch(`${API_BASE}/benchmarks/`).then(r => r.json()).then(d => setSbBenchmarks(Array.isArray(d) ? d : [])).catch(() => {});
-  }, []);
+  const { payloads } = useMultiagentPayloads();
+  const { benchmarks: sbBenchmarks } = useBenchmarks();
 
   const toggleModel = (id: number) => {
     setSelectedModels(prev =>
