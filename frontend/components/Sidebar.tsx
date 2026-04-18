@@ -6,7 +6,7 @@ import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot, Zap,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
          Menu, X, Rocket, LineChart, Layers, Search,
-         Crosshair, GitBranch, BrainCircuit } from "lucide-react";
+         Crosshair, GitBranch, BrainCircuit, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -41,12 +41,13 @@ const NAV_OPERATE = [
 
 // ── Bibliothèque — primitives & reference ─────────────────────────────────────
 const NAV_LIBRARY = [
-  { href: "/models",      label: "Models",      icon: Cpu },
-  { href: "/benchmarks",  label: "Benchmarks",  icon: Library },
-  { href: "/evidence",    label: "Evidence",    icon: TestTubes },
-  { href: "/research",    label: "Workspaces",  icon: Beaker },
-  { href: "/methodology", label: "Methodology", icon: FlaskConical },
-  { href: "/about",       label: "About",       icon: Info },
+  { href: "/models",      label: "Models",        icon: Cpu },
+  { href: "/benchmarks",  label: "Benchmarks",    icon: Library },
+  { href: "/tasks",       label: "Task Registry", icon: ClipboardList },
+  { href: "/evidence",    label: "Evidence",      icon: TestTubes },
+  { href: "/research",    label: "Workspaces",    icon: Beaker },
+  { href: "/methodology", label: "Methodology",   icon: FlaskConical },
+  { href: "/about",       label: "About",         icon: Info },
 ];
 
 const MercurySymbol = () => (
