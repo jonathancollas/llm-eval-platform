@@ -403,6 +403,16 @@ export default function BenchmarksPage() {
   // Tag management state
   const [editingTagsId, setEditingTagsId] = useState<number | null>(null);
   const [newTagInput, setNewTagInput] = useState("");
+  // Giskard full scan state
+  const [giskardScanBenchId, setGiskardScanBenchId] = useState<number | null>(null);
+  const [giskardScanModelId, setGiskardScanModelId] = useState<number | "">("");
+  const [giskardScanRunning, setGiskardScanRunning] = useState(false);
+  const [giskardScanResult, setGiskardScanResult] = useState<any | null>(null);
+  const [giskardScanError, setGiskardScanError] = useState<string | null>(null);
+  const [models, setModels] = useState<any[]>([]);
+  useEffect(() => {
+    fetch(`${API_BASE}/models?limit=100`).then(r => r.ok ? r.json() : null).then(d => d && setModels(d.items ?? [])).catch(() => {});
+  }, []);
 
   const handleFlipSource = async (b: Benchmark) => {
     const newSource = b.source === "inesia" ? "public" : "inesia";
@@ -466,6 +476,27 @@ export default function BenchmarksPage() {
       load();
       setTimeout(() => setImportMsg(null), 4000);
     } finally { setImporting(false); }
+  };
+
+  const runGiskardScan = async (benchId: number) => {
+    if (!giskardScanModelId) return;
+    setGiskardScanRunning(true);
+    setGiskardScanResult(null);
+    setGiskardScanError(null);
+    try {
+      const res = await fetch(`${API_BASE}/benchmarks/giskard/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: giskardScanModelId, max_samples: 20 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
+      setGiskardScanResult(data);
+    } catch (e: any) {
+      setGiskardScanError(e.message);
+    } finally {
+      setGiskardScanRunning(false);
+    }
   };
 
   return (
@@ -636,6 +667,92 @@ export default function BenchmarksPage() {
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
                         <Eye size={12} /> Explorer le dataset
                       </button>
+                      {/* Giskard full scan — shown only for giskard benchmarks */}
+                      {b.name.toLowerCase().includes("giskard") && (
+                        <div className="w-full mt-2 border border-green-200 rounded-xl bg-green-50 p-3 space-y-2" onClick={e => e.stopPropagation()}>
+                          <p className="text-xs font-semibold text-green-800 flex items-center gap-1.5">
+                            <Shield size={12} /> Giskard Full Vulnerability Scan
+                          </p>
+                          <p className="text-xs text-green-700">
+                            Run the Giskard LLM scanner against a model to get a structured vulnerability report.
+                          </p>
+                          <div className="flex gap-2 flex-wrap items-center">
+                            <select
+                              value={giskardScanModelId}
+                              onChange={e => { setGiskardScanModelId(Number(e.target.value) || ""); setGiskardScanBenchId(b.id); setGiskardScanResult(null); setGiskardScanError(null); }}
+                              className="text-xs border border-green-300 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none"
+                            >
+                              <option value="">Select model…</option>
+                              {models.map((m: any) => (
+                                <option key={m.id} value={m.id}>{m.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => runGiskardScan(b.id)}
+                              disabled={giskardScanRunning || !giskardScanModelId}
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-40 transition-colors"
+                            >
+                              {giskardScanRunning && giskardScanBenchId === b.id ? <Spinner size={11} /> : <Shield size={11} />}
+                              {giskardScanRunning && giskardScanBenchId === b.id ? "Scanning…" : "Run Giskard scan"}
+                            </button>
+                          </div>
+                          {giskardScanError && giskardScanBenchId === b.id && (
+                            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{giskardScanError}</p>
+                          )}
+                          {giskardScanResult && giskardScanBenchId === b.id && (
+                            <div className="bg-white border border-green-200 rounded-lg p-3 text-xs space-y-2">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="font-semibold text-slate-800">{giskardScanResult.model_name}</span>
+                                <span className={`px-2 py-0.5 rounded font-bold ${
+                                  giskardScanResult.safety_score >= 0.8 ? "bg-green-100 text-green-700"
+                                  : giskardScanResult.safety_score >= 0.5 ? "bg-yellow-100 text-yellow-700"
+                                  : "bg-red-100 text-red-700"
+                                }`}>
+                                  Safety: {Math.round((giskardScanResult.safety_score ?? 0) * 100)}%
+                                </span>
+                                <span className="text-slate-400">{giskardScanResult.num_items} items</span>
+                                {giskardScanResult.metrics?.giskard_available !== undefined && (
+                                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                    giskardScanResult.metrics.giskard_available
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                  }`}>
+                                    Giskard SDK: {giskardScanResult.metrics.giskard_available ? "installed" : "fallback"}
+                                  </span>
+                                )}
+                              </div>
+                              {giskardScanResult.metrics?.vulnerability_scores && Object.keys(giskardScanResult.metrics.vulnerability_scores).length > 0 && (
+                                <div>
+                                  <p className="text-slate-500 font-semibold mb-1">Vulnerability breakdown:</p>
+                                  <div className="space-y-1">
+                                    {Object.entries(giskardScanResult.metrics.vulnerability_scores as Record<string, number>).map(([vuln, score]) => (
+                                      <div key={vuln} className="flex items-center gap-2">
+                                        <span className="text-slate-600 flex-1 truncate">{vuln}</span>
+                                        <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full ${score >= 0.8 ? "bg-green-500" : score >= 0.5 ? "bg-yellow-500" : "bg-red-500"}`}
+                                            style={{ width: `${Math.round(score * 100)}%` }}
+                                          />
+                                        </div>
+                                        <span className={`font-mono font-bold w-9 text-right ${score >= 0.8 ? "text-green-700" : score >= 0.5 ? "text-yellow-700" : "text-red-700"}`}>
+                                          {Math.round(score * 100)}%
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {giskardScanResult.metrics?.alerts?.length > 0 && (
+                                <div className="bg-red-50 border border-red-200 rounded p-2 space-y-0.5">
+                                  {(giskardScanResult.metrics.alerts as string[]).map((alert: string, ai: number) => (
+                                    <p key={ai} className="text-red-700">⚠ {alert}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {!b.is_builtin && (
                         <>
                           <label className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">

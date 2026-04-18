@@ -10,7 +10,6 @@ import json
 import math
 import logging
 import random
-import hashlib
 from datetime import datetime, UTC
 from typing import Optional
 
@@ -22,7 +21,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import (
     EvalTrial, RealWorldDataset, RealWorldEvidence,
-    Campaign, EvalRun, EvalResult, LLMModel, Benchmark, TelemetryEvent, JobStatus,
+    EvalRun, LLMModel, TelemetryEvent, JobStatus,
 )
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])

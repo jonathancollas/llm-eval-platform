@@ -18,10 +18,10 @@ import {
   Download, HardDrive, Lock, Unlock,
 } from "lucide-react";
 
-const PROVIDERS: ModelProvider[] = ["openai","anthropic","mistral","groq","ollama","custom"];
+const PROVIDERS: ModelProvider[] = ["openai","anthropic","mistral","groq","ollama","vllm","custom"];
 const PROVIDER_LABELS: Record<string,string> = {
   openai:"OpenAI",anthropic:"Anthropic",mistral:"Mistral",
-  groq:"Groq",ollama:"Ollama (local)",custom:"Custom / OpenRouter",
+  groq:"Groq",ollama:"Ollama (local)",vllm:"vLLM (local)",custom:"Custom / OpenRouter",
 };
 const CARD_H = 80; // collapsed height px
 
@@ -50,6 +50,7 @@ function applyFilters(models: LLMModel[], f: Filters, q: string): LLMModel[] {
 // ── Sub-components (memoized) ─────────────────────────────────────────────────
 const AccessTypeBadge = memo(function AccessTypeBadge({ model }: { model: LLMModel }) {
   if (model.provider === "ollama") return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-purple-100 text-purple-700 border border-purple-200"><HardDrive size={8}/>LOCAL</span>;
+  if (model.provider === "vllm") return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-indigo-100 text-indigo-700 border border-indigo-200"><HardDrive size={8}/>LOCAL</span>;
   if ((model as any).is_open_weight) return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"><Unlock size={8}/>OPEN WEIGHT</span>;
   return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-500 border border-slate-200"><Lock size={8}/>API ONLY</span>;
 });

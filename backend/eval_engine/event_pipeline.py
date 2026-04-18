@@ -34,7 +34,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from enum import Enum
 from typing import Any, Callable, Coroutine, Optional

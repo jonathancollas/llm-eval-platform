@@ -3,7 +3,6 @@ Report generation: sends campaign results to Claude and returns a structured
 markdown analysis (strengths, weaknesses, recommendations, safety alerts).
 Now async with timeout, retry, and proper error handling.
 """
-import asyncio
 import json
 import logging
 from datetime import datetime
@@ -18,7 +17,6 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Report, JobStatus, FailureProfile
 from core.utils import safe_json_load
-from core.utils import safe_extract_text
 from core.relations import get_eval_run_metrics
 
 router = APIRouter(prefix="/reports", tags=["reports"])

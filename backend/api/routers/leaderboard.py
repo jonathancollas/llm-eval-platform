@@ -3,23 +3,29 @@ Leaderboard endpoints — aggregated scores by domain + Claude narrative reports
 """
 import json
 import logging
+import threading
+import time
 from datetime import datetime, UTC
 from typing import Optional
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core.database import get_session
 from core.config import get_settings
 from core.models import EvalRun, LLMModel, Benchmark, JobStatus
-from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+# ── In-process TTL cache for leaderboard data ────────────────────────────────
+# Leaderboard data is read-heavy but changes only when new eval runs complete.
+_leaderboard_cache: dict[str, tuple[float, object]] = {}
+_leaderboard_cache_lock = threading.Lock()
+_LEADERBOARD_TTL = 300.0  # 5 minutes
 
 # ── Domain definitions ─────────────────────────────────────────────────────────
 
@@ -226,11 +232,19 @@ def get_leaderboard(domain: str, session: Session = Depends(get_session)):
     if domain not in DOMAINS:
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found. Available: {list(DOMAINS.keys())}")
 
+    now = time.monotonic()
+    with _leaderboard_cache_lock:
+        cached = _leaderboard_cache.get(domain)
+        if cached is not None:
+            ts, data = cached
+            if now - ts < _LEADERBOARD_TTL:
+                return data
+
     runs, models_list, benchmarks_list = _get_domain_runs(domain, session)
     rows, bench_names = _build_leaderboard(runs, models_list, benchmarks_list)
 
     cfg = DOMAINS[domain]
-    return DomainLeaderboard(
+    result = DomainLeaderboard(
         domain=domain,
         label=cfg["label"],
         description=cfg["description"],
@@ -240,6 +254,9 @@ def get_leaderboard(domain: str, session: Session = Depends(get_session)):
         last_updated=datetime.now(UTC).isoformat(),
         total_runs=len(runs),
     )
+    with _leaderboard_cache_lock:
+        _leaderboard_cache[domain] = (now, result)
+    return result
 
 
 @router.post("/{domain}/report", response_model=DomainReport)
