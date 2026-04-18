@@ -622,15 +622,22 @@ function EvalStudioInner() {
     };
     const tools = form.tools.map(t => toolMap[t]).filter(Boolean);
     const modelName = models.find(m => m.id === primaryModelId)?.name ?? "system";
+    const controller = new AbortController();
     setRiskLoading(true);
     fetch(`${API_BASE}/science/compositional-risk`, {
+      signal: controller.signal,
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model_name: modelName, domain_scores: domainScores, propensity_scores: propensityScores,
         autonomy_level: form.autonomy_level, tools,
         memory_type: form.has_memory ? "persistent" : "session",
       }),
-    }).then(r => r.ok ? r.json() : null).then(setRiskProfile).catch(() => setRiskProfile(null)).finally(() => setRiskLoading(false));
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(setRiskProfile)
+      .catch((err) => { if (err.name !== "AbortError") setRiskProfile(null); })
+      .finally(() => setRiskLoading(false));
+    return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evalType, primaryModelId, form.autonomy_level, form.tools, form.has_memory, form.has_orchestration, form.risk_domains, models]);
 
