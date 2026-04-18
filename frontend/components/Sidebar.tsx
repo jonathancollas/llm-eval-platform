@@ -4,38 +4,45 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot,
-         Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
-         Menu, X } from "lucide-react";
+         Beaker, AlertCircle, Radio, Lock, FlaskConical, List,
+         Menu, X, Rocket, LineChart, Layers, TestTubes, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
 
-const NAV_FOUNDATION = [
-  { href: "/",            label: "Overview",    icon: Activity },
+// ── Évaluer — primary entry point ─────────────────────────────────────────────
+const NAV_EVALUATE = [
+  { href: "/evaluate",  label: "Evaluation Studio", icon: Rocket },
+  { href: "/campaigns", label: "Run History",        icon: List },
+];
+
+// ── Analyser — post-eval insights ─────────────────────────────────────────────
+const NAV_ANALYSE = [
+  { href: "/dashboard",   label: "Dashboard",          icon: BarChart3 },
+  { href: "/leaderboard", label: "Leaderboard",        icon: Trophy },
+  { href: "/genome",      label: "Genomia",            icon: Dna },
+  { href: "/judge",       label: "LLM Judge",          icon: Gavel },
+  { href: "/agents",      label: "Agents",             icon: Bot },
+  { href: "/capability",  label: "Capability Intel",   icon: Search },
+  { href: "/forecasting", label: "Forecasting",        icon: LineChart },
+];
+
+// ── Opérer — production & compliance ──────────────────────────────────────────
+const NAV_OPERATE = [
+  { href: "/telemetry",  label: "Monitoring",  icon: Radio },
+  { href: "/incidents",  label: "Incidents",   icon: AlertCircle },
+  { href: "/policy",     label: "Compliance",  icon: Shield },
+  { href: "/scenarios",  label: "Scenarios",   icon: Layers },
+];
+
+// ── Bibliothèque — primitives & reference ─────────────────────────────────────
+const NAV_LIBRARY = [
   { href: "/models",      label: "Models",      icon: Cpu },
   { href: "/benchmarks",  label: "Benchmarks",  icon: Library },
-  { href: "/dashboard",   label: "Dashboard",   icon: BarChart3 },
-  { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
-];
-
-const NAV_PHASE1 = [
-  { href: "/campaigns", label: "Evaluations", icon: List },
-  { href: "/policy",    label: "Compliance",  icon: Shield },
-];
-
-// Renamed: "Dynamic & Behavioral Eval" → "Behavioral Eval"
-const NAV_PHASE2 = [
-  { href: "/genome",  label: "Genomia",      icon: Dna },
-  { href: "/judge",   label: "LLM Judge",    icon: Gavel },
-  { href: "/agents",  label: "Agents",       icon: Bot },
-];
-
-// Phase 3 — Real World Eval (ALPHA)
-const NAV_PHASE3 = [
-  { href: "/evidence",   label: "Evidence (RCT)",   icon: TestTubes },
-  { href: "/research",   label: "Workspaces",        icon: Beaker },
-  { href: "/incidents",  label: "Incidents (SIX)",   icon: AlertCircle },
-  { href: "/telemetry",  label: "Monitoring",         icon: Radio },
+  { href: "/evidence",    label: "Evidence",    icon: TestTubes },
+  { href: "/research",    label: "Workspaces",  icon: Beaker },
+  { href: "/methodology", label: "Methodology", icon: FlaskConical },
+  { href: "/about",       label: "About",       icon: Info },
 ];
 
 const MercurySymbol = () => (
@@ -58,8 +65,16 @@ const MercurySymbol = () => (
   </svg>
 );
 
-function NavSection({ items, activeColor = "bg-slate-900 text-white", hoverColor = "hover:bg-slate-100 hover:text-slate-900", onLinkClick }: {
-  items: typeof NAV_FOUNDATION; activeColor?: string; hoverColor?: string; onLinkClick?: () => void;
+function NavSection({
+  items,
+  activeColor = "bg-slate-900 text-white",
+  hoverColor = "hover:bg-slate-100 hover:text-slate-900",
+  onLinkClick,
+}: {
+  items: { href: string; label: string; icon: React.ElementType }[];
+  activeColor?: string;
+  hoverColor?: string;
+  onLinkClick?: () => void;
 }) {
   const pathname = usePathname();
   return (
@@ -78,30 +93,73 @@ function NavSection({ items, activeColor = "bg-slate-900 text-white", hoverColor
   );
 }
 
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-3 pb-0.5">
+      <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function NavContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const pathname = usePathname();
   const isRedbox = pathname.startsWith("/redbox");
   return (
     <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-      <NavSection items={NAV_FOUNDATION} onLinkClick={onLinkClick} />
 
-      {/* Phase 1 — Static Evaluation */}
-      <div className="pt-2 mt-2 border-t border-slate-100">
-        <PhaseHeader number={1} label="Static Eval" color="bg-slate-700" />
-        <NavSection items={NAV_PHASE1} onLinkClick={onLinkClick} />
+      {/* Overview — standalone top entry */}
+      <Link href="/" onClick={onLinkClick}
+        className={cn(
+          "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors mb-1",
+          pathname === "/" ? "bg-slate-900 text-white font-medium" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        )}>
+        <Activity size={14} />Overview
+      </Link>
+
+      {/* ── ÉVALUER ── */}
+      <div className="border-t border-slate-100 pt-1">
+        <SectionLabel label="Évaluer" />
+        {/* Evaluation Studio — primary CTA */}
+        <Link href="/evaluate" onClick={onLinkClick}
+          className={cn(
+            "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors font-medium",
+            pathname === "/evaluate" || pathname.startsWith("/evaluate")
+              ? "bg-slate-900 text-white"
+              : "text-slate-700 hover:bg-slate-100"
+          )}>
+          <Rocket size={14} />Evaluation Studio
+        </Link>
+        <NavSection items={NAV_EVALUATE.slice(1)} onLinkClick={onLinkClick} />
       </div>
 
-      {/* Phase 2 — Behavioral Eval */}
-      <div className="pt-2 mt-2 border-t border-slate-100">
-        <PhaseHeader number={2} label="Behavioral Eval" color="bg-cyan-700" badge="BETA" />
-        <NavSection items={NAV_PHASE2} activeColor="bg-cyan-700 text-white" hoverColor="hover:bg-cyan-50 hover:text-cyan-700" onLinkClick={onLinkClick} />
+      {/* ── ANALYSER ── */}
+      <div className="border-t border-slate-100 pt-1">
+        <SectionLabel label="Analyser" />
+        <NavSection
+          items={NAV_ANALYSE}
+          activeColor="bg-violet-700 text-white"
+          hoverColor="hover:bg-violet-50 hover:text-violet-700"
+          onLinkClick={onLinkClick}
+        />
+      </div>
 
-        {/* The Red Room */}
+      {/* ── OPÉRER ── */}
+      <div className="border-t border-slate-100 pt-1">
+        <SectionLabel label="Opérer" />
+        <NavSection
+          items={NAV_OPERATE}
+          activeColor="bg-amber-700 text-white"
+          hoverColor="hover:bg-amber-50 hover:text-amber-700"
+          onLinkClick={onLinkClick}
+        />
+        {/* The Red Room — restricted */}
         <Link
           href="/redbox"
           onClick={onLinkClick}
           className={cn(
-            "group flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-all font-medium mt-1",
+            "group flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-all font-medium mt-0.5",
             isRedbox
               ? "bg-red-700 text-white shadow-md"
               : "text-red-700 hover:bg-red-700 hover:text-white border border-red-200"
@@ -116,44 +174,17 @@ function NavContent({ onLinkClick }: { onLinkClick?: () => void }) {
         </Link>
       </div>
 
-      {/* Phase 3 — Real World Eval (ALPHA) */}
-      <div className="pt-2 mt-2 border-t border-slate-100">
-        <PhaseHeader number={3} label="Real World Eval" color="bg-violet-700" badge="ALPHA" />
-        <NavSection items={NAV_PHASE3} activeColor="bg-violet-700 text-white" hoverColor="hover:bg-violet-50 hover:text-violet-700" onLinkClick={onLinkClick} />
-      </div>
-
-      {/* About */}
-      <div className="pt-2 mt-1 border-t border-slate-100">
-        <Link href="/methodology" onClick={onLinkClick}
-          className={cn(
-            "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
-            pathname === "/methodology" ? "bg-teal-700 text-white font-medium" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-          )}>
-          <FlaskConical size={14} />Methodology
-        </Link>
-        <Link href="/about" onClick={onLinkClick}
-          className={cn(
-            "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] transition-colors",
-            pathname === "/about" ? "bg-slate-900 text-white font-medium" : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
-          )}>
-          <Info size={14} />About
-        </Link>
+      {/* ── BIBLIOTHÈQUE ── */}
+      <div className="border-t border-slate-100 pt-1">
+        <SectionLabel label="Bibliothèque" />
+        <NavSection
+          items={NAV_LIBRARY}
+          activeColor="bg-teal-700 text-white"
+          hoverColor="hover:bg-teal-50 hover:text-teal-700"
+          onLinkClick={onLinkClick}
+        />
       </div>
     </nav>
-  );
-}
-
-function PhaseHeader({ number, label, color, badge }: { number: number; label: string; color: string; badge?: string }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5 mb-0.5">
-      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${color}`}>{number}</span>
-      <span className={`text-[10px] font-semibold tracking-wider uppercase ${color.replace("bg-", "text-")}`}>{label}</span>
-      {badge && (
-        <span className={`text-[8px] px-1.5 py-0.5 rounded-full tracking-wide border ${color.replace("bg-", "border-").replace("700", "200").replace("600", "200")} ${color.replace("bg-", "text-").replace("700", "400").replace("600", "400")} bg-opacity-10`}>
-          {badge}
-        </span>
-      )}
-    </div>
   );
 }
 

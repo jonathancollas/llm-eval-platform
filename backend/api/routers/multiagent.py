@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -25,8 +25,6 @@ from eval_engine.multi_agent.simulator import (
     SimulationScenario,
     INJECTION_PAYLOADS,
     SimulationResult,
-    AgentStep,
-    FailureMode,
 )
 from eval_engine.sandbagging.detector import AntiSandbaggingEngine
 

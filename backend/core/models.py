@@ -457,7 +457,7 @@ class ExperimentManifest(SQLModel, table=True):
     # Execution parameters
     seed: int                   = Field(default=42)
     temperature: float          = Field(default=0.0)
-    max_tokens: int             = Field(default=256)
+    max_tokens: int             = Field(default=2048)
     # Environment
     platform_version: str       = Field(default="")         # Mercury version
     litellm_version: str        = Field(default="")
