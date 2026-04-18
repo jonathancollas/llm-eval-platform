@@ -413,7 +413,8 @@ async def get_benchmark_items(
 
     # 1. Try local JSON file first
     if benchmark.dataset_path:
-        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        from core.security import safe_bench_path
+        full_path = safe_bench_path(settings.bench_library_path, benchmark.dataset_path)
         if full_path.exists():
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
@@ -422,6 +423,8 @@ async def get_benchmark_items(
                 # Cap in-memory items to prevent DoS on very large files
                 items = all_items[:10_000]
                 source = "local"
+            except HTTPException:
+                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
 
