@@ -197,8 +197,6 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
     return result
 
 
-# compute_win_rates is imported from eval_engine/win_rate_engine.py (#88) and called above.
-
 
 @router.get("/stats/summary")
 def get_stats_summary(session: Session = Depends(get_session)):
