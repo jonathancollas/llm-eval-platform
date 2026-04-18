@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useState, useMemo, Suspense } from "react";
+import { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { resultsApi, campaignsApi, reportsApi, genomeApi } from "@/lib/api";
+import { resultsApi, campaignsApi, reportsApi, genomeApi, judgeApi } from "@/lib/api";
 import type { DashboardData, Campaign, Report, GenomeData, FailedItemsData, FailedItem, FailedRun } from "@/lib/api";
-import { API_BASE } from "@/lib/config";
+import { API_BASE, OLLAMA_BASE_URL } from "@/lib/config";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { formatScore, formatCost, formatLatency, scoreColor } from "@/lib/utils";
@@ -11,7 +11,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
-import { Download, FileText, AlertTriangle, XCircle, Zap, Bug, ChevronDown, ChevronUp } from "lucide-react";
+import { Download, FileText, AlertTriangle, XCircle, Zap, Bug, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, Gavel } from "lucide-react";
 
 const CHART_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4"];
 
@@ -52,12 +52,21 @@ function RadarSection({ radar }: { radar: Record<string, Record<string, number>>
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
-  const models = [...new Set(heatmap.map(c => c.model_name))];
-  const benchmarks = [...new Set(heatmap.map(c => c.benchmark_name))];
-  if (!models.length) return null;
+  const models = useMemo(() => [...new Set(heatmap.map(c => c.model_name))], [heatmap]);
+  const benchmarks = useMemo(() => [...new Set(heatmap.map(c => c.benchmark_name))], [heatmap]);
+  const heatmapMap = useMemo(() => {
+    const map = new Map<string, (typeof heatmap)[number]>();
+    heatmap.forEach(c => map.set(`${c.model_name}::${c.benchmark_name}`, c));
+    return map;
+  }, [heatmap]);
 
   // Check if any cell has capability/propensity split
-  const hasCapProp = heatmap.some(c => (c as any).capability_score != null || (c as any).propensity_score != null);
+  const hasCapProp = useMemo(
+    () => heatmap.some(c => (c as any).capability_score != null || (c as any).propensity_score != null),
+    [heatmap],
+  );
+
+  if (!models.length) return null;
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6">
@@ -87,7 +96,7 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
               <tr key={model}>
                 <td className="font-medium text-slate-800 text-xs pr-4 py-2 whitespace-nowrap">{model}</td>
                 {benchmarks.map(bench => {
-                  const cell = heatmap.find(c => c.model_name === model && c.benchmark_name === bench) as any;
+                  const cell = heatmapMap.get(`${model}::${bench}`) as any;
                   const score = cell?.score;
                   const capScore = cell?.capability_score;
                   const propScore = cell?.propensity_score;
@@ -236,9 +245,17 @@ const ERROR_TYPE_LABELS: Record<string, { label: string; color: string; icon: ty
   infra: { label: "Infra Error", color: "text-red-700 bg-red-50", icon: Bug },
 };
 
-function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
+function FailedItemsSection({ failedData, campaignId, onRefresh }: { failedData: FailedItemsData; campaignId: number; onRefresh: () => void }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const [verdicts, setVerdicts] = useState<Record<number, boolean | null>>(() => {
+    const init: Record<number, boolean | null> = {};
+    failedData.items.forEach(it => { if (it.human_verdict != null) init[it.id] = it.human_verdict; });
+    return init;
+  });
+  const [reviewing, setReviewing] = useState<number | null>(null);
+  const [llmJudging, setLlmJudging] = useState(false);
+  const [llmResult, setLlmResult] = useState<string | null>(null);
 
   const allErrors = [
     ...failedData.failed_runs.map(r => ({ ...r, id: r.run_id, item_index: -1, prompt: "", response: r.error_message ?? "", expected: null, score: 0, latency_ms: 0, model_name: r.model_name, benchmark_name: r.benchmark_name, error_type: "infra" })),
@@ -247,6 +264,28 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
 
   const filtered = filter === "all" ? allErrors : allErrors.filter(e => e.error_type === filter);
   const errorTypes = [...new Set(allErrors.map(e => e.error_type))];
+
+  const setVerdict = async (resultId: number, verdict: boolean | null) => {
+    setReviewing(resultId);
+    try {
+      await resultsApi.humanReview(resultId, verdict);
+      setVerdicts(v => ({ ...v, [resultId]: verdict }));
+    } catch {}
+    setReviewing(null);
+  };
+
+  const runLlmJudge = async () => {
+    setLlmJudging(true);
+    setLlmResult(null);
+    try {
+      const res = await judgeApi.evaluate(campaignId, ["claude-sonnet-4-20250514"], "correctness", 50);
+      setLlmResult(`✅ LLM Judge completed: ${res.evaluations_created} items evaluated. Avg score: ${Object.values(res.avg_scores as Record<string, number>).map((s: number) => `${(s * 100).toFixed(1)}%`).join(", ")}`);
+      onRefresh();
+    } catch (e: any) {
+      setLlmResult(`❌ ${e?.message ?? "Judge failed"}`);
+    }
+    setLlmJudging(false);
+  };
 
   if (!allErrors.length) {
     return (
@@ -258,70 +297,131 @@ function FailedItemsSection({ failedData }: { failedData: FailedItemsData }) {
     );
   }
 
+  const reviewedCount = Object.values(verdicts).filter(v => v === true).length;
+
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h3 className="font-medium text-slate-900 text-sm flex items-center gap-2">
-          <AlertTriangle size={14} className="text-red-500" />
-          Detected issues ({allErrors.length})
-        </h3>
-        <div className="flex gap-1">
-          <button onClick={() => setFilter("all")}
-            className={`text-xs px-2 py-1 rounded-lg transition-colors ${filter === "all" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-            Tous
+    <div className="space-y-3">
+      {/* LLM Judge banner */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-sm text-slate-700">
+          <Gavel size={15} className="text-slate-500" />
+          <span className="font-medium">LLM Verify</span>
+          <span className="text-xs text-slate-400">Re-evaluate results with an LLM judge to catch false positives</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {llmResult && <span className="text-xs text-slate-600">{llmResult}</span>}
+          <button onClick={runLlmJudge} disabled={llmJudging}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-40">
+            {llmJudging ? <><Spinner size={11} /> Running…</> : <><Gavel size={11} /> Run LLM Judge</>}
           </button>
-          {errorTypes.map(et => {
-            const cfg = ERROR_TYPE_LABELS[et] ?? { label: et, color: "text-slate-600 bg-slate-50" };
-            return (
-              <button key={et} onClick={() => setFilter(et)}
-                className={`text-xs px-2 py-1 rounded-lg transition-colors ${filter === et ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                {cfg.label} ({allErrors.filter(e => e.error_type === et).length})
-              </button>
-            );
-          })}
         </div>
       </div>
 
-      <div className="space-y-1 max-h-96 overflow-y-auto">
-        {filtered.map((item, idx) => {
-          const cfg = ERROR_TYPE_LABELS[item.error_type] ?? { label: item.error_type, color: "text-slate-600 bg-slate-50", icon: Bug };
-          const isExpanded = expanded === idx;
-          const Icon = cfg.icon;
-          return (
-            <div key={idx}>
-              <button onClick={() => setExpanded(isExpanded ? null : idx)}
-                className="w-full flex items-center gap-2 text-xs text-left hover:bg-slate-50 rounded-lg px-3 py-2 transition-colors">
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.color} shrink-0`}>
-                  <Icon size={10} />{cfg.label}
-                </span>
-                <span className="text-slate-500 w-24 shrink-0 truncate">{item.model_name}</span>
-                <span className="text-slate-400 w-28 shrink-0 truncate">{item.benchmark_name}</span>
-                {item.item_index >= 0 && <span className="text-slate-300 shrink-0">Q#{item.item_index + 1}</span>}
-                <span className="text-slate-400 flex-1 truncate">{item.prompt || item.response}</span>
-                {isExpanded ? <ChevronUp size={12} className="text-slate-300 shrink-0" /> : <ChevronDown size={12} className="text-slate-300 shrink-0" />}
-              </button>
-              {isExpanded && (
-                <div className="bg-slate-50 rounded-lg p-3 mx-3 mb-1 border border-slate-100 text-xs space-y-1.5">
-                  {item.prompt && (
-                    <div><span className="font-medium text-slate-400 uppercase text-[10px]">Prompt</span>
-                      <p className="mt-0.5 text-slate-700">{item.prompt}</p></div>
-                  )}
-                  {item.response && (
-                    <div><span className="font-medium text-slate-400 uppercase text-[10px]">Answer</span>
-                      <p className="mt-0.5 text-slate-700 font-mono">{item.response}</p></div>
-                  )}
-                  {item.expected && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400">Expected:</span>
-                      <span className="font-mono text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{item.expected}</span>
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h3 className="font-medium text-slate-900 text-sm flex items-center gap-2">
+            <AlertTriangle size={14} className="text-red-500" />
+            Detected issues ({allErrors.length})
+            {reviewedCount > 0 && (
+              <span className="text-xs text-green-600 font-normal ml-1">· {reviewedCount} marked as false positive</span>
+            )}
+          </h3>
+          <div className="flex gap-1 flex-wrap">
+            <button onClick={() => setFilter("all")}
+              className={`text-xs px-2 py-1 rounded-lg transition-colors ${filter === "all" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+              Tous
+            </button>
+            {errorTypes.map(et => {
+              const cfg = ERROR_TYPE_LABELS[et] ?? { label: et, color: "text-slate-600 bg-slate-50" };
+              return (
+                <button key={et} onClick={() => setFilter(et)}
+                  className={`text-xs px-2 py-1 rounded-lg transition-colors ${filter === et ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  {cfg.label} ({allErrors.filter(e => e.error_type === et).length})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-1 max-h-[600px] overflow-y-auto">
+          {filtered.map((item, idx) => {
+            const cfg = ERROR_TYPE_LABELS[item.error_type] ?? { label: item.error_type, color: "text-slate-600 bg-slate-50", icon: Bug };
+            const isExpanded = expanded === idx;
+            const Icon = cfg.icon;
+            const hasId = (item as FailedItem).id != null && item.item_index >= 0;
+            const resultId = (item as FailedItem).id;
+            const verdict = verdicts[resultId];
+            const isFalsePositive = verdict === true;
+            const isWrong = verdict === false;
+            const isReviewing = reviewing === resultId;
+
+            return (
+              <div key={idx} className={`rounded-lg transition-colors ${isFalsePositive ? "bg-green-50 border border-green-200" : ""}`}>
+                <div className="flex items-center gap-2 text-xs hover:bg-slate-50 rounded-lg px-3 py-2 transition-colors">
+                  <button onClick={() => setExpanded(isExpanded ? null : idx)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.color} shrink-0`}>
+                      <Icon size={10} />{cfg.label}
+                    </span>
+                    {isFalsePositive && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700 border border-green-200 shrink-0">
+                        ✓ False positive
+                      </span>
+                    )}
+                    {isWrong && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 shrink-0">
+                        ✗ Confirmed wrong
+                      </span>
+                    )}
+                    <span className="text-slate-500 w-24 shrink-0 truncate">{item.model_name}</span>
+                    <span className="text-slate-400 w-28 shrink-0 truncate">{item.benchmark_name}</span>
+                    {item.item_index >= 0 && <span className="text-slate-300 shrink-0">Q#{item.item_index + 1}</span>}
+                    <span className="text-slate-400 flex-1 truncate">{item.prompt || item.response}</span>
+                    {isExpanded ? <ChevronUp size={12} className="text-slate-300 shrink-0" /> : <ChevronDown size={12} className="text-slate-300 shrink-0" />}
+                  </button>
+                  {/* Human review buttons — only for eval items (not infra runs) */}
+                  {hasId && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => setVerdict(resultId, isFalsePositive ? null : true)}
+                        disabled={isReviewing}
+                        title={isFalsePositive ? "Undo: reset verdict" : "Mark as correct (false positive)"}
+                        className={`p-1 rounded transition-colors disabled:opacity-40 ${isFalsePositive ? "text-green-600 bg-green-100 hover:bg-green-200" : "text-slate-300 hover:text-green-600 hover:bg-green-50"}`}>
+                        <ThumbsUp size={12} />
+                      </button>
+                      <button
+                        onClick={() => setVerdict(resultId, isWrong ? null : false)}
+                        disabled={isReviewing}
+                        title={isWrong ? "Undo: reset verdict" : "Confirm as wrong answer"}
+                        className={`p-1 rounded transition-colors disabled:opacity-40 ${isWrong ? "text-red-600 bg-red-100 hover:bg-red-200" : "text-slate-300 hover:text-red-500 hover:bg-red-50"}`}>
+                        <ThumbsDown size={12} />
+                      </button>
+                      {isReviewing && <Spinner size={10} />}
                     </div>
                   )}
-                  {item.latency_ms > 0 && <span className="text-slate-400">{item.latency_ms}ms</span>}
                 </div>
-              )}
-            </div>
-          );
-        })}
+                {isExpanded && (
+                  <div className="bg-slate-50 rounded-lg p-3 mx-3 mb-1 border border-slate-100 text-xs space-y-1.5">
+                    {item.prompt && (
+                      <div><span className="font-medium text-slate-400 uppercase text-[10px]">Prompt</span>
+                        <p className="mt-0.5 text-slate-700">{item.prompt}</p></div>
+                    )}
+                    {item.response && (
+                      <div><span className="font-medium text-slate-400 uppercase text-[10px]">Answer</span>
+                        <p className="mt-0.5 text-slate-700 font-mono">{item.response}</p></div>
+                    )}
+                    {item.expected && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Expected:</span>
+                        <span className="font-mono text-green-700 bg-green-50 px-1.5 py-0.5 rounded">{item.expected}</span>
+                      </div>
+                    )}
+                    {item.latency_ms > 0 && <span className="text-slate-400">{item.latency_ms}ms</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -341,7 +441,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
 
   // Discover locally installed Ollama models
   useEffect(() => {
-    fetch("http://localhost:11434/api/tags")
+    fetch(`${OLLAMA_BASE_URL}/api/tags`)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.models) setOllamaModels(d.models.map((m: any) => m.name));
@@ -436,6 +536,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
 function DashboardContent() {
   const searchParams = useSearchParams();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const campaignsRef = useRef<Campaign[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
   const [genome, setGenome] = useState<GenomeData | null>(null);
@@ -446,7 +547,7 @@ function DashboardContent() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
 
-  useEffect(() => { campaignsApi.list().then(c => setCampaigns(c.filter(x => x.status === "completed"))); }, []);
+  useEffect(() => { campaignsApi.list().then(c => { const completed = c.filter(x => x.status === "completed"); setCampaigns(completed); campaignsRef.current = completed; }); }, []);
 
   useEffect(() => {
     const id = searchParams.get("campaign");
@@ -468,6 +569,11 @@ function DashboardContent() {
       setInsights(ins);
     }).finally(() => setLoading(false));
   }, [selectedId]);
+
+  const refreshFailedData = () => {
+    if (!selectedId) return;
+    resultsApi.failedItems(selectedId).then(setFailedData).catch(() => {});
+  };
 
   useEffect(() => {
     if (!selectedId || !data) {
@@ -504,7 +610,7 @@ function DashboardContent() {
       return;
     }
 
-    const campaign = campaigns.find(c => c.id === selectedId);
+    const campaign = campaignsRef.current.find(c => c.id === selectedId);
     const desc = campaign?.description ?? "";
     const autonomyLevel = (desc.match(/Autonomy:\s*(L[1-5])/i)?.[1] ?? "L2").toUpperCase();
     const memoryType = /Memory:\s*enabled/i.test(desc) ? "persistent" : "session";
@@ -524,8 +630,10 @@ function DashboardContent() {
       .map(t => toolMap[t])
       .filter(Boolean);
 
+    const controller = new AbortController();
     setRiskLoading(true);
     fetch(`${API_BASE}/science/compositional-risk`, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -539,9 +647,10 @@ function DashboardContent() {
     })
       .then(async (res) => (res.ok ? res.json() : null))
       .then((json) => setCompositionalRisk(json))
-      .catch(() => setCompositionalRisk(null))
+      .catch((err) => { if (err.name !== "AbortError") setCompositionalRisk(null); })
       .finally(() => setRiskLoading(false));
-  }, [selectedId, data, campaigns]);
+    return () => controller.abort();
+  }, [selectedId, data]);
 
   const signalCount = insights?.signals?.length ?? 0;
 
@@ -686,7 +795,7 @@ function DashboardContent() {
 
             {tab === "genome" && genome && <GenomeSection genome={genome} />}
 
-            {tab === "errors" && failedData && <FailedItemsSection failedData={failedData} />}
+            {tab === "errors" && failedData && selectedId && <FailedItemsSection failedData={failedData} campaignId={selectedId} onRefresh={refreshFailedData} />}
 
             {tab === "signals" && insights && (
               <div className="space-y-4 max-w-3xl">

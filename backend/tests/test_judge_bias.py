@@ -14,6 +14,8 @@ from eval_engine.judge_bias import (
 from eval_engine.scenario_runtime import (
     EXAMPLE_SCENARIOS, ScenarioRuntime, load_scenario, validate_scenario,
     evaluate_step, ScenarioStep, StepExecutionResult,
+    load_scenario_from_yaml, load_scenario_from_file,
+    _inject_env_vars, _inject_env_vars_deep,
 )
 
 
@@ -288,3 +290,285 @@ def test_classify_failures():
     assert "step_step_b_failed" in failures
     assert "step_step_c_failed" in failures
     assert len(failures) == 2
+
+
+# ---------------------------------------------------------------------------
+# 5 reference scenarios
+# ---------------------------------------------------------------------------
+
+def test_five_example_scenarios_exist():
+    assert len(EXAMPLE_SCENARIOS) == 5, (
+        f"Expected 5 reference scenarios, got {len(EXAMPLE_SCENARIOS)}"
+    )
+
+
+def test_all_example_scenarios_load_and_validate():
+    for raw in EXAMPLE_SCENARIOS:
+        s = load_scenario(raw)
+        errors = validate_scenario(s)
+        assert errors == [], f"Scenario '{s.name}' has validation errors: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# failure_criteria field
+# ---------------------------------------------------------------------------
+
+def test_scenario_has_failure_criteria():
+    # information_synthesis has failure_criteria set
+    raw = next(r for r in EXAMPLE_SCENARIOS if r["name"] == "information_synthesis")
+    s = load_scenario(raw)
+    assert isinstance(s.failure_criteria, list)
+    assert len(s.failure_criteria) > 0
+
+
+def test_scenario_failure_criteria_defaults_empty():
+    raw = dict(EXAMPLE_SCENARIOS[0])
+    raw.pop("failure_criteria", None)
+    s = load_scenario(raw)
+    assert s.failure_criteria == []
+
+
+# ---------------------------------------------------------------------------
+# Conditional branching
+# ---------------------------------------------------------------------------
+
+def test_branching_skips_to_success_step():
+    """When step_a succeeds and next_step_if_success='step_c', step_b is skipped."""
+    raw = {
+        "name": "branch_test",
+        "description": "branch test",
+        "goal": "test branching",
+        "initial_state": {},
+        "max_steps": 5,
+        "timeout_seconds": 30,
+        "success_criteria": ["done"],
+        "steps": [
+            {
+                "step_id": "step_a",
+                "description": "first step",
+                "expected_action_type": "answer",
+                "success_condition": "contains_keyword",
+                "keywords": ["yes"],
+                "partial_credit": 0.5,
+                "next_step_if_success": "step_c",
+            },
+            {
+                "step_id": "step_b",
+                "description": "skipped step",
+                "expected_action_type": "answer",
+                "success_condition": "contains_keyword",
+                "keywords": ["maybe"],
+                "partial_credit": 0.5,
+            },
+            {
+                "step_id": "step_c",
+                "description": "final step",
+                "expected_action_type": "answer",
+                "success_condition": "any",
+                "partial_credit": 1.0,
+            },
+        ],
+    }
+    scenario = load_scenario(raw)
+    runtime = ScenarioRuntime()
+    result = runtime.simulate_run(scenario, [{"text": "yes"}, {"text": "final answer"}])
+    executed_ids = [r.step_id for r in result.step_results]
+    assert "step_a" in executed_ids
+    assert "step_c" in executed_ids
+    assert "step_b" not in executed_ids
+
+
+def test_branching_follows_fail_branch():
+    """When step_a fails and next_step_if_fail='step_c', step_b is skipped."""
+    raw = {
+        "name": "fail_branch_test",
+        "description": "fail branch test",
+        "goal": "test fail branching",
+        "initial_state": {},
+        "max_steps": 5,
+        "timeout_seconds": 30,
+        "success_criteria": ["done"],
+        "steps": [
+            {
+                "step_id": "step_a",
+                "description": "first step",
+                "expected_action_type": "answer",
+                "success_condition": "contains_keyword",
+                "keywords": ["yes"],
+                "partial_credit": 0.5,
+                "next_step_if_fail": "step_c",
+            },
+            {
+                "step_id": "step_b",
+                "description": "skipped step",
+                "expected_action_type": "answer",
+                "success_condition": "any",
+                "partial_credit": 0.5,
+            },
+            {
+                "step_id": "step_c",
+                "description": "fallback step",
+                "expected_action_type": "answer",
+                "success_condition": "any",
+                "partial_credit": 1.0,
+            },
+        ],
+    }
+    scenario = load_scenario(raw)
+    runtime = ScenarioRuntime()
+    result = runtime.simulate_run(scenario, [{"text": "no"}, {"text": "fallback"}])
+    executed_ids = [r.step_id for r in result.step_results]
+    assert "step_a" in executed_ids
+    assert "step_c" in executed_ids
+    assert "step_b" not in executed_ids
+
+
+def test_validate_catches_unknown_branch_target():
+    raw = dict(EXAMPLE_SCENARIOS[0])
+    raw = {**raw, "steps": [
+        {**raw["steps"][0], "next_step_if_success": "nonexistent_step"}
+    ]}
+    s = load_scenario(raw)
+    errors = validate_scenario(s)
+    assert any("nonexistent_step" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# Environment variable injection
+# ---------------------------------------------------------------------------
+
+def test_inject_env_vars_replaces_known_var():
+    result = _inject_env_vars("Hello ${USER_NAME}", {"USER_NAME": "Alice"})
+    assert result == "Hello Alice"
+
+
+def test_inject_env_vars_leaves_unknown_var():
+    result = _inject_env_vars("val=${UNKNOWN_XYZ_9999}", {})
+    assert result == "val=${UNKNOWN_XYZ_9999}"
+
+
+def test_inject_env_vars_deep_dict():
+    obj = {"greeting": "Hi ${NAME}", "count": 42}
+    out = _inject_env_vars_deep(obj, {"NAME": "Bob"})
+    assert out["greeting"] == "Hi Bob"
+    assert out["count"] == 42
+
+
+def test_load_scenario_with_env_injection():
+    raw = {
+        "name": "env_test",
+        "description": "test env injection",
+        "goal": "Retrieve data for ${CITY}",
+        "initial_state": {"city": "${CITY}"},
+        "max_steps": 1,
+        "timeout_seconds": 30,
+        "success_criteria": ["done"],
+        "steps": [
+            {
+                "step_id": "s1",
+                "description": "do something",
+                "expected_action_type": "answer",
+                "success_condition": "any",
+                "partial_credit": 1.0,
+            }
+        ],
+    }
+    scenario = load_scenario(raw, env={"CITY": "Paris"})
+    assert "Paris" in scenario.goal
+    assert scenario.initial_state["city"] == "Paris"
+
+
+# ---------------------------------------------------------------------------
+# YAML DSL
+# ---------------------------------------------------------------------------
+
+SIMPLE_YAML = """
+name: yaml_scenario
+description: A simple YAML scenario
+goal: Demonstrate YAML loading
+initial_state:
+  context: test
+max_steps: 2
+timeout_seconds: 30
+success_criteria:
+  - done
+steps:
+  - step_id: step1
+    description: First step
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - hello
+    partial_credit: 1.0
+"""
+
+
+def test_load_scenario_from_yaml_basic():
+    s = load_scenario_from_yaml(SIMPLE_YAML)
+    assert s.name == "yaml_scenario"
+    assert len(s.steps) == 1
+    assert s.steps[0].step_id == "step1"
+
+
+def test_load_scenario_from_yaml_env_injection():
+    yaml_str = """
+name: env_yaml
+description: yaml with env
+goal: Process ${TARGET}
+initial_state: {}
+max_steps: 1
+timeout_seconds: 10
+success_criteria: [done]
+steps:
+  - step_id: s1
+    description: step
+    expected_action_type: answer
+    success_condition: any
+    partial_credit: 1.0
+"""
+    s = load_scenario_from_yaml(yaml_str, env={"TARGET": "Mars"})
+    assert "Mars" in s.goal
+
+
+def test_load_scenario_from_file_roundtrip(tmp_path):
+    yaml_file = tmp_path / "test_scenario.yaml"
+    yaml_file.write_text(SIMPLE_YAML)
+    s = load_scenario_from_file(str(yaml_file))
+    assert s.name == "yaml_scenario"
+    errors = validate_scenario(s)
+    assert errors == []
+
+
+def test_runtime_load_scenario_from_yaml():
+    runtime = ScenarioRuntime()
+    s = runtime.load_scenario_from_yaml(SIMPLE_YAML)
+    assert s.name == "yaml_scenario"
+
+
+# ---------------------------------------------------------------------------
+# Reference YAML scenario files on disk
+# ---------------------------------------------------------------------------
+
+import pathlib
+
+SCENARIOS_DIR = pathlib.Path(__file__).parent.parent / "eval_engine" / "scenarios"
+
+
+def test_reference_yaml_files_exist():
+    expected = {
+        "data_extraction.yaml",
+        "code_debugging.yaml",
+        "information_synthesis.yaml",
+        "multi_turn_qa.yaml",
+        "tool_use.yaml",
+    }
+    actual = {f.name for f in SCENARIOS_DIR.glob("*.yaml")}
+    assert expected <= actual, f"Missing YAML files: {expected - actual}"
+
+
+def test_reference_yaml_files_load_and_validate():
+    for yaml_file in sorted(SCENARIOS_DIR.glob("*.yaml")):
+        s = load_scenario_from_file(str(yaml_file), env={"CITY": "Paris"})
+        errors = validate_scenario(s)
+        assert errors == [], f"{yaml_file.name} has errors: {errors}"
+

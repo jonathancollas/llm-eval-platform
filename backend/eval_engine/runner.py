@@ -522,8 +522,8 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
     return summary, summary.item_results
 
 def _compute_genome_for_campaign(campaign_id: int, session: Session) -> None:
-    from sqlmodel import select as _sel_inner
     """Compute and store Failure Genome profiles after campaign completes."""
+    from sqlmodel import select as _sel_inner
     from core.models import FailureProfile
     from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
     from eval_engine.failure_genome.ontology import FAILURE_GENOME_VERSION
@@ -577,18 +577,21 @@ def _generate_manifest(campaign_id: int, session: Session) -> None:
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     completed = [r for r in runs if r.status == JobStatus.COMPLETED]
 
-    model_configs = []
-    for mid in set(r.model_id for r in runs):
-        m = session.get(LLMModel, mid)
-        if m:
-            model_configs.append({"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id})
+    model_ids = list(set(r.model_id for r in runs))
+    benchmark_ids = list(set(r.benchmark_id for r in runs))
 
-    bench_configs = []
-    for bid in set(r.benchmark_id for r in runs):
-        b = session.get(Benchmark, bid)
-        if b:
-            bench_configs.append({"bench_id": b.id, "name": b.name, "metric": b.metric,
-                                  "eval_dimension": getattr(b, "eval_dimension", "capability")})
+    models = session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()
+    benchmarks = session.exec(select(Benchmark).where(Benchmark.id.in_(benchmark_ids))).all()
+
+    model_configs = [
+        {"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id}
+        for m in models
+    ]
+    bench_configs = [
+        {"bench_id": b.id, "name": b.name, "metric": b.metric,
+         "eval_dimension": getattr(b, "eval_dimension", "capability")}
+        for b in benchmarks
+    ]
 
     scores = [r.score for r in completed if r.score is not None]
     cap = [r.capability_score for r in completed if getattr(r, "capability_score", None) is not None]
