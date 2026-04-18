@@ -6,10 +6,10 @@ import logging
 import threading
 import time
 from datetime import datetime, UTC
-from typing import Optional
+from typing import Optional, NamedTuple
 
 import anthropic
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -125,70 +125,113 @@ class DomainReport(BaseModel):
 # Simple in-memory cache for reports
 _report_cache: dict[str, DomainReport] = {}
 
+class _RunSlim(NamedTuple):
+    """Lightweight projection — only the five columns needed for aggregation."""
+    model_id: int
+    benchmark_id: int
+    score: Optional[float]
+    total_cost_usd: float
+    total_latency_ms: int
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _get_domain_runs(domain: str, session: Session) -> tuple[list[EvalRun], list[LLMModel], list[Benchmark]]:
-    """Fetch all completed runs for a domain."""
-    runs = session.exec(
-        select(EvalRun).where(EvalRun.status == JobStatus.COMPLETED)
-    ).all()
+def _resolve_domain_benchmark_ids(
+    allowed_keys: list[str] | None,
+    all_benchmarks: dict[int, Benchmark],
+) -> set[int] | None:
+    """Return the set of benchmark IDs that belong to this domain, or None (= all)."""
+    if allowed_keys is None:
+        return None
+    filtered: set[int] = set()
+    for b_id, bench in all_benchmarks.items():
+        bench_key = bench.name.lower().replace(" ", "_").replace("-", "_")
+        for key in allowed_keys:
+            if key.lower() in bench_key or bench_key.startswith(key.lower()):
+                filtered.add(b_id)
+                break
+    return filtered
 
-    if not runs:
-        return [], [], []
 
-    # Fetch only the models and benchmarks referenced by the fetched runs
-    model_ids = list({r.model_id for r in runs})
-    benchmark_ids = list({r.benchmark_id for r in runs})
+def _get_domain_runs(domain: str, session: Session) -> tuple[list[_RunSlim], dict[int, LLMModel], dict[int, Benchmark]]:
+    """
+    Return slim run projections for *domain*, plus lookup dicts for models and benchmarks.
 
-    models = {m.id: m for m in session.exec(
-        select(LLMModel).where(LLMModel.id.in_(model_ids))
-    ).all()}
-    benchmarks = {b.id: b for b in session.exec(
-        select(Benchmark).where(Benchmark.id.in_(benchmark_ids))
-    ).all()}
-
+    Optimisations vs. the original implementation:
+    - Only the five columns required for aggregation are fetched (no full ORM hydration).
+    - The domain benchmark filter is pushed to SQL (WHERE benchmark_id IN (...)) so the
+      database never transfers rows that would be discarded in Python.
+    - The benchmarks table is small and always fetched in full to support name-key matching;
+      models are fetched only for the IDs that appear in the result set.
+    """
     domain_cfg = DOMAINS.get(domain, DOMAINS["global"])
     allowed_keys = domain_cfg["benchmark_keys"]
 
-    if allowed_keys is not None:
-        # Filter runs to only those benchmarks in this domain
-        # Match by benchmark name key (partial match on name)
-        filtered_bench_ids = set()
-        for b_id, bench in benchmarks.items():
-            bench_name_lower = bench.name.lower().replace(" ", "_").replace("-", "_")
-            for key in allowed_keys:
-                if key.lower() in bench_name_lower or bench_name_lower.startswith(key.lower()):
-                    filtered_bench_ids.add(b_id)
-                    break
-        runs = [r for r in runs if r.benchmark_id in filtered_bench_ids]
+    # Benchmarks table is small — fetch all once to resolve domain filter.
+    all_benchmarks: dict[int, Benchmark] = {
+        b.id: b
+        for b in session.exec(select(Benchmark)).all()
+    }
 
-    return runs, list(models.values()), list(benchmarks.values())
+    domain_bench_ids = _resolve_domain_benchmark_ids(allowed_keys, all_benchmarks)
+
+    # Projected query — only fetch the columns we actually need.
+    stmt = select(
+        EvalRun.model_id,
+        EvalRun.benchmark_id,
+        EvalRun.score,
+        EvalRun.total_cost_usd,
+        EvalRun.total_latency_ms,
+    ).where(EvalRun.status == JobStatus.COMPLETED)
+
+    if domain_bench_ids is not None:
+        # Apply domain filter at SQL level — avoids transferring irrelevant rows.
+        stmt = stmt.where(EvalRun.benchmark_id.in_(domain_bench_ids))
+
+    raw_rows = session.exec(stmt).all()
+    if not raw_rows:
+        return [], {}, {}
+
+    runs = [_RunSlim(*r) for r in raw_rows]
+
+    # Fetch only models that appear in the result set.
+    model_ids = list({r.model_id for r in runs})
+    models: dict[int, LLMModel] = {
+        m.id: m
+        for m in session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()
+    }
+
+    # Restrict benchmarks dict to those actually referenced.
+    bench_ids_in_runs = {r.benchmark_id for r in runs}
+    benchmarks = {b_id: all_benchmarks[b_id] for b_id in bench_ids_in_runs if b_id in all_benchmarks}
+
+    return runs, models, benchmarks
 
 
-def _build_leaderboard(runs: list[EvalRun], models_list: list[LLMModel], benchmarks_list: list[Benchmark]) -> tuple[list[LeaderboardRow], list[str]]:
-    """Aggregate runs into leaderboard rows."""
-    models_map = {m.id: m for m in models_list}
-    benches_map = {b.id: b for b in benchmarks_list}
-
-    # Collect benchmark names that appear in runs
+def _build_leaderboard(
+    runs: list[_RunSlim],
+    models: dict[int, LLMModel],
+    benchmarks: dict[int, Benchmark],
+) -> tuple[list[LeaderboardRow], list[str]]:
+    """Aggregate slim run projections into leaderboard rows."""
+    # Preserve insertion order for benchmark column headers.
     bench_ids_in_runs = list(dict.fromkeys(r.benchmark_id for r in runs))
-    bench_names = [benches_map[bid].name for bid in bench_ids_in_runs if bid in benches_map]
+    bench_names = [benchmarks[bid].name for bid in bench_ids_in_runs if bid in benchmarks]
 
-    # Group by model
-    by_model: dict[int, list[EvalRun]] = {}
+    # Group by model.
+    by_model: dict[int, list[_RunSlim]] = {}
     for r in runs:
         by_model.setdefault(r.model_id, []).append(r)
 
     rows: list[LeaderboardRow] = []
     for model_id, model_runs in by_model.items():
-        model = models_map.get(model_id)
+        model = models.get(model_id)
         if not model:
             continue
 
         scores: dict[str, float | None] = {}
         for r in model_runs:
-            bench = benches_map.get(r.benchmark_id)
+            bench = benchmarks.get(r.benchmark_id)
             if bench:
                 scores[bench.name] = r.score
 
@@ -208,7 +251,7 @@ def _build_leaderboard(runs: list[EvalRun], models_list: list[LLMModel], benchma
             avg_latency_ms=round(avg_latency, 1),
         ))
 
-    # Sort by avg_score desc
+    # Sort by avg_score desc; models with no score sink to the bottom.
     rows.sort(key=lambda r: (r.avg_score is None, -(r.avg_score or 0)))
     for i, row in enumerate(rows):
         row.rank = i + 1
@@ -228,20 +271,25 @@ def list_domains():
 
 
 @router.get("/{domain}", response_model=DomainLeaderboard)
-def get_leaderboard(domain: str, session: Session = Depends(get_session)):
+def get_leaderboard(
+    domain: str,
+    force_refresh: bool = Query(default=False, description="Bypass the in-process cache and recompute."),
+    session: Session = Depends(get_session),
+):
     if domain not in DOMAINS:
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found. Available: {list(DOMAINS.keys())}")
 
     now = time.monotonic()
-    with _leaderboard_cache_lock:
-        cached = _leaderboard_cache.get(domain)
-        if cached is not None:
-            ts, data = cached
-            if now - ts < _LEADERBOARD_TTL:
-                return data
+    if not force_refresh:
+        with _leaderboard_cache_lock:
+            cached = _leaderboard_cache.get(domain)
+            if cached is not None:
+                ts, data = cached
+                if now - ts < _LEADERBOARD_TTL:
+                    return data
 
-    runs, models_list, benchmarks_list = _get_domain_runs(domain, session)
-    rows, bench_names = _build_leaderboard(runs, models_list, benchmarks_list)
+    runs, models, benchmarks = _get_domain_runs(domain, session)
+    rows, bench_names = _build_leaderboard(runs, models, benchmarks)
 
     cfg = DOMAINS[domain]
     result = DomainLeaderboard(
@@ -276,12 +324,12 @@ async def generate_domain_report(
     if not settings.anthropic_api_key and not settings.ollama_base_url:
         raise HTTPException(status_code=500, detail="No model available. Configure ANTHROPIC_API_KEY or Ollama.")
 
-    runs, models_list, benchmarks_list = _get_domain_runs(domain, session)
+    runs, models, benchmarks = _get_domain_runs(domain, session)
 
     if not runs:
         raise HTTPException(status_code=400, detail="No completed evaluation runs found for this domain. Run some campaigns first.")
 
-    rows, bench_names = _build_leaderboard(runs, models_list, benchmarks_list)
+    rows, bench_names = _build_leaderboard(runs, models, benchmarks)
     cfg = DOMAINS[domain]
 
     # Build context
