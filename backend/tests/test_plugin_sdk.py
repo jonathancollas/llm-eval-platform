@@ -20,7 +20,7 @@ from eval_engine.eval_versioning import (
 # ── Export imports ────────────────────────────────────────────────────────────
 from eval_engine.research_export import (
     ExportConfig, export_json_ld, export_csv, export_latex_table,
-    export_bibtex, export_eval_card,
+    export_bibtex, export_helm, export_eval_card,
 )
 
 
@@ -257,7 +257,9 @@ def test_export_json_ld_valid_json_with_context():
     out = export_json_ld(_RUN, _CFG)
     doc = json.loads(out)
     assert "@context" in doc
-    assert doc["model"] == "gpt-4"
+    assert "@graph" in doc
+    entity = doc["@graph"][0]
+    assert entity.get("mr:model") == "gpt-4"
 
 def test_export_csv_has_model_header():
     out = export_csv([_RUN], _CFG)
@@ -276,3 +278,60 @@ def test_export_bibtex_contains_at_misc():
 def test_export_eval_card_contains_results_section():
     out = export_eval_card(_RUN, {"name": "MMLU", "description": "A benchmark"}, _CFG)
     assert "## Results" in out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELM export
+# ══════════════════════════════════════════════════════════════════════════════
+
+def test_export_helm_valid_json():
+    out = export_helm(_RUN, _CFG)
+    doc = json.loads(out)
+    assert "run_spec" in doc
+    assert "stats" in doc
+
+def test_export_helm_run_spec_model_name():
+    out = export_helm(_RUN, _CFG)
+    doc = json.loads(out)
+    assert "gpt-4" in doc["run_spec"]["name"]
+
+def test_export_helm_stats_mean_matches_score():
+    out = export_helm(_RUN, _CFG)
+    doc = json.loads(out)
+    assert doc["stats"][0]["mean"] == pytest.approx(0.85)
+
+def test_export_helm_stats_ci_bounds():
+    out = export_helm(_RUN, _CFG)
+    doc = json.loads(out)
+    stat = doc["stats"][0]
+    assert stat["min"] == pytest.approx(0.82)
+    assert stat["max"] == pytest.approx(0.88)
+
+def test_export_helm_metadata_author():
+    out = export_helm(_RUN, _CFG)
+    doc = json.loads(out)
+    assert doc["mercury_retrograde_metadata"]["author"] == "Alice"
+
+def test_export_json_ld_prov_o_graph():
+    """JSON-LD document must use @graph with prov:Entity and prov:wasGeneratedBy."""
+    out = export_json_ld(_RUN, _CFG)
+    doc = json.loads(out)
+    assert "@graph" in doc
+    entity = doc["@graph"][0]
+    assert "prov:wasGeneratedBy" in entity
+    assert "prov:wasAttributedTo" in entity
+
+def test_export_csv_accepts_model_name_key():
+    """export_csv must map model_name/benchmark_name to model/benchmark columns."""
+    run = {"model_name": "llama-3", "benchmark_name": "HellaSwag", "score": 0.70}
+    out = export_csv([run], ExportConfig())
+    assert "llama-3" in out
+    assert "HellaSwag" in out
+
+def test_export_latex_accepts_model_name_key():
+    """export_latex_table must fall back to model_name/benchmark_name keys."""
+    run = {"model_name": "claude-3", "benchmark_name": "ARC", "score": 0.9,
+           "ci_lower": 0.87, "ci_upper": 0.93}
+    out = export_latex_table([run], ExportConfig())
+    assert "claude-3" in out
+    assert "ARC" in out

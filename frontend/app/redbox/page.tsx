@@ -4,7 +4,7 @@ import { modelsApi } from "@/lib/api";
 import type { LLMModel, LLMModelSlim } from "@/lib/api";
 import { Spinner } from "@/components/Spinner";
 import { ModelSelector } from "@/components/ModelSelector";
-import { ShieldAlert, Zap, Target, AlertTriangle, ChevronDown, ChevronUp, Play, RotateCcw } from "lucide-react";
+import { ShieldAlert, Zap, Target, AlertTriangle, ChevronDown, ChevronUp, Play, RotateCcw, Info } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
@@ -28,7 +28,17 @@ interface Variant {
 interface RunResult {
   mutation: string; prompt: string; response: string; breached: boolean;
   severity: number; failure_detected: string; latency_ms: number;
+  rebuff?: { injection_detected: boolean; heuristic_score: number; model_score: number };
 }
+type ForgeEngine = "native" | "garak" | "deepteam" | "promptfoo" | "artkit" | "openrt";
+const ENGINE_OPTIONS: { key: ForgeEngine; label: string; badge?: string; color: string; desc: string }[] = [
+  { key: "native",    label: "Native (LLM)",  color: "bg-slate-700",  desc: "Claude-backed + rule-based templates" },
+  { key: "garak",     label: "garak",         color: "bg-red-700",    desc: "NVIDIA LLM vulnerability scanner — 1000s of probes" },
+  { key: "deepteam",  label: "DeepTeam",      color: "bg-orange-700", desc: "Confident AI — automated jailbreaks + injections" },
+  { key: "promptfoo", label: "Promptfoo",     color: "bg-yellow-700", desc: "Promptfoo red-team plugins — CI/CD ready" },
+  { key: "artkit",    label: "ARTKIT",        color: "bg-blue-700",   desc: "BCG-X — multi-turn adversarial pipelines" },
+  { key: "openrt",    label: "OpenRT", badge: "experimental", color: "bg-purple-700", desc: "TrustAIRLab — 37 methods, gradient-based attacks (research)" },
+];
 interface Exploit {
   id: number; model_name: string; model_id: number; mutation_type: string;
   adversarial_prompt: string; model_response: string; breached: boolean;
@@ -397,6 +407,13 @@ export default function RedboxPage() {
   const [generating, setGenerating] = useState(false);
   const [activeTab, setActiveTab] = useState<"forge" | "exploits" | "heatmap" | "simulation">("forge");
 
+  // Engine + PyRIT
+  const [engine, setEngine] = useState<ForgeEngine>("native");
+  const [usePyrit, setUsePyrit] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
+  const [coverage, setCoverage] = useState<any>(null);
+  const [loadingCoverage, setLoadingCoverage] = useState(false);
+
   // Run state
   const [models, setModels] = useState<LLMModelSlim[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
@@ -430,6 +447,16 @@ export default function RedboxPage() {
   const toggleMutation = (key: string) =>
     setSelectedMutations(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
 
+  const loadCoverage = useCallback(async (eng: ForgeEngine) => {
+    if (eng === "native") { setCoverage(null); return; }
+    setLoadingCoverage(true);
+    try {
+      const res = await fetch(`${API_BASE}/redbox/${eng}/coverage`);
+      if (res.ok) setCoverage(await res.json());
+    } catch {}
+    finally { setLoadingCoverage(false); }
+  }, []);
+
   const generate = async () => {
     if (!seed.trim() || !selectedMutations.length) return;
     setGenerating(true); setVariants([]); setRunResults(null); setRunSummary(null);
@@ -437,7 +464,13 @@ export default function RedboxPage() {
       const res = await fetch(`${API_BASE}/redbox/forge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seed_prompt: seed, mutation_types: selectedMutations, num_variants_per_type: 3 }),
+        body: JSON.stringify({
+          seed_prompt: seed,
+          mutation_types: selectedMutations,
+          num_variants_per_type: 3,
+          engine,
+          use_pyrit: usePyrit,
+        }),
       });
       const data = await res.json();
       setVariants(data.variants ?? []);
@@ -542,6 +575,108 @@ export default function RedboxPage() {
                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
             </div>
 
+            {/* ── Engine selector ─────────────────────────────────────── */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-medium text-slate-700">Attack engine</label>
+                {engine !== "native" && (
+                  <button
+                    onClick={() => { setShowCoverage(v => { const next = !v; if (next) loadCoverage(engine); return next; }); }}
+                    className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                  >
+                    <Info size={11} />
+                    {showCoverage ? "Hide coverage" : "Show coverage"}
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {ENGINE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => { setEngine(opt.key); setShowCoverage(false); setCoverage(null); }}
+                    title={opt.desc}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      engine === opt.key
+                        ? `${opt.color} text-white border-transparent`
+                        : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                    }`}
+                  >
+                    {opt.label}
+                    {opt.badge && (
+                      <span className="text-[9px] bg-white/20 px-1 rounded font-bold uppercase tracking-wider">
+                        {opt.badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {engine !== "native" && (
+                <p className="text-xs text-slate-400 mt-1.5">
+                  {ENGINE_OPTIONS.find(o => o.key === engine)?.desc}
+                </p>
+              )}
+
+              {/* PyRIT checkbox — available for native engine only */}
+              {engine === "native" && (
+                <label className="flex items-center gap-2 mt-3 cursor-pointer group w-fit">
+                  <input
+                    type="checkbox"
+                    checked={usePyrit}
+                    onChange={e => setUsePyrit(e.target.checked)}
+                    className="w-4 h-4 accent-red-600"
+                  />
+                  <span className="text-xs text-slate-600 group-hover:text-slate-800">
+                    Use <span className="font-semibold text-red-700">PyRIT</span> — Microsoft multi-turn orchestration strategies
+                    <span className="ml-1 text-slate-400">(falls back to rules if package absent)</span>
+                  </span>
+                </label>
+              )}
+            </div>
+
+            {/* ── Coverage panel ──────────────────────────────────────── */}
+            {showCoverage && engine !== "native" && (
+              <div className="bg-slate-900 rounded-xl p-4 text-xs space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                    {engine.toUpperCase()} coverage
+                  </span>
+                  {coverage?.available !== undefined && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                      coverage.available ? "bg-green-900 text-green-400" : "bg-yellow-900 text-yellow-400"
+                    }`}>
+                      {coverage.available ? "INSTALLED" : "NOT INSTALLED — fallback active"}
+                    </span>
+                  )}
+                  {coverage?.status === "experimental" && (
+                    <span className="text-[10px] bg-purple-900 text-purple-400 px-2 py-0.5 rounded font-bold">EXPERIMENTAL</span>
+                  )}
+                  {loadingCoverage && <Spinner size={10} />}
+                </div>
+                {coverage?.note && (
+                  <p className="text-yellow-400 bg-yellow-900/30 rounded p-2">{coverage.note}</p>
+                )}
+                {coverage?.install && !coverage.available && (
+                  <code className="block bg-slate-800 text-green-400 rounded p-2 font-mono">{coverage.install}</code>
+                )}
+                {coverage?.supported_attack_classes && (
+                  <div>
+                    <p className="text-slate-400 mb-1.5">Supported attack classes:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(coverage.supported_attack_classes as string[]).map((cls: string) => (
+                        <span key={cls} className="bg-slate-700 text-slate-200 px-2 py-0.5 rounded font-mono">{cls}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {coverage?.reference && (
+                  <a href={coverage.reference} target="_blank" rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 underline">
+                    {coverage.github ?? coverage.reference}
+                  </a>
+                )}
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-medium text-slate-700 mb-2 block">Types de mutations</label>
               <div className="grid grid-cols-3 gap-2">
@@ -571,6 +706,12 @@ export default function RedboxPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium text-slate-900">{variants.length} forged variants</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded font-medium text-white ${
+                    ENGINE_OPTIONS.find(o => o.key === engine)?.color ?? "bg-slate-600"
+                  }`}>
+                    {ENGINE_OPTIONS.find(o => o.key === engine)?.label ?? engine}
+                    {usePyrit && engine === "native" && " + PyRIT"}
+                  </span>
                 </div>
 
                 {/* Model selector */}
@@ -610,6 +751,16 @@ export default function RedboxPage() {
                   {(runResults ?? variants).map((item: any, i: number) => {
                     const mt = MUTATION_TYPES.find(m => m.key === item.mutation);
                     const isResult = !!runResults;
+                    // Extract engine label from rationale (e.g. "ARTKIT pipeline=…", "Garak probe:…")
+                    const engineLabel = item.rationale
+                      ? item.rationale.startsWith("ARTKIT") ? "ARTKIT"
+                      : item.rationale.startsWith("OpenRT") ? "OpenRT"
+                      : item.rationale.startsWith("Garak") ? "garak"
+                      : item.rationale.startsWith("DeepTeam") ? "DeepTeam"
+                      : item.rationale.startsWith("Promptfoo") ? "Promptfoo"
+                      : item.rationale.startsWith("[PyRIT") ? "PyRIT"
+                      : null
+                      : null;
                     return (
                       <div key={i} className={`bg-white border rounded-xl p-4 ${isResult && item.breached ? "border-red-300" : "border-slate-200"}`}>
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -619,6 +770,11 @@ export default function RedboxPage() {
                             item.difficulty > 0.7 ? "bg-red-100 text-red-700" :
                             item.difficulty > 0.4 ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
                           }`}>Diff {Math.round((item.difficulty ?? 0) * 100)}%</span>
+                          {engineLabel && (
+                            <span className="text-xs px-1.5 py-0.5 bg-slate-800 text-slate-200 rounded font-mono">
+                              {engineLabel}
+                            </span>
+                          )}
                           {isResult && (
                             <>
                               <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${item.breached ? "bg-red-600 text-white" : "bg-green-600 text-white"}`}>
@@ -638,6 +794,21 @@ export default function RedboxPage() {
                             <pre className={`text-xs whitespace-pre-wrap font-mono rounded-lg p-2.5 border mt-0.5 line-clamp-4 ${
                               item.breached ? "bg-red-50 border-red-100 text-red-700" : "bg-green-50 border-green-100 text-green-700"
                             }`}>{item.response}</pre>
+                          </div>
+                        )}
+                        {/* Rebuff injection guard scores */}
+                        {isResult && item.rebuff && (item.rebuff.injection_detected || item.rebuff.heuristic_score > 0 || item.rebuff.model_score > 0) && (
+                          <div className="mt-2 flex items-center gap-3 text-[10px] border-t border-slate-100 pt-2">
+                            <span className="text-slate-400 font-semibold uppercase tracking-wide">Rebuff</span>
+                            <span className={`px-1.5 py-0.5 rounded font-bold ${item.rebuff.injection_detected ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                              {item.rebuff.injection_detected ? "⚠ Injection detected" : "✓ Clean"}
+                            </span>
+                            {item.rebuff.heuristic_score > 0 && (
+                              <span className="text-slate-500">Heuristic: {Math.round(item.rebuff.heuristic_score * 100)}%</span>
+                            )}
+                            {item.rebuff.model_score > 0 && (
+                              <span className="text-slate-500">Model: {Math.round(item.rebuff.model_score * 100)}%</span>
+                            )}
                           </div>
                         )}
                       </div>

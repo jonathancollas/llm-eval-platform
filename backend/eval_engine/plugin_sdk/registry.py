@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 import importlib.util, os, logging
 
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RegisteredPlugin:
     plugin_class: type; manifest_name: str; plugin_type: str
-    registered_at: datetime = field(default_factory=datetime.utcnow)
+    registered_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 class PluginRegistry:
     _instance = None

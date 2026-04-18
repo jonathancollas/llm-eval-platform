@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -127,7 +127,11 @@ def _get_questions(benchmark: Benchmark, n: int, session: Session) -> list[dict]
 
     if benchmark.dataset_path:
         from pathlib import Path
-        bench_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        from core.security import safe_bench_path
+        try:
+            bench_path = safe_bench_path(settings.bench_library_path, benchmark.dataset_path)
+        except Exception:
+            return []
         if bench_path.exists():
             try:
                 data = json.loads(bench_path.read_text())
@@ -567,8 +571,14 @@ def check_benchmark_validity(
         score -= 0.1
     else:
         from pathlib import Path
-        full_path = Path(settings.bench_library_path) / bench.dataset_path
-        if not full_path.exists():
+        from core.security import safe_bench_path
+        try:
+            full_path = safe_bench_path(settings.bench_library_path, bench.dataset_path)
+        except Exception:
+            issues.append(f"Dataset path is invalid or unsafe: {bench.dataset_path}.")
+            score -= 0.2
+            full_path = None
+        if full_path is not None and not full_path.exists():
             issues.append(f"Dataset file not found at {bench.dataset_path}.")
             score -= 0.2
 

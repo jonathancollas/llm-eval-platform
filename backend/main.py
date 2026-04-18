@@ -38,6 +38,9 @@ from api.routers import capability as capability_router
 from api.routers import scenarios as scenarios_router
 from api.routers import forecasting as forecasting_router
 from api.routers import tasks as tasks_router
+from api.routers import failure_patterns as failure_patterns_router
+from api.routers import reward_hacking as reward_hacking_router
+from api.routers import vibe as vibe_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,7 +82,11 @@ async def lifespan(app: FastAPI):
     app.state.bg_sync_task = asyncio.create_task(_background_openrouter_sync())
     app.state.bg_queue_recovery_task = asyncio.create_task(_background_queue_recovery())
 
-    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
+    # 5. Cache bench file count once at startup — avoids rglob() on every /api/health call
+    from pathlib import Path as _Path
+    _bench_path = _Path(settings.bench_library_path)
+    app.state.bench_files_count = len(list(_bench_path.rglob("*.json"))) if _bench_path.exists() else 0
+    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}  bench_files={app.state.bench_files_count}")
     yield
     # Cancel the background task and wait for it to finish cleanly.
     tasks = [app.state.bg_sync_task, app.state.bg_queue_recovery_task]
@@ -152,6 +159,9 @@ _RATE_LIMIT_ENABLED = _os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 # Hard cap on timestamps kept per IP to prevent unbounded memory growth.
 # We never need to store more than RPM entries for any single IP.
 _RATE_LIMIT_MAX_STORE = _RATE_LIMIT_RPM
+# Lock to prevent asyncio race conditions between concurrent coroutines reading
+# and writing the same IP's window before the update is committed.
+_rate_limit_lock = asyncio.Lock()
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
@@ -161,15 +171,14 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     if request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json"):
         return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
-    now = _time.time()
-    # Prune timestamps outside the 60-second window
-    window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
-    # Cap stored entries to prevent memory growth from burst IPs
-    _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:]
-    if len(window) >= _RATE_LIMIT_RPM:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
-    _rate_limit_store[client_ip].append(now)
+    async with _rate_limit_lock:
+        now = _time.time()
+        # Prune timestamps outside the 60-second window
+        window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
+        if len(window) >= _RATE_LIMIT_RPM:
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
+        # Cap stored entries to prevent memory growth from burst IPs
+        _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:] + [now]
     return await call_next(request)
 
 
@@ -198,6 +207,16 @@ async def security_headers(request: Request, call_next: Callable) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self' https://openrouter.ai https://api.lakera.ai; "
+        "frame-ancestors 'none';"
+    )
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -301,6 +320,9 @@ tenant_scoped_routers = [
     multiagent.router, events_router.router, monitoring.router, science.router,
     statistics_router.router, plugins_router.router, capability_router.router,
     scenarios_router.router, forecasting_router.router, tasks_router.router,
+    failure_patterns_router.router,
+    reward_hacking_router.router,
+    vibe_router.router,
 ]
 for router in tenant_scoped_routers:
     app.include_router(router, prefix="/api", dependencies=[Depends(require_tenant)])
