@@ -4,19 +4,26 @@ Computes, stores and serves failure DNA profiles.
 """
 import json
 import logging
+import threading
+import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from core.database import get_session
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, FailureProfile, ModelFingerprint, JobStatus
 from core.utils import safe_json_load
-from core.relations import get_benchmark_tags
-from eval_engine.failure_genome.ontology import ONTOLOGY, GENOME_KEYS, FAILURE_GENOME_VERSION
+from eval_engine.failure_genome.ontology import ONTOLOGY, FAILURE_GENOME_VERSION
 from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome, classify_run_hybrid
 from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/genome", tags=["genome"])
 logger = logging.getLogger(__name__)
+
+# ── In-process TTL cache for safety heatmap ──────────────────────────────────
+# The heatmap aggregates all FailureProfiles — expensive full-scan operation.
+_heatmap_cache: tuple[float, object] | None = None
+_heatmap_cache_lock = threading.Lock()
+_HEATMAP_TTL = 300.0  # 5 minutes
 
 
 # ── Compute genome for a campaign ─────────────────────────────────────────────
@@ -135,8 +142,8 @@ def _update_model_fingerprints(campaign_id: int, session: Session):
         if existing:
             existing.genome_json = json.dumps(agg)
             existing.stats_json = json.dumps(stats)
-            from datetime import datetime
-            existing.updated_at = datetime.utcnow()
+            from datetime import datetime, UTC
+            existing.updated_at = datetime.now(UTC)
             session.add(existing)
         else:
             session.add(ModelFingerprint(
@@ -246,7 +253,16 @@ def get_safety_heatmap(session: Session = Depends(get_session)):
     Safety Heatmap: capability × risk matrix.
     Aggregates failure profiles across all completed runs.
     """
-    from core.models import FailureProfile, EvalRun, LLMModel, Benchmark, BenchmarkType
+    global _heatmap_cache
+
+    now = time.monotonic()
+    with _heatmap_cache_lock:
+        if _heatmap_cache is not None:
+            ts, data = _heatmap_cache
+            if now - ts < _HEATMAP_TTL:
+                return data
+
+    from core.models import FailureProfile, EvalRun, LLMModel, Benchmark
 
     CAPABILITY_MAP = {
         "academic": "Raisonnement académique",
@@ -353,12 +369,15 @@ def get_safety_heatmap(session: Session = Depends(get_session)):
                 "risk_level": "red" if overall_risk > 0.4 else "yellow" if overall_risk > 0.2 else "green",
             })
 
-    return {
+    result = {
         "heatmap": heatmap,
         "models": sorted(all_models),
         "capabilities": sorted(matrix.keys()),
         "computed": True,
     }
+    with _heatmap_cache_lock:
+        _heatmap_cache = (now, result)
+    return result
 
 
 @router.get("/regression/compare")

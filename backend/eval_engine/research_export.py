@@ -2,14 +2,14 @@
 from __future__ import annotations
 import json, csv, io
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 
 @dataclass
 class ExportConfig:
     include_ci: bool = True; include_raw_scores: bool = False
     include_metadata: bool = True; decimal_places: int = 4
     author: str = ""; institution: str = ""
-    date: str = field(default_factory=lambda: datetime.utcnow().strftime("%Y-%m-%d"))
+    date: str = field(default_factory=lambda: datetime.now(UTC).strftime("%Y-%m-%d"))
 
 def export_json_ld(run_data: dict, config: ExportConfig) -> str:
     doc = {

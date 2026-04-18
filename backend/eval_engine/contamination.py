@@ -6,9 +6,6 @@ Uses n-gram overlap, permutation testing, and response confidence analysis.
 import re
 import math
 import logging
-from collections import Counter
-from typing import Optional
-
 logger = logging.getLogger(__name__)
 
 

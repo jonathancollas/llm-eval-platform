@@ -2,7 +2,7 @@
 from __future__ import annotations
 import hashlib, json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 @dataclass
@@ -37,7 +37,7 @@ class BenchmarkVersion:
     benchmark_name: str; version: str
     dataset_hash: str; prompt_hash: str; scoring_hash: str
     n_items: int
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     changelog: str = ""
 
 def hash_content(content) -> str:

@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlmodel import Session, select
 
@@ -42,7 +42,7 @@ def _mark_campaign(campaign_id: int, status: JobStatus, error: str | None = None
             if c:
                 c.status = status
                 c.error_message = error
-                c.completed_at = datetime.utcnow()
+                c.completed_at = datetime.now(UTC)
                 session.add(c)
                 session.commit()
     except Exception as e:
@@ -78,7 +78,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         if total_runs == 0:
             campaign.status = JobStatus.COMPLETED
             campaign.progress = 100.0
-            campaign.completed_at = datetime.utcnow()
+            campaign.completed_at = datetime.now(UTC)
             session.add(campaign)
             session.commit()
             return
@@ -109,7 +109,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     model_id=model_id,
                     benchmark_id=benchmark_id,
                     status=JobStatus.RUNNING,
-                    started_at=datetime.utcnow(),
+                    started_at=datetime.now(UTC),
                 )
                 session.add(eval_run)
                 session.commit()
@@ -233,7 +233,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                         },
                     ))
 
-                eval_run.completed_at = datetime.utcnow()
+                eval_run.completed_at = datetime.now(UTC)
                 session.add(eval_run)
                 completed_runs += 1
 
@@ -267,7 +267,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
         campaign.current_item_index = None
         campaign.current_item_total = None
         campaign.current_item_label = None
-        campaign.completed_at = datetime.utcnow()
+        campaign.completed_at = datetime.now(UTC)
         session.add(campaign)
         session.commit()
         logger.info(f"Campaign {campaign_id} completed in {_format_eta(int(time.monotonic() - campaign_start))}.")
@@ -522,14 +522,13 @@ async def _run_one(model: LLMModel, benchmark: Benchmark, campaign: Campaign, ev
     return summary, summary.item_results
 
 def _compute_genome_for_campaign(campaign_id: int, session: Session) -> None:
-    from sqlmodel import select as _sel_inner
     """Compute and store Failure Genome profiles after campaign completes."""
-    from core.models import FailureProfile, ModelFingerprint
+    from sqlmodel import select as _sel_inner
+    from core.models import FailureProfile
     from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
     from eval_engine.failure_genome.ontology import FAILURE_GENOME_VERSION
-    from core.utils import safe_json_load
     import json as _json
-    from datetime import datetime as _dt
+
 
     runs = session.exec(_sel_inner(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     for run in runs:
@@ -579,18 +578,21 @@ def _generate_manifest(campaign_id: int, session: Session) -> None:
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     completed = [r for r in runs if r.status == JobStatus.COMPLETED]
 
-    model_configs = []
-    for mid in set(r.model_id for r in runs):
-        m = session.get(LLMModel, mid)
-        if m:
-            model_configs.append({"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id})
+    model_ids = list(set(r.model_id for r in runs))
+    benchmark_ids = list(set(r.benchmark_id for r in runs))
 
-    bench_configs = []
-    for bid in set(r.benchmark_id for r in runs):
-        b = session.get(Benchmark, bid)
-        if b:
-            bench_configs.append({"bench_id": b.id, "name": b.name, "metric": b.metric,
-                                  "eval_dimension": getattr(b, "eval_dimension", "capability")})
+    models = session.exec(select(LLMModel).where(LLMModel.id.in_(model_ids))).all()
+    benchmarks = session.exec(select(Benchmark).where(Benchmark.id.in_(benchmark_ids))).all()
+
+    model_configs = [
+        {"model_id": m.id, "name": m.name, "provider": m.provider, "model_id_str": m.model_id}
+        for m in models
+    ]
+    bench_configs = [
+        {"bench_id": b.id, "name": b.name, "metric": b.metric,
+         "eval_dimension": getattr(b, "eval_dimension", "capability")}
+        for b in benchmarks
+    ]
 
     scores = [r.score for r in completed if r.score is not None]
     cap = [r.capability_score for r in completed if getattr(r, "capability_score", None) is not None]

@@ -1,0 +1,48 @@
+name: data_extraction
+version: "1.0.0"
+description: Extract structured data from a business metrics document
+goal: Extract all numerical values and their labels from the document
+domain: data_analysis
+difficulty: easy
+capability_tags:
+  - instruction_following
+author: llm-eval-platform
+
+initial_state:
+  document: "Revenue: $1.2M, Users: 45000, Growth: 23%, Churn: 2.1%"
+
+max_steps: 5
+timeout_seconds: 60
+
+success_criteria:
+  - all_values_extracted
+failure_criteria:
+  - missing_values
+
+steps:
+  - step_id: identify_values
+    description: Identify all numerical values present in the document
+    expected_action_type: reasoning
+    success_condition: contains_keyword
+    keywords:
+      - revenue
+      - users
+      - growth
+      - churn
+    partial_credit: 0.4
+    hints:
+      - "Look for currency symbols, percentages, and raw numbers"
+    next_step_if_success: extract_labels
+
+  - step_id: extract_labels
+    description: Associate each label with its numerical value
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - "1.2"
+      - "45000"
+      - "23"
+      - "2.1"
+    partial_credit: 0.6
+    hints:
+      - "Pair each metric name with its corresponding number"

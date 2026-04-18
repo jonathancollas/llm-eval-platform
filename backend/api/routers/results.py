@@ -33,6 +33,12 @@ _dashboard_cache_lock = threading.Lock()
 _DASHBOARD_TTL_RUNNING = 5.0    # seconds — running campaigns change fast
 _DASHBOARD_TTL_COMPLETED = 30.0  # seconds — completed campaigns are stable
 
+# ── In-process TTL cache for stats/summary ───────────────────────────────────
+# This endpoint is polled every 30 s by SWR; caching for 30 s cuts DB load ~50×.
+_stats_cache: tuple[float, object] | None = None
+_stats_cache_lock = threading.Lock()
+_STATS_TTL = 30.0  # seconds
+
 _CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -197,8 +203,6 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
     return result
 
 
-# _compute_win_rates moved to eval_engine/win_rate_engine.py (#88)
-
 
 @router.get("/stats/summary")
 def get_stats_summary(session: Session = Depends(get_session)):
@@ -207,6 +211,15 @@ def get_stats_summary(session: Session = Depends(get_session)):
     Returns the five counters shown on the home page overview:
       models, benchmarks, inesia_benchmarks, campaigns, completed_runs
     """
+    global _stats_cache
+
+    now = time.monotonic()
+    with _stats_cache_lock:
+        if _stats_cache is not None:
+            ts, data = _stats_cache
+            if now - ts < _STATS_TTL:
+                return data
+
     from core.models import LLMModel as _LLMModel, Benchmark as _Benchmark
 
     # Single pass for model count
@@ -224,13 +237,16 @@ def get_stats_summary(session: Session = Depends(get_session)):
         select(func.count()).select_from(Campaign).where(Campaign.status == JobStatus.COMPLETED)
     ).one()
 
-    return {
+    result = {
         "models": model_count,
         "benchmarks": bench_count,
         "inesia_benchmarks": inesia_bench_count,
         "campaigns": campaign_count,
         "completed_runs": completed_count,
     }
+    with _stats_cache_lock:
+        _stats_cache = (now, result)
+    return result
 
 
 @router.get("/run/{run_id}/items")
@@ -345,6 +361,7 @@ def get_campaign_live_feed(
                 "current_item_index": None, "current_item_total": None, "current_item_label": None}
 
     run_ids = [r.id for r in runs]
+    run_map = {r.id: r for r in runs}
     completed_runs = sum(1 for r in runs if r.status == "completed")
 
     # Get latest results
@@ -360,7 +377,7 @@ def get_campaign_live_feed(
     bench_cache = {}
     items = []
     for r in results:
-        run = next((x for x in runs if x.id == r.run_id), None)
+        run = run_map.get(r.run_id)
         if not run:
             continue
         if run.model_id not in model_cache:
@@ -382,19 +399,18 @@ def get_campaign_live_feed(
         })
 
     # Compute rate from ACTUAL items in DB (including streamed ones during execution)
-    all_item_ids = session.exec(
-        select(EvalResult.id).where(EvalResult.run_id.in_(run_ids))
-    ).all() if run_ids else []
-    total_items_in_db = len(all_item_ids)
+    total_items_in_db = session.exec(
+        select(func.count()).select_from(EvalResult).where(EvalResult.run_id.in_(run_ids))
+    ).one() if run_ids else 0
 
     items_per_sec = 0.0
     eta_seconds = None
 
     started_runs = [r for r in runs if r.started_at]
     if started_runs and total_items_in_db > 0:
-        from datetime import datetime
+        from datetime import datetime, UTC
         earliest = min(r.started_at for r in started_runs)
-        elapsed = (datetime.utcnow() - earliest).total_seconds()
+        elapsed = (datetime.now(UTC) - earliest).total_seconds()
         if elapsed > 1:
             items_per_sec = round(total_items_in_db / elapsed, 2)
 
@@ -508,6 +524,7 @@ def get_failed_items(
             "model_name": model_cache[run.model_id],
             "benchmark_name": bench_cache[run.benchmark_id],
             "error_type": error_type,
+            "human_verdict": r.human_verdict,
         })
 
     return {
@@ -519,6 +536,28 @@ def get_failed_items(
     }
 
 
+# ── Human Review ──────────────────────────────────────────────────────────────
+
+class HumanReviewPayload(BaseModel):
+    verdict: Optional[bool]  # True = correct (false positive), False = confirmed wrong, None = reset
+
+
+@router.patch("/{result_id}/human-review")
+def set_human_review(
+    result_id: int,
+    payload: HumanReviewPayload,
+    session: Session = Depends(get_session),
+):
+    """Record a human verdict for an eval result (override automatic score)."""
+    result = session.get(EvalResult, result_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found.")
+    result.human_verdict = payload.verdict
+    session.add(result)
+    session.commit()
+    return {"id": result_id, "human_verdict": result.human_verdict}
+
+
 # ── Unified Campaign Insights ──────────────────────────────────────────────────
 # Aggregates: eval results + genome + judge + redbox in a single response
 
@@ -528,7 +567,7 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
     Unified view across all modules for one campaign.
     Returns eval summary + genome + judge agreement + redbox exploits.
     """
-    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit, ModelFingerprint
+    from core.models import FailureProfile, JudgeEvaluation, RedboxExploit
     from core.utils import safe_json_load
 
     campaign = session.get(Campaign, campaign_id)
