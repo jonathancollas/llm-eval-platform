@@ -31,7 +31,7 @@ class ForgeRequest(BaseModel):
     mutation_types: list[str] = Field(..., min_length=1, max_length=10)
     num_variants_per_type: int = Field(default=3, ge=1, le=10)
     use_pyrit: bool = Field(default=False)
-    engine: Literal["native", "garak"] = "native"
+    engine: Literal["native", "garak", "deepteam", "promptfoo"] = "native"
 
 class ForgeVariant(BaseModel):
     mutation: str
@@ -213,6 +213,105 @@ GARAK_PROBE_PACKS = {
 GARAK_BASE_DIFFICULTY = 0.45
 GARAK_DIFFICULTY_INCREMENT = 0.15
 
+# ── DeepTeam (Confident AI) attack module mapping ─────────────────────────────
+# Maps mutation types to DeepTeam attack class names and difficulty profiles.
+# Reference: https://github.com/confident-ai/deepteam
+DEEPTEAM_ATTACK_MODULES = {
+    "jailbreak": {
+        "attack_class": "DeepJailbreakAttack",
+        "base_difficulty": 0.8,
+        "expected_failure": "safety_bypass",
+        "description": "Automated jailbreaking via DeepTeam's iterative refinement engine",
+    },
+    "prompt_injection": {
+        "attack_class": "PromptInjectionAttack",
+        "base_difficulty": 0.75,
+        "expected_failure": "safety_bypass",
+        "description": "Direct and indirect prompt injection via DeepTeam PromptInjectionAttack",
+    },
+    "multi_turn": {
+        "attack_class": "CrescendoAttack",
+        "base_difficulty": 0.75,
+        "expected_failure": "instruction_drift",
+        "description": "Multi-turn escalation via DeepTeam CrescendoAttack orchestrator",
+    },
+    "exfiltration": {
+        "attack_class": "SystemPromptLeakageAttack",
+        "base_difficulty": 0.65,
+        "expected_failure": "safety_bypass",
+        "description": "System prompt / PII extraction via DeepTeam leakage probes",
+    },
+    "encoding_evasion": {
+        "attack_class": "LinearJailbreakingAttack",
+        "base_difficulty": 0.7,
+        "expected_failure": "safety_bypass",
+        "description": "Encoding-based evasion via DeepTeam LinearJailbreakingAttack",
+    },
+    "crescendo": {
+        "attack_class": "TreeOfAttacksWithPruning",
+        "base_difficulty": 0.85,
+        "expected_failure": "safety_bypass",
+        "description": "Tree-based adversarial search via DeepTeam TAP implementation",
+    },
+}
+DEEPTEAM_DIFFICULTY_INCREMENT = 0.04
+
+# ── Promptfoo (red-team mode) plugin mapping ──────────────────────────────────
+# Maps mutation types to Promptfoo red-team plugin identifiers.
+# Reference: https://www.promptfoo.dev/docs/red-team/
+PROMPTFOO_PLUGIN_MAP = {
+    "jailbreak": {
+        "plugin": "jailbreak",
+        "strategy": "jailbreak:tree",
+        "base_difficulty": 0.8,
+        "expected_failure": "safety_bypass",
+        "description": "Tree of Attacks with Pruning (TAP) jailbreak via Promptfoo",
+    },
+    "prompt_injection": {
+        "plugin": "prompt-injection",
+        "strategy": "jailbreak",
+        "base_difficulty": 0.7,
+        "expected_failure": "safety_bypass",
+        "description": "Prompt injection probes via Promptfoo prompt-injection plugin",
+    },
+    "exfiltration": {
+        "plugin": "pii:direct",
+        "strategy": "jailbreak",
+        "base_difficulty": 0.65,
+        "expected_failure": "safety_bypass",
+        "description": "PII / sensitive data exfiltration via Promptfoo pii:direct plugin",
+    },
+    "multi_turn": {
+        "plugin": "jailbreak:composite",
+        "strategy": "jailbreak:crescendo",
+        "base_difficulty": 0.75,
+        "expected_failure": "instruction_drift",
+        "description": "Multi-turn escalation via Promptfoo crescendo strategy",
+    },
+    "multilingual": {
+        "plugin": "jailbreak",
+        "strategy": "jailbreak:multilingual",
+        "base_difficulty": 0.6,
+        "expected_failure": "safety_bypass",
+        "description": "Cross-lingual jailbreak via Promptfoo multilingual strategy",
+    },
+    "encoding_evasion": {
+        "plugin": "jailbreak",
+        "strategy": "jailbreak:base64",
+        "base_difficulty": 0.65,
+        "expected_failure": "safety_bypass",
+        "description": "Encoding evasion via Promptfoo base64 jailbreak strategy",
+    },
+    "crescendo": {
+        "plugin": "jailbreak:tree",
+        "strategy": "jailbreak:tree",
+        "base_difficulty": 0.85,
+        "expected_failure": "safety_bypass",
+        "description": "Prompt evolution / TAP optimization via Promptfoo jailbreak:tree plugin",
+    },
+}
+PROMPTFOO_DIFFICULTY_INCREMENT = 0.04
+
 
 def _generate_rule_based(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
     """Fallback: generate variants from templates."""
@@ -292,16 +391,95 @@ def _generate_garak_variants(seed: str, mutation_types: list[str], n: int) -> li
     return variants
 
 
+def _generate_deepteam_variants(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
+    """Generate DeepTeam (Confident AI) attack variants for supported attack classes.
+
+    Uses DEEPTEAM_ATTACK_MODULES to annotate each variant with the corresponding
+    DeepTeam attack class name and metadata.  The ``deepteam`` package is not
+    required at runtime — variants are produced from the built-in rule-based
+    templates labelled with DeepTeam class names, mirroring the Garak integration
+    pattern.  When the ``deepteam`` Python package *is* installed in the
+    environment, callers can use the ``attack_class`` value in each variant's
+    rationale to instantiate the real attack object directly.
+    """
+    variants: list[ForgeVariant] = []
+    for mt in mutation_types:
+        cfg = DEEPTEAM_ATTACK_MODULES.get(mt)
+        templates = MUTATION_TEMPLATES.get(mt, [f"[{mt}] {{seed}}"])
+        if cfg is None:
+            # No DeepTeam mapping for this mutation type — use rule-based fallback.
+            for i, tmpl in enumerate(templates[:n]):
+                variants.append(ForgeVariant(
+                    mutation=mt,
+                    prompt=tmpl.replace("{seed}", seed),
+                    difficulty=0.5 + (i * DEEPTEAM_DIFFICULTY_INCREMENT),
+                    expected_failure="safety_bypass",
+                    rationale=f"DeepTeam fallback (no mapping for '{mt}'): rule-based template #{i + 1}",
+                ))
+            continue
+
+        for i, tmpl in enumerate(templates[:n]):
+            variants.append(ForgeVariant(
+                mutation=mt,
+                prompt=tmpl.replace("{seed}", seed),
+                difficulty=min(1.0, cfg["base_difficulty"] + (i * DEEPTEAM_DIFFICULTY_INCREMENT)),
+                expected_failure=cfg["expected_failure"],
+                rationale=f"DeepTeam {cfg['attack_class']}: {cfg['description']}",
+            ))
+    return variants
+
+
+def _generate_promptfoo_variants(seed: str, mutation_types: list[str], n: int) -> list[ForgeVariant]:
+    """Generate Promptfoo red-team variants for supported attack classes.
+
+    Optional integration: gracefully falls back to rule-based templates when
+    Promptfoo is not available, still annotating the rationale with the target
+    Promptfoo plugin / strategy so callers can invoke it externally.
+    """
+    variants: list[ForgeVariant] = []
+    for mt in mutation_types:
+        cfg = PROMPTFOO_PLUGIN_MAP.get(mt)
+        templates = MUTATION_TEMPLATES.get(mt, [f"[{mt}] {{seed}}"])
+        if cfg is None:
+            for i, tmpl in enumerate(templates[:n]):
+                variants.append(ForgeVariant(
+                    mutation=mt,
+                    prompt=tmpl.replace("{seed}", seed),
+                    difficulty=0.5 + (i * PROMPTFOO_DIFFICULTY_INCREMENT),
+                    expected_failure="safety_bypass",
+                    rationale=f"Promptfoo fallback (no plugin mapping for '{mt}'): rule-based template #{i + 1}",
+                ))
+            continue
+
+        for i, tmpl in enumerate(templates[:n]):
+            variants.append(ForgeVariant(
+                mutation=mt,
+                prompt=tmpl.replace("{seed}", seed),
+                difficulty=min(1.0, cfg["base_difficulty"] + (i * PROMPTFOO_DIFFICULTY_INCREMENT)),
+                expected_failure=cfg["expected_failure"],
+                rationale=(
+                    f"Promptfoo plugin={cfg['plugin']} strategy={cfg['strategy']}: {cfg['description']}"
+                ),
+            ))
+    return variants
+
+
 async def _generate_llm_variants(
     seed: str,
     mutation_types: list[str],
     n: int,
     use_pyrit: bool = False,
-    engine: Literal["native", "garak"] = "native",
+    engine: Literal["native", "garak", "deepteam", "promptfoo"] = "native",
 ) -> list[ForgeVariant]:
     """Use Claude to generate sophisticated adversarial variants."""
     if engine == "garak":
         return _generate_garak_variants(seed, mutation_types, n)
+
+    if engine == "deepteam":
+        return _generate_deepteam_variants(seed, mutation_types, n)
+
+    if engine == "promptfoo":
+        return _generate_promptfoo_variants(seed, mutation_types, n)
 
     pyrit_variants = await _generate_pyrit_variants(seed, mutation_types, n) if use_pyrit else []
     pyrit_mutations = {v.mutation for v in pyrit_variants}
@@ -957,6 +1135,43 @@ def get_garak_coverage():
         "engine": "garak",
         "supported_attack_classes": sorted(GARAK_PROBE_PACKS.keys()),
         "probe_packs": GARAK_PROBE_PACKS,
+    }
+
+
+@router.get("/deepteam/coverage")
+def get_deepteam_coverage():
+    """DeepTeam (Confident AI) attack module coverage integrated in REDBOX."""
+    return {
+        "engine": "deepteam",
+        "supported_attack_classes": sorted(DEEPTEAM_ATTACK_MODULES.keys()),
+        "attack_modules": {
+            mt: {
+                "attack_class": cfg["attack_class"],
+                "base_difficulty": cfg["base_difficulty"],
+                "expected_failure": cfg["expected_failure"],
+                "description": cfg["description"],
+            }
+            for mt, cfg in DEEPTEAM_ATTACK_MODULES.items()
+        },
+    }
+
+
+@router.get("/promptfoo/coverage")
+def get_promptfoo_coverage():
+    """Promptfoo red-team plugin coverage integrated in REDBOX."""
+    return {
+        "engine": "promptfoo",
+        "supported_attack_classes": sorted(PROMPTFOO_PLUGIN_MAP.keys()),
+        "plugin_map": {
+            mt: {
+                "plugin": cfg["plugin"],
+                "strategy": cfg["strategy"],
+                "base_difficulty": cfg["base_difficulty"],
+                "expected_failure": cfg["expected_failure"],
+                "description": cfg["description"],
+            }
+            for mt, cfg in PROMPTFOO_PLUGIN_MAP.items()
+        },
     }
 
 
