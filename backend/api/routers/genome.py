@@ -4,7 +4,7 @@ Computes, stores and serves failure DNA profiles.
 """
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from core.database import get_session
