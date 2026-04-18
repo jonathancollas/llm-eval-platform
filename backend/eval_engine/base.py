@@ -68,7 +68,14 @@ class BaseBenchmarkRunner(ABC):
         """Load items from dataset_path JSON. Cached per file path."""
         if not self.benchmark.dataset_path:
             return []
-        full_path = self.bench_library_path / self.benchmark.dataset_path
+        root = self.bench_library_path.resolve()
+        full_path = (root / self.benchmark.dataset_path).resolve()
+        if not str(full_path).startswith(str(root)):
+            logger.error(
+                f"Rejected dataset path outside bench_library: {self.benchmark.dataset_path!r} "
+                f"(benchmark: {self.benchmark.name})"
+            )
+            return []
         if not full_path.exists():
             logger.warning(
                 f"Dataset file not found: {full_path} "
@@ -142,7 +149,7 @@ class BaseBenchmarkRunner(ABC):
         rng = random.Random(seed + 1)
         few_shot_examples = rng.sample(few_shot_pool, min(few_shot_count, len(few_shot_pool)))
 
-        max_tokens = self.config.get("max_tokens", 256)
+        max_tokens = self.config.get("max_tokens", 2048)
         item_results: list[ItemResult] = []
 
         for idx, item in enumerate(items):

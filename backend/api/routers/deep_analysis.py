@@ -4,25 +4,19 @@ When model weights are available locally (via Ollama), perform deep inspection
 that's impossible with API-only models.
 
 Analyses available:
-1. Weight Statistics — layer norms, parameter distributions, anomaly detection
-2. Tokenizer Analysis — vocabulary coverage, special tokens, encoding behavior
-3. Activation Probing — run prompts and inspect intermediate representations
-4. Refusal Mechanism Probing — test safety boundaries with graduated prompts
-5. Embedding Space Analysis — semantic clustering, concept geometry
-6. Model Card Extraction — architecture, size, quantization level
+1. Tokenizer Analysis — vocabulary coverage, special tokens, encoding behavior
+2. Activation Probing — run prompts and inspect intermediate representations
+3. Refusal Mechanism Probing — test safety boundaries with graduated prompts
+4. Embedding Space Analysis — semantic clustering, concept geometry
+5. Model Card Extraction — architecture, size, quantization level
 """
 import json
 import logging
 import math
-import hashlib
-import subprocess
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from core.database import get_session
 from core.config import get_settings
