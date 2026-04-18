@@ -289,7 +289,8 @@ def _inject_env_vars(value: str, env: Optional[dict] = None) -> str:
     def _replace(match: re.Match) -> str:
         return context.get(match.group(1), match.group(0))
 
-    return re.sub(r"\$\{([^}]+)\}", _replace, value)
+    # Use a precise character class for valid env-var names to avoid ReDoS.
+    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", _replace, value)
 
 
 def _inject_env_vars_deep(obj, env: Optional[dict] = None):
