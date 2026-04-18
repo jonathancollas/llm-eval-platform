@@ -8,7 +8,7 @@ from typing import Optional
 import time
 import httpx
 import threading
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 

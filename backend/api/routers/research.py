@@ -17,7 +17,7 @@ from core.database import get_session
 from core.config import get_settings
 from core.models import (
     Workspace, ExperimentManifest, SafetyIncident, TelemetryEvent,
-    Campaign, EvalRun, EvalResult, LLMModel, Benchmark, JobStatus,
+    Campaign, EvalRun, LLMModel, Benchmark, JobStatus,
 )
 
 router = APIRouter(prefix="/research", tags=["research"])
