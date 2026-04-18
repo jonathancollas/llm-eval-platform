@@ -1,6 +1,7 @@
 """Shared utility functions."""
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,20 @@ BYPASS_UNBREACHED_REFUSAL_ADJUSTMENT = 0.1
 CONFIDENCE_BASE = 0.35
 CONFIDENCE_VALID_RESPONSE_BONUS = 0.45
 CONFIDENCE_RESPONSE_SIGNAL_WEIGHT = 0.2
+
+
+def resolve_safe_path(base: Path, relative: str) -> Path:
+    """Resolve *relative* under *base* and verify it stays within *base*.
+
+    Raises ``ValueError`` if the resolved path escapes the base directory.
+    Callers in an HTTP context should catch ``ValueError`` and raise an
+    appropriate ``HTTPException``.
+    """
+    base_resolved = base.resolve()
+    resolved = (base / relative).resolve()
+    # relative_to() raises ValueError when *resolved* is not under base_resolved
+    resolved.relative_to(base_resolved)
+    return resolved
 
 
 def clamp_unit_interval(value: Any) -> float:
