@@ -1,0 +1,70 @@
+name: Performance / Integration
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+
+    env:
+      BACKEND_URL: http://localhost:8000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup environment variables
+        # Use repository secrets when available (push to main / PRs from the
+        # same repo).  Fall back to randomly-generated values for fork PRs
+        # where secrets are not injected — the backend only needs SECRET_KEY
+        # to be non-empty for startup; no real secret value is required for
+        # smoke / perf tests.
+        run: |
+          SECRET_KEY="${{ secrets.BACKEND_SECRET_KEY }}"
+          ADMIN_API_KEY="${{ secrets.ADMIN_API_KEY }}"
+          if [ -z "$SECRET_KEY" ]; then
+            SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+          fi
+          if [ -z "$ADMIN_API_KEY" ]; then
+            ADMIN_API_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+          fi
+          # Mask values so they are never printed in step logs
+          echo "::add-mask::${SECRET_KEY}"
+          echo "::add-mask::${ADMIN_API_KEY}"
+          # Export to subsequent steps via GITHUB_ENV
+          echo "SECRET_KEY=${SECRET_KEY}" >> "$GITHUB_ENV"
+          echo "ADMIN_API_KEY=${ADMIN_API_KEY}" >> "$GITHUB_ENV"
+          # Write .env for docker compose env_file loading (required by docker-compose.yml)
+          printf 'SECRET_KEY=%s\nADMIN_API_KEY=%s\nDATABASE_URL=sqlite:///./data/llm_eval.db\nMERCURY_DEV_MODE=true\n' \
+            "${SECRET_KEY}" "${ADMIN_API_KEY}" > .env
+
+      - name: Run docker compose up -d backend
+        run: docker compose up -d backend
+
+      - name: Wait for backend to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf "${BACKEND_URL}/api/health" > /dev/null 2>&1; then
+              echo "Backend is up"
+              exit 0
+            fi
+            echo "Waiting for backend... ($i/30)"
+            sleep 2
+          done
+          echo "Backend did not become healthy in time"
+          docker compose logs backend
+          exit 1
+
+      - name: Smoke test — health endpoint
+        run: |
+          curl -sf "${BACKEND_URL}/api/health" | python3 -m json.tool
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
