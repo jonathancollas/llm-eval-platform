@@ -150,6 +150,7 @@ export interface FailedItem {
   id: number; item_index: number; prompt: string; response: string;
   expected: string | null; score: number; latency_ms: number;
   model_name: string; benchmark_name: string; error_type: string;
+  human_verdict?: boolean | null;
 }
 export interface FailedRun {
   run_id: number; model_name: string; benchmark_name: string;
@@ -197,6 +198,11 @@ export const resultsApi = {
   insights: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/insights`),
   contamination: (campaignId: number) => apiFetch<any>(`/results/campaign/${campaignId}/contamination`),
   exportUrl: (campaignId: number) => `${API_BASE}/results/campaign/${campaignId}/export.csv`,
+  humanReview: (resultId: number, verdict: boolean | null) =>
+    apiFetch<{ id: number; human_verdict: boolean | null }>(`/results/${resultId}/human-review`, {
+      method: "PATCH",
+      body: JSON.stringify({ verdict }),
+    }),
 };
 
 export const reportsApi = {

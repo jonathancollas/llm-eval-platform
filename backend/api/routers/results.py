@@ -503,6 +503,7 @@ def get_failed_items(
             "model_name": model_cache[run.model_id],
             "benchmark_name": bench_cache[run.benchmark_id],
             "error_type": error_type,
+            "human_verdict": r.human_verdict,
         })
 
     return {
@@ -510,6 +511,28 @@ def get_failed_items(
         "total_failed": len(failed_items),
         "failed_runs": failed_runs,
     }
+
+
+# ── Human Review ──────────────────────────────────────────────────────────────
+
+class HumanReviewPayload(BaseModel):
+    verdict: Optional[bool]  # True = correct (false positive), False = confirmed wrong, None = reset
+
+
+@router.patch("/{result_id}/human-review")
+def set_human_review(
+    result_id: int,
+    payload: HumanReviewPayload,
+    session: Session = Depends(get_session),
+):
+    """Record a human verdict for an eval result (override automatic score)."""
+    result = session.get(EvalResult, result_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found.")
+    result.human_verdict = payload.verdict
+    session.add(result)
+    session.commit()
+    return {"id": result_id, "human_verdict": result.human_verdict}
 
 
 # ── Unified Campaign Insights ──────────────────────────────────────────────────
