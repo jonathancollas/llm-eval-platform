@@ -98,6 +98,8 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
             run_coroutines = []
             eval_run_ids = []
 
+            # Resolve benchmarks and collect valid (benchmark, eval_run) pairs
+            new_runs: list[tuple[Benchmark, EvalRun]] = []
             for benchmark_id in benchmark_ids:
                 benchmark = session.get(Benchmark, benchmark_id)
                 if not benchmark:
@@ -111,9 +113,16 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     status=JobStatus.RUNNING,
                     started_at=datetime.utcnow(),
                 )
-                session.add(eval_run)
+                new_runs.append((benchmark, eval_run))
+
+            # Batch-insert all EvalRuns for this model in a single transaction
+            if new_runs:
+                session.add_all(run for _, run in new_runs)
                 session.commit()
-                session.refresh(eval_run)
+                for _, run in new_runs:
+                    session.refresh(run)
+
+            for benchmark, eval_run in new_runs:
                 eval_run_ids.append(eval_run.id)
                 run_coroutines.append(_run_one(model, benchmark, campaign, eval_run.id))
 
@@ -123,7 +132,7 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
                     campaign_id=campaign_id,
                     run_id=eval_run.id,
                     model_id=model_id,
-                    benchmark_id=benchmark_id,
+                    benchmark_id=benchmark.id,
                     payload={
                         "model_name": model.name,
                         "benchmark_name": benchmark.name,
