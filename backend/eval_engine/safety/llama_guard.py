@@ -3,6 +3,7 @@ Runtime safety classification using Llama Guard via Ollama.
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import re
@@ -13,6 +14,16 @@ import httpx
 from core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Shared client — reused across calls to avoid per-request TCP connection overhead.
+# lru_cache(maxsize=1) ensures a single instance is created even under concurrent
+# coroutine scheduling, while keeping the initialisation lazy (settings available).
+
+
+@functools.lru_cache(maxsize=1)
+def _get_llama_client() -> httpx.AsyncClient:
+    settings = get_settings()
+    return httpx.AsyncClient(timeout=settings.llama_guard_timeout_seconds)
 
 
 def _extract_json_object(text: str) -> Optional[dict]:
@@ -66,11 +77,10 @@ async def classify_runtime_safety(prompt: str, response: str) -> Tuple[Optional[
     }
 
     try:
-        timeout = settings.llama_guard_timeout_seconds
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(f"{settings.ollama_base_url}/api/generate", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        client = _get_llama_client()
+        resp = await client.post(f"{settings.ollama_base_url}/api/generate", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
     except Exception as exc:
         logger.debug(f"[llama-guard] classification failed: {exc}")
         return None, None
