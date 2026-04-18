@@ -2,7 +2,7 @@
 Benchmarks — CRUD + dataset upload + HuggingFace import.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -122,7 +122,9 @@ def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
 def _get_citation_count(session: Session, benchmark_id: Optional[int]) -> int:
     if benchmark_id is None:
         return 0
-    return len(session.exec(select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)).all())
+    return session.exec(
+        select(func.count()).select_from(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
+    ).one()
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
