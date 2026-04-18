@@ -105,7 +105,9 @@ def run_confidence(run_id: int, session: Session = Depends(get_session)):
     return result.__dict__
 
 
-def _run_to_fingerprint_inputs(run: EvalRun, session: Session):
+def _run_to_fingerprint_inputs(
+    run: EvalRun, session: Session
+) -> tuple[dict, list[dict], list[dict], int, float]:
     """Extract the config inputs needed to generate a reproducibility fingerprint."""
     model = session.get(LLMModel, run.model_id)
     benchmark = session.get(Benchmark, run.benchmark_id)

@@ -28,10 +28,6 @@ def safe_bench_path(bench_library_path: str, dataset_path: str) -> Path:
         raise HTTPException(status_code=400, detail="Invalid dataset path.")
     return candidate
 
-# HKDF info label — changing this would invalidate all stored ciphertexts,
-# so treat it as an opaque constant tied to this application.
-_HKDF_INFO = b"llm-eval-platform-fernet-v1"
-
 
 def _get_fernet() -> Fernet:
     settings = get_settings()
