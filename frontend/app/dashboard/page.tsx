@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { resultsApi, campaignsApi, reportsApi, genomeApi } from "@/lib/api";
 import type { DashboardData, Campaign, Report, GenomeData, FailedItemsData, FailedItem, FailedRun } from "@/lib/api";
-import { API_BASE } from "@/lib/config";
+import { API_BASE, OLLAMA_BASE_URL } from "@/lib/config";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { formatScore, formatCost, formatLatency, scoreColor } from "@/lib/utils";
@@ -341,7 +341,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
 
   // Discover locally installed Ollama models
   useEffect(() => {
-    fetch("http://localhost:11434/api/tags")
+    fetch(`${OLLAMA_BASE_URL}/api/tags`)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (d?.models) setOllamaModels(d.models.map((m: any) => m.name));
