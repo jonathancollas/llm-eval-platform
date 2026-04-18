@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from core.database import get_session
 from core.config import get_settings
 from core.models import LLMModel, Benchmark, EvalRun, EvalResult, JobStatus
+from core.utils import resolve_safe_path
 from inference.adapter import get_adapter
 from eval_engine.capability_propensity import CapabilityPropensityEngine
 from eval_engine.mech_interp import MechInterpValidator
@@ -127,7 +128,10 @@ def _get_questions(benchmark: Benchmark, n: int, session: Session) -> list[dict]
 
     if benchmark.dataset_path:
         from pathlib import Path
-        bench_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        try:
+            bench_path = resolve_safe_path(Path(settings.bench_library_path), benchmark.dataset_path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid dataset path.")
         if bench_path.exists():
             try:
                 data = json.loads(bench_path.read_text())
@@ -567,10 +571,15 @@ def check_benchmark_validity(
         score -= 0.1
     else:
         from pathlib import Path
-        full_path = Path(settings.bench_library_path) / bench.dataset_path
-        if not full_path.exists():
-            issues.append(f"Dataset file not found at {bench.dataset_path}.")
+        try:
+            full_path = resolve_safe_path(Path(settings.bench_library_path), bench.dataset_path)
+        except ValueError:
+            issues.append("Invalid dataset path.")
             score -= 0.2
+        else:
+            if not full_path.exists():
+                issues.append(f"Dataset file not found at {bench.dataset_path}.")
+                score -= 0.2
 
     # Contamination risk from source
     source = getattr(bench, "source", "public")

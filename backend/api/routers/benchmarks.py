@@ -15,6 +15,7 @@ from core.database import get_session
 from core.models import Benchmark, BenchmarkType, BenchmarkFork, BenchmarkCitation, BenchmarkPack
 from core.config import get_settings
 from core.relations import get_benchmark_tags, replace_benchmark_tags
+from core.utils import resolve_safe_path
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -408,7 +409,10 @@ async def get_benchmark_items(
 
     # 1. Try local JSON file first
     if benchmark.dataset_path:
-        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
+        try:
+            full_path = resolve_safe_path(Path(settings.bench_library_path), benchmark.dataset_path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid dataset path.")
         if full_path.exists():
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
@@ -761,7 +765,10 @@ def fork_benchmark(
     fork_dataset_path = parent.dataset_path
     if parent.dataset_path:
         import shutil
-        src = Path(settings.bench_library_path) / parent.dataset_path
+        try:
+            src = resolve_safe_path(Path(settings.bench_library_path), parent.dataset_path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid dataset path.")
         if src.exists():
             dst_name = f"fork_{benchmark_id}_{src.name}"
             dst = Path(settings.bench_library_path) / "custom" / dst_name
