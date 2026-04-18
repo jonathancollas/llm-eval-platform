@@ -59,10 +59,14 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
     heatmap.forEach(c => map.set(`${c.model_name}::${c.benchmark_name}`, c));
     return map;
   }, [heatmap]);
-  if (!models.length) return null;
 
   // Check if any cell has capability/propensity split
-  const hasCapProp = heatmap.some(c => (c as any).capability_score != null || (c as any).propensity_score != null);
+  const hasCapProp = useMemo(
+    () => heatmap.some(c => (c as any).capability_score != null || (c as any).propensity_score != null),
+    [heatmap],
+  );
+
+  if (!models.length) return null;
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-6">
