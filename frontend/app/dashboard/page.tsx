@@ -270,7 +270,7 @@ function FailedItemsSection({ failedData, campaignId, onRefresh }: { failedData:
     try {
       await resultsApi.humanReview(resultId, verdict);
       setVerdicts(v => ({ ...v, [resultId]: verdict }));
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     setReviewing(null);
   };
 
@@ -437,7 +437,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");  // "" = auto (default)
 
-  useEffect(() => { reportsApi.list(campaignId).then(setReports).catch(() => {}); }, [campaignId]);
+  useEffect(() => { reportsApi.list(campaignId).then(setReports).catch((err) => console.warn("[fetch error]", err)); }, [campaignId]);
 
   // Discover locally installed Ollama models
   useEffect(() => {
@@ -446,7 +446,7 @@ function ReportPanel({ campaignId }: { campaignId: number }) {
       .then(d => {
         if (d?.models) setOllamaModels(d.models.map((m: any) => m.name));
       })
-      .catch(() => {});
+      .catch((err) => console.warn("[fetch error]", err));
   }, []);
 
   const generate = async () => {
@@ -572,7 +572,7 @@ function DashboardContent() {
 
   const refreshFailedData = () => {
     if (!selectedId) return;
-    resultsApi.failedItems(selectedId).then(setFailedData).catch(() => {});
+    resultsApi.failedItems(selectedId).then(setFailedData).catch((err) => console.warn("[fetch error]", err));
   };
 
   useEffect(() => {

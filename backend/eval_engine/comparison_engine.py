@@ -4,7 +4,6 @@ System Comparison Engine (#88 — engine-driven refactor)
 Extracted from api/routers/results.py for testability.
 Compares two campaigns, detects regressions and improvements.
 """
-from __future__ import annotations
 from dataclasses import dataclass, field
 
 

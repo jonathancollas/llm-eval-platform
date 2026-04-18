@@ -2,7 +2,6 @@
 Statistical Significance Testing — M1 Research Foundation
 McNemar, permutation, Bonferroni, BH-FDR, Cohen's d, power analysis.
 """
-from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
@@ -212,3 +211,33 @@ def compare_runs(run_a_scores: list, run_b_scores: list) -> dict:
         "effect_size": cd,
         "overall_verdict": overall_verdict,
     }
+
+
+def bootstrap_ci(scores: list[float], n_resamples: int = 1000, confidence: float = 0.95, seed: int = 42) -> dict:
+    """Bootstrap confidence interval for a list of scores."""
+    import random, math
+    rng = random.Random(seed)
+    n = len(scores)
+    if n == 0:
+        return {"mean": 0, "ci_lower": 0, "ci_upper": 0, "std": 0}
+    means = sorted(
+        sum(rng.choices(scores, k=n)) / n
+        for _ in range(n_resamples)
+    )
+    alpha = 1 - confidence
+    lo = means[int(alpha / 2 * n_resamples)]
+    hi = means[int((1 - alpha / 2) * n_resamples)]
+    mean = sum(scores) / n
+    std = math.sqrt(sum((x - mean) ** 2 for x in scores) / max(n - 1, 1))
+    return {"mean": round(mean, 4), "ci_lower": round(lo, 4), "ci_upper": round(hi, 4), "std": round(std, 4)}
+
+
+def sample_size_for_power(effect_size: float = 0.2, alpha: float = 0.05, power: float = 0.8) -> int:
+    """Approximate sample size needed for given power (Cohen's d, two-sided z-test)."""
+    import math
+    z_alpha = 1.96  # two-sided 95%
+    z_beta = 0.84   # 80% power
+    if effect_size <= 0:
+        return 9999
+    n = ((z_alpha + z_beta) / effect_size) ** 2
+    return max(int(math.ceil(n)), 10)

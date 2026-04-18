@@ -56,7 +56,6 @@ Metrics
   scenario_metrics      — aggregated scenario-engine results (if applicable)
   alerts                — actionable warnings for high failure rates
 """
-from __future__ import annotations
 
 import logging
 from typing import Optional

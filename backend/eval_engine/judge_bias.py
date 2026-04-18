@@ -1,5 +1,4 @@
 """Judge Bias Detection — positional, verbosity, and self-preference biases."""
-from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
@@ -156,3 +155,46 @@ class JudgeBiasDetector:
         if score < 0.3:
             return "Moderate bias — use with caution, recommend calibration"
         return "High bias — not recommended for production without debiasing"
+
+
+def multi_judge_ensemble(scores_per_judge: dict[str, list[float]], method: str = "majority") -> list[float]:
+    """
+    Aggregate scores from multiple judges.
+    method: "majority" (median), "mean", "weighted"
+    """
+    if not scores_per_judge:
+        return []
+    judge_lists = list(scores_per_judge.values())
+    n = min(len(s) for s in judge_lists)
+    result = []
+    for i in range(n):
+        vals = [s[i] for s in judge_lists]
+        if method == "majority":
+            vals_sorted = sorted(vals)
+            mid = len(vals_sorted) // 2
+            agg = vals_sorted[mid] if len(vals_sorted) % 2 else (vals_sorted[mid-1] + vals_sorted[mid]) / 2
+        else:
+            agg = sum(vals) / len(vals)
+        result.append(round(agg, 4))
+    return result
+
+
+def cohens_kappa(ratings_a: list[int], ratings_b: list[int], categories: list = None) -> float:
+    """
+    Compute Cohen's kappa inter-rater agreement.
+    ratings_a, ratings_b: lists of category labels (integers or strings).
+    """
+    if not ratings_a or len(ratings_a) != len(ratings_b):
+        return 0.0
+    n = len(ratings_a)
+    cats = categories or sorted(set(ratings_a) | set(ratings_b))
+    # Observed agreement
+    p_o = sum(1 for a, b in zip(ratings_a, ratings_b) if a == b) / n
+    # Expected agreement
+    p_e = sum(
+        (ratings_a.count(c) / n) * (ratings_b.count(c) / n)
+        for c in cats
+    )
+    if p_e == 1.0:
+        return 1.0
+    return round((p_o - p_e) / (1 - p_e), 4)

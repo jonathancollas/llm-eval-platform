@@ -1,5 +1,4 @@
 """Scenario Runtime Engine — multi-step stateful evaluation scenarios."""
-from __future__ import annotations
 import os
 import re
 import random

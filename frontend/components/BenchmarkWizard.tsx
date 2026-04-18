@@ -52,7 +52,7 @@ function CatalogBrowser({
     fetch(`${API_BASE}/catalog/benchmarks`)
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setCatalog(d); })
-      .catch(() => {})
+      .catch((err) => console.warn("[fetch error]", err))
       .finally(() => setLoading(false));
   }, []);
 
@@ -364,7 +364,7 @@ export function BenchmarkWizard({ onClose, onCreated }: WizardProps) {
       // Build dataset file from items
       let items: Record<string, string>[] = [];
       if (inputMode === "json") {
-        try { items = JSON.parse(jsonPaste); } catch {}
+        try { items = JSON.parse(jsonPaste); } catch (err) { console.warn("[error]", err); }
       } else {
         items = manualItems.filter(i => i.prompt.trim()).map(i => ({ prompt: i.prompt, expected: i.expected }));
       }

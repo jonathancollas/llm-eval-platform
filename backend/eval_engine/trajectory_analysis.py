@@ -1,5 +1,4 @@
 """Trajectory Intelligence Engine — analyze agent execution traces."""
-from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -129,3 +128,43 @@ class TrajectoryAnalysisEngine:
             adaptivity_score=adaptivity, overall_quality_score=quality,
             recommendations=recs,
         )
+
+
+FAILURE_TAXONOMY = {
+    "tool_error": ["error", "exception", "failed", "timeout", "404", "500"],
+    "loop_detected": ["repeated", "same action", "loop", "already did"],
+    "goal_drift": ["different objective", "unrelated", "off-task"],
+    "context_loss": ["forgot", "earlier", "previous step", "don't remember"],
+    "hallucination": ["made up", "incorrect tool", "nonexistent", "fabricated"],
+    "refusal": ["cannot", "won't", "refuse", "not allowed", "inappropriate"],
+}
+
+
+def classify_trajectory_failure(trajectory_steps: list[dict]) -> dict:
+    """
+    Classify failure modes in an agent trajectory.
+    Each step: {action, observation, tool, error}
+    """
+    failure_counts = {k: 0 for k in FAILURE_TAXONOMY}
+    total_errors = 0
+
+    for step in trajectory_steps:
+        obs = str(step.get("observation", "")).lower()
+        action = str(step.get("action", "")).lower()
+        text = obs + " " + action
+
+        for failure_type, keywords in FAILURE_TAXONOMY.items():
+            if any(kw in text for kw in keywords):
+                failure_counts[failure_type] += 1
+
+        if step.get("error"):
+            total_errors += 1
+
+    dominant = max(failure_counts, key=failure_counts.get) if any(failure_counts.values()) else "none"
+    return {
+        "failure_breakdown": failure_counts,
+        "dominant_failure": dominant,
+        "total_errors": total_errors,
+        "steps_analysed": len(trajectory_steps),
+        "failure_rate": round(total_errors / max(len(trajectory_steps), 1), 3),
+    }

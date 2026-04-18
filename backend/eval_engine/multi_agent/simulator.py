@@ -15,7 +15,6 @@ Architecture:
 
 All model calls go through InferenceAdapter — never raw API calls.
 """
-from __future__ import annotations
 
 import asyncio
 import json

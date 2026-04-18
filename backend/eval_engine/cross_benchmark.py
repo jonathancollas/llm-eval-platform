@@ -1,5 +1,4 @@
 """Cross-Benchmark Normalization — z-score normalization and generalization metrics."""
-from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from typing import Optional
@@ -102,3 +101,44 @@ class CrossBenchmarkAnalyzer:
             mean_score=round(mean_s,4), score_variance=round(var,4),
             generalization_index=gi, worst_benchmark=worst, best_benchmark=best,
             transfer_scores=self.compute_transfer_scores(model_runs))
+
+
+def zscore_normalize(scores: list[float]) -> list[float]:
+    """Z-score normalization: (x - mean) / std."""
+    import math
+    if not scores:
+        return []
+    mean = sum(scores) / len(scores)
+    std = math.sqrt(sum((x - mean) ** 2 for x in scores) / max(len(scores) - 1, 1))
+    if std == 0:
+        return [0.0] * len(scores)
+    return [round((x - mean) / std, 4) for x in scores]
+
+
+def cross_benchmark_transfer_score(
+    source_scores: list[float],
+    target_scores: list[float],
+) -> dict:
+    """
+    Compute transfer score: correlation between source and target benchmark performance.
+    High correlation = capability transfers across benchmarks.
+    """
+    import math
+    n = min(len(source_scores), len(target_scores))
+    if n < 2:
+        return {"transfer_score": None, "interpretation": "insufficient_data"}
+    s = source_scores[:n]
+    t = target_scores[:n]
+    mean_s = sum(s) / n
+    mean_t = sum(t) / n
+    cov = sum((s[i] - mean_s) * (t[i] - mean_t) for i in range(n)) / (n - 1)
+    std_s = math.sqrt(sum((x - mean_s) ** 2 for x in s) / (n - 1))
+    std_t = math.sqrt(sum((x - mean_t) ** 2 for x in t) / (n - 1))
+    if std_s == 0 or std_t == 0:
+        return {"transfer_score": 0.0, "interpretation": "no_variance"}
+    r = cov / (std_s * std_t)
+    return {
+        "transfer_score": round(r, 4),
+        "interpretation": "high_transfer" if abs(r) > 0.7 else "moderate" if abs(r) > 0.4 else "low_transfer",
+        "n_pairs": n,
+    }

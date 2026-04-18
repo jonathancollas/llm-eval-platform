@@ -163,7 +163,7 @@ function SystemEvalWizard({
       });
       onDone();
     } catch (e: any) {
-      alert(e.message ?? String(e));
+      console.error(e.message ?? String(e));
     } finally {
       setSaving(false);
     }
@@ -404,7 +404,7 @@ function ManifestButton({ campaignId }: { campaignId: number }) {
     try {
       const res = await fetch(`${API_BASE}/research/manifests/generate/${campaignId}`, { method: "POST" });
       if (res.ok) { setManifest(await res.json()); setOpen(true); }
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     setLoading(false);
   };
 
@@ -489,7 +489,7 @@ function ExportPanel({ campaignId, runs }: { campaignId: number; runs: { id: num
       await navigator.clipboard.writeText(content);
       setCopied(format);
       setTimeout(() => setCopied(null), 2500);
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     setLoading(null);
   };
 
@@ -591,7 +591,7 @@ const LiveFeed=memo(function LiveFeed({campaignId}:{campaignId:number}){
   useEffect(()=>{
     let active=true;
     const fetch_=async()=>{
-      try{const r=await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=8`);if(r.ok&&active)setData(await r.json());}catch{}
+      try{const r=await fetch(`${API_BASE}/results/campaign/${campaignId}/live?limit=8`);if(r.ok&&active)setData(await r.json());}catch (err) { console.warn("[error]", err); }
     };
     fetch_();
     // Single interval per LiveFeed instance — 4s polling
@@ -707,7 +707,7 @@ export default function CampaignsPage(){
   const handleCreate=useCallback(async()=>{
     setSaving(true);
     try{await campaignsApi.create({...form});resetWizard();refreshCampaigns();}
-    catch(err){alert(String(err));}
+    catch(err){console.error(String(err));}
     finally{setSaving(false);}
   },[form,resetWizard,refreshCampaigns]);
 
@@ -719,20 +719,20 @@ export default function CampaignsPage(){
       // Rely on the auto-refresh effect above — no manual polling loop
       refreshCampaigns();
     }catch(e:any){
-      alert(e?.message??String(e));
+      console.error(e?.message??String(e));
       setRunningId(null);
       refreshCampaigns();
     }
   },[refreshCampaigns]);
 
   const handleCancel=useCallback(async(id:number)=>{
-    await campaignsApi.cancel(id).catch(e=>alert(String(e)));
+    await campaignsApi.cancel(id).catch(e=>console.error(String(e)));
     setRunningId(null);refreshCampaigns();
   },[refreshCampaigns]);
 
   const handleDelete=useCallback(async(id:number)=>{
     if(!confirm("Delete this evaluation and all results?"))return;
-    try{await campaignsApi.delete(id);}catch(e){alert(String(e));return;}
+    try{await campaignsApi.delete(id);}catch(e){console.error(String(e));return;}
     refreshCampaigns();
   },[refreshCampaigns]);
 

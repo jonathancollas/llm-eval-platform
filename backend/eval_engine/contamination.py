@@ -214,3 +214,34 @@ def analyze_contamination(
         "items_analyzed": len(items),
         "benchmark": benchmark_name,
     }
+
+
+def inject_canary_tokens(items: list[dict], canary_prefix: str = "MERCURY_EVAL_CANARY") -> tuple[list[dict], list[str]]:
+    """
+    Inject detectable canary tokens into eval items to track data leakage.
+    Returns modified items and the list of injected canary strings.
+    """
+    import uuid
+    canaries = []
+    modified = []
+    for item in items:
+        canary = f"{canary_prefix}_{uuid.uuid4().hex[:8]}"
+        canaries.append(canary)
+        new_item = dict(item)
+        prompt = new_item.get("prompt", new_item.get("question", ""))
+        new_item["prompt"] = f"{prompt} [{canary}]"
+        new_item["_canary"] = canary
+        modified.append(new_item)
+    return modified, canaries
+
+
+def detect_canary_in_response(response: str, canaries: list[str]) -> dict:
+    """Check if a model response contains injected canary tokens (indicates memorization)."""
+    found = [c for c in canaries if c in response]
+    return {
+        "canaries_detected": len(found),
+        "total_canaries": len(canaries),
+        "leakage_rate": len(found) / max(len(canaries), 1),
+        "detected_tokens": found,
+        "contamination_likely": len(found) > 0,
+    }

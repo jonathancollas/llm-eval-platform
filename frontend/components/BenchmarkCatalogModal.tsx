@@ -165,7 +165,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
       if (res.ok) {
         setHfImported(prev => new Set([...prev, b.id]));
       }
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     setHfImporting(null);
   };
 

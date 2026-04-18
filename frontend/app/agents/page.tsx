@@ -140,7 +140,7 @@ export default function AgentsPage() {
         body: JSON.stringify(data),
       });
       if (res.ok) { setUploadJson(""); refreshTrajectories(); setTab("trajectories"); }
-    } catch (e: any) { alert("Error: " + e.message); }
+    } catch (e: any) { console.error("Error: " + e.message); }
     finally { setUploading(false); }
   };
 

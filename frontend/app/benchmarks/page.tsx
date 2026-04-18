@@ -217,7 +217,7 @@ function BenchmarkCard({
       setLineage(lineageRes.ok ? await lineageRes.json() : null);
       setCitations(citationRes.ok ? await citationRes.json() : null);
       setOpen(true);
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const handleFork = async (e: React.MouseEvent) => {
@@ -411,7 +411,7 @@ export default function BenchmarksPage() {
   const [giskardScanError, setGiskardScanError] = useState<string | null>(null);
   const [models, setModels] = useState<any[]>([]);
   useEffect(() => {
-    fetch(`${API_BASE}/models?limit=100`).then(r => r.ok ? r.json() : null).then(d => d && setModels(d.items ?? [])).catch(() => {});
+    fetch(`${API_BASE}/models?limit=100`).then(r => r.ok ? r.json() : null).then(d => d && setModels(d.items ?? [])).catch((err) => console.warn("[fetch error]", err));
   }, []);
 
   const handleFlipSource = async (b: Benchmark) => {
@@ -423,7 +423,7 @@ export default function BenchmarksPage() {
         body: JSON.stringify({ source: newSource }),
       });
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const handleAddTag = async (b: Benchmark) => {
@@ -437,7 +437,7 @@ export default function BenchmarksPage() {
       });
       setNewTagInput("");
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const handleRemoveTag = async (b: Benchmark, tag: string) => {
@@ -448,7 +448,7 @@ export default function BenchmarksPage() {
         body: JSON.stringify({ tags: b.tags.filter(t => t !== tag) }),
       });
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const { benchmarks: swrBenches, isLoading: swrBenchLoading, refresh: refreshBenches } = useBenchmarks();
@@ -462,7 +462,7 @@ export default function BenchmarksPage() {
     try {
       await benchmarksApi.uploadDataset(benchId, file);
       load();
-    } catch (err) { alert(String(err)); }
+    } catch (err) { console.error(String(err)); }
   };
 
   const handleImportNew = async () => {

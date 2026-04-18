@@ -3,7 +3,6 @@ Win Rate Engine (#88 — engine-driven refactor)
 ===============================================
 Pairwise win rate computation, extracted from api/routers/results.py.
 """
-from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 

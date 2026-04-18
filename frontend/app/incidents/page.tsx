@@ -27,7 +27,7 @@ function ModelPicker({ selected, onChange }: {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    modelsApi.list().then(setModels).catch(() => {});
+    modelsApi.list().then(setModels).catch((err) => console.warn("[fetch error]", err));
   }, []);
 
   const filtered = models.filter(m =>
@@ -135,7 +135,7 @@ export default function IncidentsPage() {
     fetch(`${API}/research/incidents`)
       .then(r => r.ok ? r.json() : { incidents: [] })
       .then(d => setIncidents(d.incidents ?? []))
-      .catch(() => {})
+      .catch((err) => console.warn("[fetch error]", err))
       .finally(() => setLoading(false));
   }, []);
 
@@ -157,7 +157,7 @@ export default function IncidentsPage() {
       setShowForm(false);
       setForm({ title: "", category: "prompt_injection", severity: "medium", description: "", reproducibility: 0.5, affected_models: [], atlas_technique: "" });
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     finally { setCreating(false); }
   };
 

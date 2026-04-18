@@ -23,7 +23,6 @@ Composition formula:
   composite_risk = product(domain_risks) × autonomy_multiplier × tool_multiplier
   where domain_risks are normalised to [0,1] and weighted by severity.
 """
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional

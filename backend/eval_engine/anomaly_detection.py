@@ -19,7 +19,6 @@ Capabilities:
   3. Novel failure pattern alerting
      - Clusters not seen in any previous run (uses failure_clustering)
 """
-from __future__ import annotations
 
 import math
 import logging

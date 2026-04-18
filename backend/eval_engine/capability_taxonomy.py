@@ -1,5 +1,4 @@
 """Capability Taxonomy — 7-domain ontology with CapabilityTaxonomyEngine."""
-from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, UTC

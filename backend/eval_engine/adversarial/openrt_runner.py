@@ -28,7 +28,6 @@ The engine is marked "experimental" in the UI and falls back to
 rule-based templates with OpenRT method annotations when the repo
 is not configured.
 """
-from __future__ import annotations
 
 import os
 from importlib.util import find_spec

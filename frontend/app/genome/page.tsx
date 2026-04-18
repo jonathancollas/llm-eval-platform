@@ -78,7 +78,7 @@ function SignalRow({ sigKey, meta, pct }: {
     try {
       const res = await fetch(`${API_BASE}/genome/heuristics/signal/${sigKey}`);
       if (res.ok) setDetail(await res.json());
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     setLoading(false);
     setOpen(true);
   };

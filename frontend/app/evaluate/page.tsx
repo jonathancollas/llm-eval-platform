@@ -663,7 +663,7 @@ function EvalStudioInner() {
         const saved = JSON.parse(localStorage.getItem("eval_templates") ?? "[]");
         saved.unshift({ evalType, form, saved_at: new Date().toISOString() });
         localStorage.setItem("eval_templates", JSON.stringify(saved.slice(0, 10)));
-      } catch {}
+      } catch (err) { console.warn("[error]", err); }
     }
     try {
       await campaignsApi.create({
@@ -674,7 +674,7 @@ function EvalStudioInner() {
       });
       router.push("/campaigns");
     } catch (e: any) {
-      alert(e.message ?? String(e));
+      console.error(e.message ?? String(e));
     } finally {
       setSaving(false);
     }

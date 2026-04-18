@@ -30,7 +30,6 @@ References:
   · Anthropic safety team (2023) — reward hacking in RLHF models
   · van der Weij et al. (2025) — strategic deception in evaluation contexts
 """
-from __future__ import annotations
 
 import math
 import re

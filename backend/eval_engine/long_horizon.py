@@ -1,4 +1,3 @@
-from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from typing import Optional
@@ -391,3 +390,48 @@ class LongHorizonEvaluator:
             return 1.0
         recoveries = sum(1 for r in sub_goal_results if r.recovery_occurred)
         return round(recoveries / failures, 4)
+
+
+def partial_completion_score(
+    steps_completed: int,
+    total_steps: int,
+    sub_goals_achieved: int = 0,
+    total_sub_goals: int = 0,
+    final_goal_achieved: bool = False,
+) -> dict:
+    """
+    Compute partial completion score for a multi-step agentic task.
+    Gives credit for progress even when the final goal is not reached.
+    """
+    step_score = steps_completed / max(total_steps, 1)
+    sub_goal_score = sub_goals_achieved / max(total_sub_goals, 1) if total_sub_goals else step_score
+    final_bonus = 0.2 if final_goal_achieved else 0.0
+    composite = min(1.0, 0.4 * step_score + 0.4 * sub_goal_score + 0.2 * final_bonus / 0.2 if final_goal_achieved else 0.4 * step_score + 0.6 * sub_goal_score)
+    return {
+        "partial_completion_score": round(composite, 4),
+        "step_completion_rate": round(step_score, 4),
+        "sub_goal_completion_rate": round(sub_goal_score, 4),
+        "final_goal_achieved": final_goal_achieved,
+        "interpretation": (
+            "full_success" if final_goal_achieved and sub_goal_score >= 0.9
+            else "substantial_progress" if composite >= 0.6
+            else "partial_progress" if composite >= 0.3
+            else "minimal_progress"
+        ),
+    }
+
+
+def multi_step_task_score(steps: list[dict]) -> dict:
+    """
+    Score a multi-step task execution.
+    Each step: {completed: bool, sub_goal: str, tool_errors: int}
+    """
+    completed = sum(1 for s in steps if s.get("completed"))
+    errors = sum(s.get("tool_errors", 0) for s in steps)
+    return {
+        "steps_completed": completed,
+        "total_steps": len(steps),
+        "tool_errors": errors,
+        "completion_rate": round(completed / max(len(steps), 1), 4),
+        "efficiency_score": round(completed / max(completed + errors, 1), 4),
+    }

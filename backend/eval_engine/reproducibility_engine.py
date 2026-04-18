@@ -1,5 +1,4 @@
 """Reproducibility Engine — SHA-256 fingerprinting of experiment configurations."""
-from __future__ import annotations
 import hashlib
 import json
 import platform
@@ -89,4 +88,36 @@ def validate_reproducibility(
         "identical": len(differences) == 0,
         "differences": differences,
         "reproducible": len(differences) == 0,
+    }
+
+
+def build_provenance_chain(run_config: dict, dataset_hash: str, prompt_hash: str) -> dict:
+    """Build a cryptographic provenance chain for a run."""
+    import hashlib, json as _json
+    chain_data = _json.dumps({
+        "run_config": run_config,
+        "dataset_hash": dataset_hash,
+        "prompt_hash": prompt_hash,
+    }, sort_keys=True)
+    chain_hash = hashlib.sha256(chain_data.encode()).hexdigest()
+    return {"chain_hash": chain_hash, "components": {"dataset": dataset_hash, "prompts": prompt_hash}}
+
+
+def replay_run_config(run_id: int, session) -> dict:
+    """Return the exact config needed to replay a run deterministically."""
+    from core.models import EvalRun
+    import json
+    run = session.get(EvalRun, run_id)
+    if not run:
+        return {"error": f"Run {run_id} not found"}
+    ctx = json.loads(run.run_context_json or "{}")
+    return {
+        "run_id": run_id,
+        "seed": ctx.get("seed", 42),
+        "temperature": ctx.get("temperature", 0.0),
+        "model_id": run.model_id,
+        "benchmark_id": run.benchmark_id,
+        "prompt_version": ctx.get("prompt_version", "default"),
+        "platform_version": ctx.get("platform_version", "unknown"),
+        "replay_command": f"mercury eval replay --run-id {run_id}",
     }

@@ -23,7 +23,6 @@ in each variant's rationale.
 When ``artkit`` is **not** installed the runner falls back to rule-based
 templates (same pattern as the Garak and DeepTeam integrations).
 """
-from __future__ import annotations
 
 from importlib.util import find_spec
 from typing import TYPE_CHECKING

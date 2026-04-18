@@ -1,5 +1,4 @@
 """Eval Versioning System — semantic versioning for benchmark suites."""
-from __future__ import annotations
 import hashlib, json
 from dataclasses import dataclass, field
 from datetime import datetime, UTC

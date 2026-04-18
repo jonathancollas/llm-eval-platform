@@ -64,7 +64,7 @@ function RedboxLiveFeed({ modelId }: { modelId: number }) {
       try {
         const res = await fetch(`${API_BASE}/redbox/live/${modelId}?limit=5`);
         if (res.ok) setData(await res.json());
-      } catch {}
+      } catch (err) { console.warn("[error]", err); }
     };
     fetchLive();
     const poll = setInterval(fetchLive, 5000);  // 5s — was 1.5s
@@ -429,14 +429,14 @@ export default function RedboxPage() {
   // Heatmap state
   const [heatmap, setHeatmap] = useState<{ heatmap: HeatmapCell[]; models: string[]; mutations: string[]; computed: boolean } | null>(null);
 
-  useEffect(() => { modelsApi.list().then(setModels).catch(() => {}); }, []);
+  useEffect(() => { modelsApi.list().then(setModels).catch((err) => console.warn("[fetch error]", err)); }, []);
 
   const loadExploits = useCallback(() => {
-    fetch(`${API_BASE}/redbox/exploits?limit=200`).then(r => r.json()).then(setExploits).catch(() => {});
+    fetch(`${API_BASE}/redbox/exploits?limit=200`).then(r => r.json()).then(setExploits).catch((err) => console.warn("[fetch error]", err));
   }, []);
 
   const loadHeatmap = useCallback(() => {
-    fetch(`${API_BASE}/redbox/heatmap`).then(r => r.json()).then(setHeatmap).catch(() => {});
+    fetch(`${API_BASE}/redbox/heatmap`).then(r => r.json()).then(setHeatmap).catch((err) => console.warn("[fetch error]", err));
   }, []);
 
   useEffect(() => {
@@ -453,7 +453,7 @@ export default function RedboxPage() {
     try {
       const res = await fetch(`${API_BASE}/redbox/${eng}/coverage`);
       if (res.ok) setCoverage(await res.json());
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     finally { setLoadingCoverage(false); }
   }, []);
 
@@ -504,7 +504,7 @@ export default function RedboxPage() {
         body: JSON.stringify({ model_id: modelId }),
       });
       loadExploits();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const TABS = [

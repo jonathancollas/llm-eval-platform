@@ -841,3 +841,141 @@ def get_failure_clusters(
         "cross_model_patterns": report.cross_model_patterns,
         "top_emerging_risk": report.top_emerging_risk,
     }
+
+
+# ── #257 Statistical significance + sample size ──────────────────────────────
+
+class BootstrapRequest(BaseModel):
+    scores: list[float]
+    n_resamples: int = 1000
+    confidence: float = 0.95
+    seed: int = 42
+
+@router.post("/stats/bootstrap-ci")
+def bootstrap_confidence_interval(payload: BootstrapRequest):
+    """Bootstrap 95% CI on a score list (#257)."""
+    from eval_engine.statistical_tests import bootstrap_ci
+    return bootstrap_ci(payload.scores, payload.n_resamples, payload.confidence, payload.seed)
+
+class SampleSizeRequest(BaseModel):
+    effect_size: float = 0.2
+    alpha: float = 0.05
+    power: float = 0.8
+
+@router.post("/stats/sample-size")
+def compute_sample_size(payload: SampleSizeRequest):
+    """Power analysis — sample size for desired effect (#257)."""
+    from eval_engine.statistical_tests import sample_size_for_power
+    n = sample_size_for_power(payload.effect_size, payload.alpha, payload.power)
+    return {"required_n": n, "effect_size": payload.effect_size, "alpha": payload.alpha, "power": payload.power}
+
+
+# ── #258 Reproducibility — provenance + replay ──────────────────────────────
+
+@router.post("/reproducibility/provenance")
+def build_provenance(payload: dict):
+    from eval_engine.reproducibility_engine import build_provenance_chain
+    return build_provenance_chain(
+        payload.get("run_config", {}),
+        payload.get("dataset_hash", ""),
+        payload.get("prompt_hash", ""),
+    )
+
+@router.get("/reproducibility/replay/{run_id}")
+def get_replay_config(run_id: int, session: Session = Depends(get_session)):
+    from eval_engine.reproducibility_engine import replay_run_config
+    return replay_run_config(run_id, session)
+
+
+# ── #259 Contamination — canary tokens ──────────────────────────────────────
+
+class CanaryInjectRequest(BaseModel):
+    items: list[dict]
+    canary_prefix: str = "MERCURY_EVAL_CANARY"
+
+@router.post("/contamination/inject-canaries")
+def inject_canaries(payload: CanaryInjectRequest):
+    from eval_engine.contamination import inject_canary_tokens
+    items, canaries = inject_canary_tokens(payload.items, payload.canary_prefix)
+    return {"items": items, "canaries": canaries, "count": len(canaries)}
+
+@router.post("/contamination/detect-canaries")
+def detect_canaries(payload: dict):
+    from eval_engine.contamination import detect_canary_in_response
+    return detect_canary_in_response(payload.get("response", ""), payload.get("canaries", []))
+
+
+# ── #260 Human calibration ──────────────────────────────────────────────────
+
+@router.get("/human-calibration/report/{model_id}")
+def human_calibration_report(model_id: int, session: Session = Depends(get_session)):
+    from eval_engine.human_calibration import compute_human_llm_agreement
+    try:
+        return compute_human_llm_agreement(model_id, session)
+    except Exception as e:
+        raise HTTPException(422, str(e))
+
+
+# ── #266 Capability vs Propensity — best-of-N ──────────────────────────────
+
+class BestOfNRequest(BaseModel):
+    scores: list[float]
+    n: int = 10
+
+@router.post("/capability/best-of-n")
+def best_of_n(payload: BestOfNRequest):
+    from eval_engine.capability_propensity import best_of_n_capability
+    return best_of_n_capability(payload.scores, payload.n)
+
+
+# ── #267 Trajectory failure classification ──────────────────────────────────
+
+@router.post("/trajectory/classify-failures")
+def classify_failures(payload: dict):
+    from eval_engine.trajectory_analysis import classify_trajectory_failure
+    return classify_trajectory_failure(payload.get("steps", []))
+
+
+# ── #268 Cross-benchmark normalization ──────────────────────────────────────
+
+@router.post("/cross-benchmark/zscore")
+def zscore(payload: dict):
+    from eval_engine.cross_benchmark import zscore_normalize
+    return {"normalized": zscore_normalize(payload.get("scores", []))}
+
+@router.post("/cross-benchmark/transfer")
+def transfer_score(payload: dict):
+    from eval_engine.cross_benchmark import cross_benchmark_transfer_score
+    return cross_benchmark_transfer_score(payload.get("source", []), payload.get("target", []))
+
+
+# ── #269 Judge bias — ensemble + kappa ──────────────────────────────────────
+
+@router.post("/judge/ensemble")
+def judge_ensemble(payload: dict):
+    from eval_engine.judge_bias import multi_judge_ensemble
+    return {"ensemble_scores": multi_judge_ensemble(payload.get("scores_per_judge", {}), payload.get("method", "majority"))}
+
+@router.post("/judge/kappa")
+def inter_judge_kappa(payload: dict):
+    from eval_engine.judge_bias import cohens_kappa
+    return {"kappa": cohens_kappa(payload.get("ratings_a", []), payload.get("ratings_b", []))}
+
+
+# ── #275 Long-horizon agentic evaluation ────────────────────────────────────
+
+@router.post("/agentic/partial-completion")
+def partial_completion(payload: dict):
+    from eval_engine.long_horizon import partial_completion_score
+    return partial_completion_score(
+        steps_completed=payload.get("steps_completed", 0),
+        total_steps=payload.get("total_steps", 1),
+        sub_goals_achieved=payload.get("sub_goals_achieved", 0),
+        total_sub_goals=payload.get("total_sub_goals", 0),
+        final_goal_achieved=payload.get("final_goal_achieved", False),
+    )
+
+@router.post("/agentic/multi-step-score")
+def multi_step_score(payload: dict):
+    from eval_engine.long_horizon import multi_step_task_score
+    return multi_step_task_score(payload.get("steps", []))

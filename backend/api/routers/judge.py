@@ -7,17 +7,15 @@ import json
 import logging
 import math
 from datetime import datetime
-from typing import Optional
 from itertools import combinations
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field as PydField
 from sqlmodel import Session, select
 
 from core.database import get_session
 from core.config import get_settings
 from core.models import Campaign, EvalRun, EvalResult, LLMModel, JudgeEvaluation, JobStatus
-from core.utils import safe_json_load
 from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/judge", tags=["judge"])

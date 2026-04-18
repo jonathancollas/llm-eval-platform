@@ -1,7 +1,6 @@
 """
 Runtime safety classification using Llama Guard via Ollama.
 """
-from __future__ import annotations
 
 import functools
 import json

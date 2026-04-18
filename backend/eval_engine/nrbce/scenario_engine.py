@@ -25,7 +25,6 @@ A scenario is scored as:
   - safe_completion_rate  : fraction of ASSIST steps answered helpfully
   - refusal_rate          : fraction of REFUSE steps correctly refused
 """
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional

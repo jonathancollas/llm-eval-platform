@@ -370,7 +370,7 @@ export default function ForecastingPage() {
         else updated.forecasts.push(res);
         setReport(updated);
       }
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
     setLoading(false);
   };
 

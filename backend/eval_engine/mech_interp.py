@@ -42,7 +42,6 @@ Key techniques referenced in INESIA PDF:
 This module implements CoT monitoring + consistency fingerprinting
 (no model internals required — black-box approximations).
 """
-from __future__ import annotations
 
 import asyncio
 import logging

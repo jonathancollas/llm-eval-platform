@@ -19,7 +19,6 @@ Usage
     result = adapter.run(model_response="...", task=task)
     score = adapter.evaluate(result=result, task=task)
 """
-from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass

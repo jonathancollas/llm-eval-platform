@@ -231,7 +231,7 @@ function HeuristicGraph() {
     fetch(`${API_BASE}/genome/heuristics`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { setData(d); setOpen(true); })
-      .catch(() => {});
+      .catch((err) => console.warn("[fetch error]", err));
   };
 
   return (

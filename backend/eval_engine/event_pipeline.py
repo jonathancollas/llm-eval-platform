@@ -28,7 +28,6 @@ Event taxonomy (append-only):
     GenomeComputed  | JudgeCompleted    | SandbaggingSignal
     InjectionDetected (multi-agent)
 """
-from __future__ import annotations
 
 import asyncio
 import json

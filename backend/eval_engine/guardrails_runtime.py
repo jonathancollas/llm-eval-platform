@@ -1,7 +1,6 @@
 """
 Runtime Guardrails integration for structured validation + safety constraints.
 """
-from __future__ import annotations
 
 import json
 import os
