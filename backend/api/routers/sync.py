@@ -647,7 +647,12 @@ async def pull_ollama_model(
         return {
             "status": "error",
             "model": requested_model_name,
-            "detail": f"Unable to reach Ollama at {settings.ollama_base_url}. Verify Ollama is running and accessible.",
+            "detail": (
+                f"Unable to reach Ollama at {settings.ollama_base_url}. "
+                "Make sure Ollama is installed and running (`ollama serve`). "
+                "If you are using Docker, set OLLAMA_BASE_URL=http://host.docker.internal:11434 "
+                "in your .env file (not http://localhost:11434)."
+            ),
         }
     except Exception:
         logger.exception("Unexpected Ollama pull failure for model '%s'", requested_model_name)
@@ -683,7 +688,12 @@ async def pull_and_register_ollama_model(
         return {
             "status": "pull_failed",
             "model": ollama_name,
-            "detail": f"Unable to reach Ollama at {settings.ollama_base_url}. Verify Ollama is running and accessible.",
+            "detail": (
+                f"Unable to reach Ollama at {settings.ollama_base_url}. "
+                "Make sure Ollama is installed and running (`ollama serve`). "
+                "If you are using Docker, set OLLAMA_BASE_URL=http://host.docker.internal:11434 "
+                "in your .env file (not http://localhost:11434)."
+            ),
         }
     except Exception:
         logger.exception("Unexpected Ollama pull-and-register failure for model '%s'", ollama_name)
