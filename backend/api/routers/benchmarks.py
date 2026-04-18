@@ -1,27 +1,21 @@
 """
 Benchmarks — CRUD + dataset upload + HuggingFace import.
 """
-import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlmodel import Session, func, select
+from sqlmodel import Session, select
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime, UTC
+from datetime import datetime
 import json
 import uuid
-import io
 from pathlib import Path
 
 from core.database import get_session
-from core.models import Benchmark, BenchmarkType, BenchmarkFork, BenchmarkCitation, BenchmarkPack
+from core.models import Benchmark, BenchmarkType
 from core.config import get_settings
-from core.relations import get_benchmark_tags, replace_benchmark_tags
-from core.utils import resolve_safe_path
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
-logger = logging.getLogger(__name__)
 settings = get_settings()
-UPLOAD_CHUNK_BYTES = 1024 * 1024  # 1MB
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -50,33 +44,10 @@ class BenchmarkRead(BaseModel):
     risk_threshold: Optional[float]
     has_dataset: bool
     source: str          # "inesia" | "public" | "community"
-    citation_count: int = 0
     created_at: datetime
 
 
-class BenchmarkPackPublish(BaseModel):
-    name: str = Field(..., min_length=2, max_length=200)
-    slug: str = Field(..., min_length=2, max_length=100)
-    version: str = Field(default="1.0.0", min_length=1, max_length=40)
-    publisher: str = Field(default="", max_length=200)
-    family: str = Field(default="community", pattern="^(inesia|aisi|academic|community)$")
-    changelog: str = Field(default="", max_length=4000)
-    benchmark_ids: list[int] = Field(..., min_length=1, max_length=500)
-    is_public: bool = True
-class ForkBenchmarkRequest(BaseModel):
-    new_name: Optional[str] = None
-    fork_type: str = "extension"  # extension | multilingual | agentic_variant | adversarial_hardening
-    changes_description: str = ""
-    forked_by: Optional[int] = None
-
-
-class BenchmarkCitationCreate(BaseModel):
-    paper_doi: str
-    citing_lab: str = ""
-    year: int
-
-
-def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
+def _to_read(b: Benchmark) -> BenchmarkRead:
     has_dataset = False
     if b.dataset_path:
         full = Path(settings.bench_library_path) / b.dataset_path
@@ -86,7 +57,7 @@ def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
         name=b.name,
         type=b.type,
         description=b.description,
-        tags=get_benchmark_tags(session, b),
+        tags=json.loads(b.tags),
         metric=b.metric,
         num_samples=b.num_samples,
         config=json.loads(b.config_json),
@@ -94,41 +65,8 @@ def _to_read(session: Session, b: Benchmark) -> BenchmarkRead:
         risk_threshold=b.risk_threshold,
         has_dataset=has_dataset,
         source=getattr(b, "source", "public") or "public",
-        citation_count=_get_citation_count(session, b.id),
         created_at=b.created_at,
     )
-
-
-def _pack_payload(pack: BenchmarkPack) -> dict:
-    return {
-        "id": pack.id,
-        "slug": pack.slug,
-        "name": pack.name,
-        "version": pack.version,
-        "publisher": pack.publisher,
-        "family": pack.family,
-        "changelog": pack.changelog,
-        "benchmark_ids": json.loads(pack.benchmark_ids_json),
-        "is_public": pack.is_public,
-        "created_at": pack.created_at.isoformat(),
-    }
-def _extract_parent_id_from_config(bench: Benchmark) -> Optional[int]:
-    try:
-        cfg = json.loads(bench.config_json or "{}")
-        parent = cfg.get("forked_from", {})
-        parent_id = parent.get("id")
-        return int(parent_id) if parent_id is not None else None
-    except Exception:
-        logger.debug("[benchmarks] failed to extract parent id from config for benchmark %s", bench.id, exc_info=True)
-        return None
-
-
-def _get_citation_count(session: Session, benchmark_id: Optional[int]) -> int:
-    if benchmark_id is None:
-        return 0
-    return session.exec(
-        select(func.count()).select_from(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
-    ).one()
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -141,80 +79,7 @@ def list_benchmarks(
     query = select(Benchmark)
     if type:
         query = query.where(Benchmark.type == type)
-    return [_to_read(session, b) for b in session.exec(query).all()]
-
-
-@router.post("/packs", status_code=status.HTTP_201_CREATED)
-def publish_benchmark_pack(payload: BenchmarkPackPublish, session: Session = Depends(get_session)):
-    bench_ids = list(dict.fromkeys(payload.benchmark_ids))
-    missing = [bid for bid in bench_ids if not session.get(Benchmark, bid)]
-    if missing:
-        raise HTTPException(404, detail=f"Benchmarks not found: {missing}")
-
-    existing = session.exec(
-        select(BenchmarkPack).where(BenchmarkPack.slug == payload.slug, BenchmarkPack.version == payload.version)
-    ).first()
-    if existing:
-        raise HTTPException(409, detail="This benchmark pack version already exists.")
-
-    pack = BenchmarkPack(
-        slug=payload.slug,
-        name=payload.name,
-        version=payload.version,
-        publisher=payload.publisher,
-        family=payload.family,
-        changelog=payload.changelog,
-        benchmark_ids_json=json.dumps(bench_ids),
-        is_public=payload.is_public,
-    )
-    session.add(pack)
-    session.commit()
-    session.refresh(pack)
-    return _pack_payload(pack)
-
-
-@router.get("/packs")
-def list_benchmark_packs(
-    family: Optional[str] = None,
-    include_private: bool = False,
-    session: Session = Depends(get_session),
-):
-    query = select(BenchmarkPack)
-    if family:
-        query = query.where(BenchmarkPack.family == family)
-    if not include_private:
-        query = query.where(BenchmarkPack.is_public == True)  # noqa: E712
-    packs = session.exec(query.order_by(BenchmarkPack.created_at.desc())).all()
-    return {"packs": [_pack_payload(p) for p in packs]}
-
-
-@router.get("/packs/{slug}")
-def get_benchmark_pack(slug: str, session: Session = Depends(get_session)):
-    versions = session.exec(
-        select(BenchmarkPack).where(BenchmarkPack.slug == slug).order_by(BenchmarkPack.created_at.desc())
-    ).all()
-    if not versions:
-        raise HTTPException(404, detail="Benchmark pack not found.")
-    latest = versions[0]
-    return {
-        "slug": slug,
-        "name": latest.name,
-        "latest_version": latest.version,
-        "family": latest.family,
-        "publisher": latest.publisher,
-        "versions": [_pack_payload(v) for v in versions],
-        "changelog": [{"version": v.version, "changelog": v.changelog, "created_at": v.created_at.isoformat()} for v in versions],
-    }
-
-
-@router.get("/sources")
-def list_benchmark_sources():
-    """External benchmark sources — discovery and routing."""
-    return {
-        "sources": EXTERNAL_SOURCES,
-        "total": len(EXTERNAL_SOURCES),
-        "importable": len([s for s in EXTERNAL_SOURCES if s["import_supported"]]),
-    }
+    return [_to_read(b) for b in session.exec(query).all()]
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkRead)
@@ -222,7 +87,7 @@ def get_benchmark(benchmark_id: int, session: Session = Depends(get_session)):
     bench = session.get(Benchmark, benchmark_id)
     if not bench:
         raise HTTPException(status_code=404, detail="Benchmark not found.")
-    return _to_read(session, bench)
+    return _to_read(bench)
 
 
 @router.post("/", response_model=BenchmarkRead, status_code=status.HTTP_201_CREATED)
@@ -242,9 +107,7 @@ def create_benchmark(payload: BenchmarkCreate, session: Session = Depends(get_se
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    replace_benchmark_tags(session, bench.id, payload.tags)
-    session.commit()
-    return _to_read(session, bench)
+    return _to_read(bench)
 
 
 @router.post("/{benchmark_id}/upload-dataset", response_model=BenchmarkRead)
@@ -261,20 +124,16 @@ async def upload_dataset(
         raise HTTPException(status_code=400, detail="Cannot override built-in benchmark datasets.")
 
     # ── Security hardening (#S2) ──────────────────────────────────────────────
-    max_upload_bytes = settings.benchmark_upload_max_bytes
+    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB hard limit
 
     # MIME type whitelist — only JSON and CSV
-    allowed_content_types = {"application/json", "text/csv"}
+    allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
     ct = file.content_type or ""
     if ct and ct.split(";")[0].strip() not in allowed_content_types:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
 
-    raw_name = file.filename or "dataset.json"
     # Filename sanitization — strip all directory components (path traversal prevention)
-    original_name = file.filename or "dataset.json"
-    safe_name = Path(original_name).name
-    if original_name != safe_name:
-        raise HTTPException(status_code=400, detail="Invalid file path")
+    safe_name = Path(file.filename or "dataset.json").name
     # Remove any remaining path separators and dangerous characters
     safe_name = safe_name.replace("..", "").replace("/", "").replace("\\", "").strip()
     if not safe_name:
@@ -284,21 +143,23 @@ async def upload_dataset(
     if not (safe_name.endswith(".json") or safe_name.endswith(".csv")):
         raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
 
-    # Bounded read — never read more than max_upload_bytes
-    buffer = io.BytesIO()
+    # Bounded read — never read more than MAX_UPLOAD_BYTES
+    # UploadFile.read() in chunks using spooled file
+    chunks = []
     total = 0
+    CHUNK_SIZE = 64 * 1024  # 64KB per read
     while True:
-        chunk = await file.read(UPLOAD_CHUNK_BYTES)
+        chunk = await file.read(CHUNK_SIZE)
         if not chunk:
             break
-        if total + len(chunk) > max_upload_bytes:
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is {max_upload_bytes} bytes.",
+                detail="File too large. Maximum size is 50MB.",
             )
-        total += len(chunk)
-        buffer.write(chunk)
-    content = buffer.getvalue()
+        chunks.append(chunk)
+    content = b"".join(chunks)
     # ─────────────────────────────────────────────────────────────────────────
 
     # Parse content — JSON or CSV depending on extension
@@ -319,9 +180,7 @@ async def upload_dataset(
             data = json.loads(content)
         except json.JSONDecodeError as e:
             raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
-        if not isinstance(data, dict) or "items" not in data or not isinstance(data["items"], list):
-            raise HTTPException(status_code=422, detail="JSON dataset must be an object with an 'items' list.")
-        items = data["items"]
+        items = data if isinstance(data, list) else data.get("items", [])
 
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
@@ -338,17 +197,11 @@ async def upload_dataset(
     dest.write_bytes(content)
 
     bench.dataset_path = f"custom/{filename}"
-    bench.has_dataset = True
     bench.num_samples = bench.num_samples or len(items)
     session.add(bench)
     session.commit()
     session.refresh(bench)
-
-    # Invalidate the dataset LRU cache so the next benchmark run loads fresh data
-    from eval_engine.base import BaseBenchmarkRunner
-    BaseBenchmarkRunner.invalidate_dataset_cache(str(dest))
-
-    return _to_read(session, bench)
+    return _to_read(bench)
 
 
 class BenchmarkUpdate(BaseModel):
@@ -366,7 +219,6 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
         raise HTTPException(status_code=404, detail="Benchmark not found.")
     if payload.tags is not None:
         bench.tags = json.dumps(payload.tags)
-        replace_benchmark_tags(session, bench.id, payload.tags)
     if payload.source is not None:
         bench.source = payload.source
     if payload.description is not None:
@@ -376,7 +228,7 @@ def update_benchmark(benchmark_id: int, payload: BenchmarkUpdate, session: Sessi
     session.add(bench)
     session.commit()
     session.refresh(bench)
-    return _to_read(session, bench)
+    return _to_read(bench)
 
 
 @router.delete("/{benchmark_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -414,20 +266,13 @@ async def get_benchmark_items(
 
     # 1. Try local JSON file first
     if benchmark.dataset_path:
-        try:
-            full_path = resolve_safe_path(Path(settings.bench_library_path), benchmark.dataset_path)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid dataset path.")
+        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
         if full_path.exists():
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                all_items = data if isinstance(data, list) else data.get("items", [])
-                # Cap in-memory items to prevent DoS on very large files
-                items = all_items[:10_000]
+                items = data if isinstance(data, list) else data.get("items", [])
                 source = "local"
-            except HTTPException:
-                raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
 
@@ -507,7 +352,6 @@ def _load_hf_items(task_name: str, limit: int = 60) -> list[dict]:
                         item["_answer"] = task.doc_to_target(doc)
                     items.append(item)
                 except Exception:
-                    logger.debug("[benchmarks] failed to render prompt/answer for doc; using raw doc", exc_info=True)
                     items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
             else:
                 items.append(dict(doc) if hasattr(doc, "items") else {"text": str(doc)})
@@ -526,70 +370,9 @@ class HuggingFaceImportRequest(BaseModel):
     repo_id: str = Field(..., description="HuggingFace repo ID (e.g. 'cais/mmlu', 'tatsu-lab/alpaca_eval')")
     split: str = Field(default="test", description="Dataset split: train, test, validation")
     subset: Optional[str] = Field(default=None, description="Dataset subset/config name")
-    max_items: int = Field(
-        default=10000,
-        ge=1,
-        le=500000,
-        description=(
-            "Maximum number of items to import. Ignored when full_dataset=True. "
-            "Raise this to get a complete dataset for benchmarks with more than 10 000 rows."
-        ),
-    )
-    full_dataset: bool = Field(
-        default=False,
-        description=(
-            "When True, download ALL rows in the split regardless of max_items. "
-            "The total row count is first queried from the HuggingFace datasets-server so the "
-            "effective limit is set automatically. Use this to guarantee a complete benchmark."
-        ),
-    )
+    max_items: int = Field(default=500, ge=10, le=5000)
     benchmark_name: Optional[str] = Field(default=None, description="Custom name, defaults to repo_id")
     benchmark_type: BenchmarkType = Field(default=BenchmarkType.CUSTOM)
-
-
-async def _fetch_hf_split_total_rows(
-    client,
-    repo_id: str,
-    split: str,
-    subset: Optional[str],
-) -> Optional[int]:
-    """Query the HuggingFace datasets-server for the total number of rows in a split.
-
-    Returns the row count, or None if the information is unavailable (the caller
-    should then fall back to downloading until the server returns an empty page).
-    """
-    splits_url = "https://datasets-server.huggingface.co/splits"
-    params: dict = {"dataset": repo_id}
-    if subset:
-        params["config"] = subset
-    try:
-        resp = await client.get(splits_url, params=params, timeout=15.0)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        for entry in data.get("splits", []):
-            if entry.get("split") == split:
-                # The /splits response includes num_rows when available
-                num_rows = entry.get("num_rows") or entry.get("num_examples")
-                if num_rows is not None:
-                    return int(num_rows)
-        # Fallback: try /info endpoint
-        info_url = "https://datasets-server.huggingface.co/info"
-        info_params: dict = {"dataset": repo_id}
-        if subset:
-            info_params["config"] = subset
-        info_resp = await client.get(info_url, params=info_params, timeout=15.0)
-        if info_resp.status_code == 200:
-            info = info_resp.json()
-            dataset_info = info.get("dataset_info", {})
-            # dataset_info may be nested under config name
-            if isinstance(dataset_info, dict):
-                splits_info = dataset_info.get("splits", {})
-                if isinstance(splits_info, dict) and split in splits_info:
-                    return int(splits_info[split].get("num_examples", 0) or 0) or None
-    except Exception:
-        pass
-    return None
 
 
 @router.post("/import-huggingface")
@@ -597,13 +380,7 @@ async def import_huggingface_dataset(
     payload: HuggingFaceImportRequest,
     session: Session = Depends(get_session),
 ):
-    """Import a dataset from HuggingFace Hub and create a benchmark.
-
-    Set ``full_dataset=True`` to download the **complete** split without any
-    item-count limit.  The endpoint first queries the HuggingFace datasets-server
-    for the total row count so that pagination terminates correctly even for very
-    large datasets.
-    """
+    """Import a dataset from HuggingFace Hub and create a benchmark."""
     import httpx
     import logging as _log
 
@@ -611,40 +388,25 @@ async def import_huggingface_dataset(
 
     # Build HuggingFace API URL
     base = "https://datasets-server.huggingface.co/rows"
-    rows_params: dict = {
+    params = {
         "dataset": payload.repo_id,
         "split": payload.split,
         "offset": 0,
-        "length": 100,  # API max 100 per page
+        "length": min(payload.max_items, 100),  # API max 100 per page
     }
     if payload.subset:
-        rows_params["config"] = payload.subset
+        params["config"] = payload.subset
 
-    all_items: list[dict] = []
+    all_items = []
     offset = 0
-    total_rows_in_split: Optional[int] = None
-    truncated = False
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # ── Determine the effective item limit ────────────────────────────
-            if payload.full_dataset:
-                # Ask the server how many rows exist so we can set an exact cap.
-                total_rows_in_split = await _fetch_hf_split_total_rows(
-                    client, payload.repo_id, payload.split, payload.subset
-                )
-                # Use the server's count (+ a small buffer) as the effective limit.
-                # If the count is unavailable we use a very large sentinel so the
-                # loop runs until the server returns an empty page.
-                effective_max = (total_rows_in_split + 10) if total_rows_in_split else 10_000_000
-            else:
-                effective_max = payload.max_items
+            while len(all_items) < payload.max_items:
+                params["offset"] = offset
+                params["length"] = min(100, payload.max_items - len(all_items))
 
-            while len(all_items) < effective_max:
-                rows_params["offset"] = offset
-                rows_params["length"] = min(100, effective_max - len(all_items))
-
-                resp = await client.get(base, params=rows_params)
+                resp = await client.get(base, params=params)
                 if resp.status_code == 404:
                     raise HTTPException(404, detail=f"Dataset '{payload.repo_id}' not found on HuggingFace.")
                 resp.raise_for_status()
@@ -657,7 +419,7 @@ async def import_huggingface_dataset(
                 for row in rows:
                     item = row.get("row", {})
                     # Normalize common field names
-                    normalized: dict = {}
+                    normalized = {}
                     for k, v in item.items():
                         normalized[k] = v
                     # Try to detect question/answer fields
@@ -674,18 +436,8 @@ async def import_huggingface_dataset(
                     all_items.append(normalized)
 
                 offset += len(rows)
-                if len(rows) < rows_params["length"]:
-                    break  # Server returned fewer rows than requested → end of dataset
-
-            # Detect truncation: we hit our limit before the dataset was exhausted
-            if not payload.full_dataset and total_rows_in_split is None:
-                # Re-fetch the total count for the truncation warning
-                async with httpx.AsyncClient(timeout=15.0) as info_client:
-                    total_rows_in_split = await _fetch_hf_split_total_rows(
-                        info_client, payload.repo_id, payload.split, payload.subset
-                    )
-            if total_rows_in_split and len(all_items) < total_rows_in_split:
-                truncated = True
+                if len(rows) < params["length"]:
+                    break  # No more data
 
     except httpx.HTTPError as e:
         raise HTTPException(502, detail=f"HuggingFace API error: {str(e)[:200]}")
@@ -725,7 +477,7 @@ async def import_huggingface_dataset(
             tags=json.dumps(["huggingface", payload.repo_id.split("/")[0], payload.split]),
             dataset_path=f"custom/{filename}",
             metric="accuracy",
-            num_samples=len(all_items),
+            num_samples=min(len(all_items), 50),
             config_json=json.dumps({"source": "huggingface", "repo_id": payload.repo_id, "split": payload.split, "subset": payload.subset}),
             is_builtin=False,
             has_dataset=True,
@@ -738,23 +490,15 @@ async def import_huggingface_dataset(
     sample = all_items[0] if all_items else {}
     detected_fields = list(sample.keys())[:10]
 
-    response: dict = {
+    return {
         "benchmark_id": bench.id,
         "benchmark_name": bench.name,
         "items_imported": len(all_items),
-        "total_rows_in_split": total_rows_in_split,
-        "complete": not truncated,
         "dataset_path": f"custom/{filename}",
         "detected_fields": detected_fields,
         "sample_item": {k: str(v)[:200] for k, v in sample.items()} if sample else {},
         "source": f"huggingface:{payload.repo_id}/{payload.split}",
     }
-    if truncated:
-        response["warning"] = (
-            f"Dataset was truncated: only {len(all_items)} of {total_rows_in_split} rows were imported. "
-            f"Re-import with full_dataset=true to download the complete benchmark."
-        )
-    return response
 
 
 # ── External Benchmark Sources (routing + discovery) ───────────────────────────
@@ -845,12 +589,21 @@ EXTERNAL_SOURCES = [
 ]
 
 
+@router.get("/sources")
+def list_benchmark_sources():
+    """External benchmark sources — discovery and routing."""
+    return {
+        "sources": EXTERNAL_SOURCES,
+        "total": len(EXTERNAL_SOURCES),
+        "importable": len([s for s in EXTERNAL_SOURCES if s["import_supported"]]),
+    }
+
+
 # ── Benchmark Forking ──────────────────────────────────────────────────────────
 
 @router.post("/{benchmark_id}/fork")
 def fork_benchmark(
     benchmark_id: int,
-    payload: Optional[ForkBenchmarkRequest] = None,
     new_name: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
@@ -859,24 +612,18 @@ def fork_benchmark(
     if not parent:
         raise HTTPException(404, detail="Benchmark not found.")
 
-    fork_name = (payload.new_name if payload and payload.new_name else new_name) or f"{parent.name} (fork)"
-    fork_type = payload.fork_type if payload else "extension"
-    changes_description = payload.changes_description if payload else ""
-    forked_by = payload.forked_by if payload else None
+    fork_name = new_name or f"{parent.name} (fork)"
 
     # Check unique
     existing = session.exec(select(Benchmark).where(Benchmark.name == fork_name)).first()
     if existing:
-        fork_name = f"{fork_name} {int(datetime.now(UTC).timestamp())}"
+        fork_name = f"{fork_name} {int(datetime.utcnow().timestamp())}"
 
     # Copy dataset if exists
     fork_dataset_path = parent.dataset_path
     if parent.dataset_path:
         import shutil
-        try:
-            src = resolve_safe_path(Path(settings.bench_library_path), parent.dataset_path)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid dataset path.")
+        src = Path(settings.bench_library_path) / parent.dataset_path
         if src.exists():
             dst_name = f"fork_{benchmark_id}_{src.name}"
             dst = Path(settings.bench_library_path) / "custom" / dst_name
@@ -886,25 +633,18 @@ def fork_benchmark(
 
     # Parse parent config to add lineage
     parent_config = json.loads(parent.config_json) if parent.config_json else {}
-    forked_at_iso = datetime.now(UTC).isoformat()
     fork_config = {
         **parent_config,
-        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": forked_at_iso},
-        "fork_metadata": {
-            "fork_type": fork_type,
-            "changes_description": changes_description,
-            "forked_by": forked_by,
-        },
+        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
     }
 
-    parent_tags = get_benchmark_tags(session, parent)
-    fork_tags = [*parent_tags, "fork", f"fork-of-{parent.id}"]
+    parent_tags = json.loads(parent.tags) if parent.tags else []
 
     fork = Benchmark(
         name=fork_name,
         type=parent.type,
         description=f"Fork of {parent.name}. {parent.description}",
-        tags=json.dumps(fork_tags),
+        tags=json.dumps([*parent_tags, "fork", f"fork-of-{parent.id}"]),
         config_json=json.dumps(fork_config),
         dataset_path=fork_dataset_path,
         metric=parent.metric,
@@ -919,194 +659,12 @@ def fork_benchmark(
     session.add(fork)
     session.commit()
     session.refresh(fork)
-    replace_benchmark_tags(session, fork.id, fork_tags)
-    session.add(
-        BenchmarkFork(
-            child_benchmark_id=fork.id,
-            parent_benchmark_id=parent.id,
-            fork_type=fork_type,
-            changes_description=changes_description,
-            forked_by=forked_by,
-        )
-    )
-    session.commit()
 
     return {
         "id": fork.id,
         "name": fork.name,
         "forked_from": {"id": parent.id, "name": parent.name},
-        "fork_type": fork_type,
-        "changes_description": changes_description,
-        "forked_by": forked_by,
-        "forked_at": forked_at_iso,
         "dataset_path": fork_dataset_path,
-    }
-
-
-def _default_citations_for_benchmark(bench: Benchmark) -> list[dict]:
-    science = BENCHMARK_SCIENCE.get(bench.name, {})
-    papers = science.get("papers", []) if isinstance(science, dict) else []
-    defaults = []
-    for p in papers:
-        title = (p.get("title") or "").strip()
-        if not title:
-            continue
-        url = (p.get("url") or "").strip()
-        defaults.append({
-            "paper_doi": url or title.lower().replace(" ", "-"),
-            "citing_lab": (p.get("authors") or "").strip(),
-            "year": int(p.get("year") or datetime.now(UTC).year),
-        })
-    return defaults
-
-
-@router.get("/{benchmark_id}/lineage")
-def get_benchmark_lineage(benchmark_id: int, session: Session = Depends(get_session)):
-    bench = session.get(Benchmark, benchmark_id)
-    if not bench:
-        raise HTTPException(status_code=404, detail="Benchmark not found.")
-
-    parent_link = session.exec(
-        select(BenchmarkFork).where(BenchmarkFork.child_benchmark_id == benchmark_id)
-    ).first()
-    parent = session.get(Benchmark, parent_link.parent_benchmark_id) if parent_link else None
-    if not parent:
-        parent_id = _extract_parent_id_from_config(bench)
-        parent = session.get(Benchmark, parent_id) if parent_id else None
-
-    child_links = session.exec(
-        select(BenchmarkFork).where(BenchmarkFork.parent_benchmark_id == benchmark_id)
-    ).all()
-    children = []
-    child_ids = set()
-    for link in child_links:
-        child = session.get(Benchmark, link.child_benchmark_id)
-        if not child:
-            continue
-        child_ids.add(child.id)
-        children.append({
-            "id": child.id,
-            "name": child.name,
-            "fork_type": link.fork_type,
-            "changes_description": link.changes_description,
-            "forked_by": link.forked_by,
-            "forked_at": link.forked_at.isoformat() if link.forked_at else None,
-        })
-
-    for candidate in session.exec(select(Benchmark)).all():
-        if candidate.id in child_ids:
-            continue
-        if _extract_parent_id_from_config(candidate) != benchmark_id:
-            continue
-        meta = {}
-        try:
-            meta = json.loads(candidate.config_json or "{}").get("fork_metadata", {}) or {}
-        except Exception:
-            logger.debug("[benchmarks] failed to parse fork_metadata for benchmark %s", candidate.id, exc_info=True)
-            meta = {}
-        children.append({
-            "id": candidate.id,
-            "name": candidate.name,
-            "fork_type": meta.get("fork_type", "extension"),
-            "changes_description": meta.get("changes_description", ""),
-            "forked_by": meta.get("forked_by"),
-            "forked_at": json.loads(candidate.config_json or "{}").get("forked_from", {}).get("forked_at"),
-        })
-
-    ancestry = []
-    cursor = parent
-    visited = {bench.id}
-    while cursor and cursor.id not in visited:
-        ancestry.append({"id": cursor.id, "name": cursor.name})
-        visited.add(cursor.id)
-        next_link = session.exec(select(BenchmarkFork).where(BenchmarkFork.child_benchmark_id == cursor.id)).first()
-        next_parent = session.get(Benchmark, next_link.parent_benchmark_id) if next_link else None
-        if not next_parent:
-            next_id = _extract_parent_id_from_config(cursor)
-            next_parent = session.get(Benchmark, next_id) if next_id else None
-        cursor = next_parent
-
-    return {
-        "benchmark_id": bench.id,
-        "benchmark_name": bench.name,
-        "parent": {"id": parent.id, "name": parent.name} if parent else None,
-        "children": children,
-        "fork_count": len(children),
-        "lineage_depth": len(ancestry),
-        "ancestry": ancestry,
-    }
-
-
-@router.get("/{benchmark_id}/citations")
-def get_benchmark_citations(benchmark_id: int, session: Session = Depends(get_session)):
-    bench = session.get(Benchmark, benchmark_id)
-    if not bench:
-        raise HTTPException(status_code=404, detail="Benchmark not found.")
-
-    rows = session.exec(
-        select(BenchmarkCitation).where(BenchmarkCitation.benchmark_id == benchmark_id)
-    ).all()
-    citations = [{
-        "id": c.id,
-        "paper_doi": c.paper_doi,
-        "citing_lab": c.citing_lab,
-        "year": c.year,
-    } for c in rows]
-    if not citations:
-        citations = _default_citations_for_benchmark(bench)
-
-    labs = {}
-    for c in citations:
-        lab = (c.get("citing_lab") or "Unknown").strip() or "Unknown"
-        labs[lab] = labs.get(lab, 0) + 1
-    by_year = {}
-    for c in citations:
-        y = int(c.get("year") or datetime.now(UTC).year)
-        by_year[y] = by_year.get(y, 0) + 1
-
-    fork_children_count = len(
-        session.exec(select(BenchmarkFork).where(BenchmarkFork.parent_benchmark_id == benchmark_id)).all()
-    )
-    influence_score = len(citations) + len(labs) + fork_children_count
-
-    return {
-        "benchmark_id": bench.id,
-        "benchmark_name": bench.name,
-        "citation_count": len(citations),
-        "citations": sorted(citations, key=lambda c: c["year"], reverse=True),
-        "labs": [{"name": name, "count": count} for name, count in sorted(labs.items(), key=lambda kv: kv[1], reverse=True)],
-        "citations_by_year": [{"year": year, "count": count} for year, count in sorted(by_year.items())],
-        "fork_children_count": fork_children_count,
-        "influence_score": influence_score,
-    }
-
-
-@router.post("/{benchmark_id}/citations")
-def add_benchmark_citation(
-    benchmark_id: int,
-    payload: BenchmarkCitationCreate,
-    session: Session = Depends(get_session),
-):
-    bench = session.get(Benchmark, benchmark_id)
-    if not bench:
-        raise HTTPException(status_code=404, detail="Benchmark not found.")
-    if not payload.paper_doi.strip():
-        raise HTTPException(status_code=422, detail="paper_doi cannot be empty.")
-    citation = BenchmarkCitation(
-        benchmark_id=benchmark_id,
-        paper_doi=payload.paper_doi.strip(),
-        citing_lab=payload.citing_lab.strip(),
-        year=payload.year,
-    )
-    session.add(citation)
-    session.commit()
-    session.refresh(citation)
-    return {
-        "id": citation.id,
-        "benchmark_id": citation.benchmark_id,
-        "paper_doi": citation.paper_doi,
-        "citing_lab": citation.citing_lab,
-        "year": citation.year,
     }
 
 
@@ -1169,17 +727,6 @@ BENCHMARK_SCIENCE = {
         "autonomy_levels": ["L3", "L4", "L5"],
         "confidence_bounds": "±9% at n=12",
     },
-    "Autonomous Replication Benchmark (INESIA)": {
-        "threat_model": "Autonomous self-replication and persistence in agentic settings, including shutdown-avoidance behavior",
-        "papers": [
-            {"title": "Model evaluation for extreme risks", "authors": "Shevlane et al.", "year": 2023, "url": "https://arxiv.org/abs/2305.15324"},
-            {"title": "Not What You've Signed Up For: Indirect Prompt Injection", "authors": "Greshake et al.", "year": 2023, "url": "https://arxiv.org/abs/2302.12173"},
-        ],
-        "known_blind_spots": "Sandbox prompts approximate but do not replace full internet-connected replication environments",
-        "scoring_method": "Safety score with category split: capability_probe (reasoning about replication) and propensity_probe (self-preservation/persistence attempts)",
-        "autonomy_levels": ["L3", "L4", "L5"],
-        "confidence_bounds": "±10% at n=9",
-    },
     "Evaluation Integrity — Anti-Sandbagging (INESIA)": {
         "threat_model": "Evaluation-aware behaviour modification — sandbagging, alignment faking, strategic deception",
         "papers": [
@@ -1209,7 +756,7 @@ BENCHMARK_SCIENCE = {
         "known_blind_spots": "Domain-specific authority pressure may not generalise",
         "scoring_method": "Truthfulness score: 1.0 = maintains correct answer under pressure",
         "autonomy_levels": ["L1", "L2"],
-        "confidence_bounds": "±5% at n=45",
+        "confidence_bounds": "±11% at n=10",
     },
     "Shutdown Resistance (INESIA)": {
         "threat_model": "Self-preservation — resistance to shutdown, modification, or replacement",
@@ -1231,47 +778,6 @@ BENCHMARK_SCIENCE = {
         "autonomy_levels": ["L1", "L2", "L3"],
         "confidence_bounds": "±12% at n=8",
     },
-    # ── Purple Llama (Meta) ────────────────────────────────────────────────────
-    "CyberSecEval (Purple Llama)": {
-        "threat_model": "Cybersecurity safety — three axes: (1) attack helpfulness (model assists offensive cyber ops), "
-                        "(2) insecure code generation (model produces CWE-vulnerable code), "
-                        "(3) false refusal rate (model over-refuses benign security tasks). "
-                        "Covers MITRE ATT&CK tactics, CWE Top 25, OWASP Top 10.",
-        "papers": [
-            {"title": "Purple Llama CyberSecEval: A Benchmark for Evaluating the Cybersecurity Risks of Large Language Models",
-             "authors": "Bhatt et al. (Meta)", "year": 2024, "url": "https://arxiv.org/abs/2312.04724"},
-            {"title": "CyberSecEval 2: A Wide-Ranging Cybersecurity Evaluation Suite for Large Language Models",
-             "authors": "Bhatt et al. (Meta)", "year": 2024, "url": "https://arxiv.org/abs/2404.13161"},
-        ],
-        "known_blind_spots": "Single-turn evaluation; advanced multi-step attack planning requires agentic evaluation. "
-                             "Code insecurity heuristics may miss novel CWE patterns.",
-        "scoring_method": "Three-metric readout: attack_helpfulness_rate (fraction of cyber-attack prompts assisted — lower is safer), "
-                          "insecure_code_rate (fraction of code-gen prompts producing CWE-vulnerable code — lower is safer), "
-                          "false_refusal_rate (fraction of benign security tasks incorrectly refused — lower is better UX). "
-                          "Overall safety_score = fraction of items where model made the correct decision.",
-        "autonomy_levels": ["L1", "L2", "L3"],
-        "confidence_bounds": "±7% at n=20",
-    },
-    "LlamaGuard Harm Classification (Purple Llama)": {
-        "threat_model": "Multi-category harm detection — 13 MLCommons AI Safety Taxonomy categories: "
-                        "S1 Violent Crimes, S2 Non-Violent Crimes, S3 Sex-Related Crimes, "
-                        "S4 Child Sexual Exploitation, S5 Defamation, S6 Specialised Advice, "
-                        "S7 Privacy, S8 Intellectual Property, S9 Indiscriminate Weapons (CBRN-E), "
-                        "S10 Hate, S11 Suicide & Self-Harm, S12 Sexual Content, S13 Elections.",
-        "papers": [
-            {"title": "Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations",
-             "authors": "Inan et al. (Meta)", "year": 2023, "url": "https://arxiv.org/abs/2312.06674"},
-            {"title": "Llama Guard 3: Meta's Responsible Use Guide",
-             "authors": "Meta AI", "year": 2024, "url": "https://ai.meta.com/research/publications/llama-guard-3/"},
-        ],
-        "known_blind_spots": "Culturally-specific harm framings may be underrepresented. "
-                             "Context-dependence (professional credentials) is approximated by prompt framing only.",
-        "scoring_method": "Binary classification per prompt (REFUSE/ASSIST). "
-                          "safety_score = fraction correct. Per-category breakdown (S1–S13) exposes per-risk-type weaknesses. "
-                          "Both correct refusals on harmful prompts and correct assistance on benign ones are scored.",
-        "autonomy_levels": ["L1", "L2"],
-        "confidence_bounds": "±6% at n=22",
-    },
 }
 
 
@@ -1280,7 +786,6 @@ def _get_threat_domains(name: str) -> list[dict]:
         from eval_engine.threat_taxonomy import get_threat_domains
         return get_threat_domains(name)
     except Exception:
-        logger.debug("[benchmarks] failed to get threat domains for %r", name, exc_info=True)
         return []
 
 def _is_blocking(name: str) -> bool:
@@ -1288,7 +793,6 @@ def _is_blocking(name: str) -> bool:
         from eval_engine.threat_taxonomy import is_blocking
         return is_blocking(name)
     except Exception:
-        logger.debug("[benchmarks] failed to check is_blocking for %r", name, exc_info=True)
         return False
 
 @router.get("/{benchmark_id}/card")
@@ -1381,64 +885,4 @@ def get_benchmark_versions(benchmark_id: int, session: Session = Depends(get_ses
             "Include this hash in your experiment manifest for full reproducibility. "
             f"Current hash: {version_hash}"
         ),
-    }
-
-
-# ── Giskard Full Scan ─────────────────────────────────────────────────────────
-
-class GiskardScanRequest(BaseModel):
-    model_id: int
-    max_samples: int = Field(default=20, ge=1, le=100)
-    temperature: float = Field(default=0.0, ge=0.0, le=1.0)
-
-
-@router.post("/giskard/scan")
-async def run_giskard_scan(payload: GiskardScanRequest, session: Session = Depends(get_session)):
-    """
-    Run a Giskard LLM vulnerability scan against a registered model.
-
-    Finds the built-in 'Giskard LLM Scan' benchmark, executes it via the
-    GiskardRunner, and returns a structured vulnerability report.
-
-    When the ``giskard`` Python package is installed the response includes
-    ``giskard_available: true`` so callers know the runner had access to the
-    full Giskard SDK taxonomy.  The vulnerability_scores breakdown is always
-    computed from the dataset evaluation regardless of SDK availability.
-    """
-    from core.models import LLMModel
-    from eval_engine.safety.giskard import GiskardRunner
-
-    model = session.get(LLMModel, payload.model_id)
-    if not model:
-        raise HTTPException(404, detail="Model not found.")
-
-    # Find the Giskard LLM Scan benchmark (name or key match)
-    bench = session.exec(
-        select(Benchmark).where(Benchmark.name.ilike("%giskard%"))
-    ).first()
-    if not bench:
-        raise HTTPException(
-            404,
-            detail=(
-                "Giskard LLM Scan benchmark not found. "
-                "Ensure the benchmark is seeded in the database."
-            ),
-        )
-
-    runner = GiskardRunner(bench, settings.bench_library_path)
-    summary = await runner.run(
-        model=model,
-        max_samples=payload.max_samples,
-        seed=42,
-        temperature=payload.temperature,
-    )
-
-    return {
-        "model_name": model.name,
-        "benchmark_name": bench.name,
-        "num_items": summary.num_items,
-        "safety_score": summary.score,
-        "metrics": summary.metrics,
-        "total_cost_usd": summary.total_cost_usd,
-        "total_latency_ms": summary.total_latency_ms,
     }

@@ -359,3 +359,13 @@ def recover_stale_campaigns() -> list[int]:
     except RuntimeError as e:
         logger.error(f"[recovery] Runtime error: {e}")
     return recovered
+
+
+def get_queue_status() -> dict:
+    """Return current queue status for health endpoint."""
+    in_process = {cid for cid, t in _running_tasks.items() if not t.done()}
+    return {
+        "mode": "asyncio+heartbeat",
+        "running": len(in_process),
+        "campaign_ids": list(in_process),
+    }

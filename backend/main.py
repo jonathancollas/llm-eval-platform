@@ -3,21 +3,17 @@ Mercury Retrograde — INESIA AI Evaluation Platform
 FastAPI application entry point.
 """
 import hmac as _hmac
-import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, UTC
 from typing import Callable
 
-from fastapi import Depends, FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from core.config import get_settings
 from core.database import create_db_and_tables, engine
-from core.auth import require_tenant, get_request_role, VALID_ROLES
 from api.routers import models, benchmarks, campaigns, results, reports, catalog, leaderboard, sync, genome
 from api.routers import redbox
 from api.routers import judge
@@ -32,14 +28,6 @@ from api.routers import events as events_router
 from eval_engine.event_pipeline import register_default_subscribers
 from api.routers import monitoring
 from api.routers import science
-from api.routers import statistics as statistics_router
-from api.routers import plugins as plugins_router
-from api.routers import capability as capability_router
-from api.routers import scenarios as scenarios_router
-from api.routers import forecasting as forecasting_router
-from api.routers import failure_patterns as failure_patterns_router
-from api.routers import reward_hacking as reward_hacking_router
-from api.routers import vibe as vibe_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +39,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
     # 1. Create tables + reset stuck campaigns + update has_dataset flags
     logger.info("Startup — initializing DB...")
     # Run sync DB init in executor to avoid blocking event loop
@@ -77,26 +67,16 @@ async def lifespan(app: FastAPI):
     await loop.run_in_executor(None, _sync_catalog)
 
     # 4. Async OpenRouter sync in background (non-blocking)
-    # Store the task so it can be properly cancelled on shutdown.
-    app.state.bg_sync_task = asyncio.create_task(_background_openrouter_sync())
-    app.state.bg_queue_recovery_task = asyncio.create_task(_background_queue_recovery())
+    asyncio.create_task(_background_openrouter_sync())
 
-    # 5. Cache bench file count once at startup — avoids rglob() on every /api/health call
-    from pathlib import Path as _Path
-    _bench_path = _Path(settings.bench_library_path)
-    app.state.bench_files_count = len(list(_bench_path.rglob("*.json"))) if _bench_path.exists() else 0
-    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}  bench_files={app.state.bench_files_count}")
+    logger.info(f"Ready ✓  bench_library={settings.bench_library_path}")
     yield
-    # Cancel the background task and wait for it to finish cleanly.
-    tasks = [app.state.bg_sync_task, app.state.bg_queue_recovery_task]
-    for task in tasks:
-        task.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
     logger.info("Shutdown.")
 
 
 async def _background_openrouter_sync():
     """Sync OpenRouter + Ollama models after startup — runs in background."""
+    import asyncio
     await asyncio.sleep(2)  # Let server fully start first
 
     # OpenRouter
@@ -119,19 +99,6 @@ async def _background_openrouter_sync():
                 logger.info("Ollama not available (optional — install from ollama.com)")
     except Exception as e:
         logger.debug(f"Ollama sync skipped: {e}")
-
-
-async def _background_queue_recovery():
-    from core import job_queue
-
-    while True:
-        try:
-            recovered = job_queue.recover_stale_campaigns()
-            if recovered:
-                logger.warning(f"Marked {len(recovered)} stale campaigns as FAILED: {recovered}")
-        except Exception as e:
-            logger.warning(f"Background queue recovery failed: {e}")
-        await asyncio.sleep(60)
 
 
 app = FastAPI(
@@ -158,9 +125,6 @@ _RATE_LIMIT_ENABLED = _os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 # Hard cap on timestamps kept per IP to prevent unbounded memory growth.
 # We never need to store more than RPM entries for any single IP.
 _RATE_LIMIT_MAX_STORE = _RATE_LIMIT_RPM
-# Lock to prevent asyncio race conditions between concurrent coroutines reading
-# and writing the same IP's window before the update is committed.
-_rate_limit_lock = asyncio.Lock()
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
@@ -170,14 +134,15 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     if request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json"):
         return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
-    async with _rate_limit_lock:
-        now = _time.time()
-        # Prune timestamps outside the 60-second window
-        window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
-        if len(window) >= _RATE_LIMIT_RPM:
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
-        # Cap stored entries to prevent memory growth from burst IPs
-        _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:] + [now]
+    now = _time.time()
+    # Prune timestamps outside the 60-second window
+    window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
+    # Cap stored entries to prevent memory growth from burst IPs
+    _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:]
+    if len(window) >= _RATE_LIMIT_RPM:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
+    _rate_limit_store[client_ip].append(now)
     return await call_next(request)
 
 
@@ -191,11 +156,7 @@ app.add_middleware(
     allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Content-Type", "Authorization", "Accept",
-        "X-API-Key", "X-Tenant-Key", "X-Role", "X-User-Role",
-        "X-Actor", "X-Confirm-Action",
-    ],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 
 
@@ -206,126 +167,58 @@ async def security_headers(request: Request, call_next: Callable) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; "
-        "connect-src 'self' https://openrouter.ai https://api.lakera.ai; "
-        "frame-ancestors 'none';"
-    )
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
 _ADMIN_API_KEY = _os.getenv("ADMIN_API_KEY", "")
-_DESTRUCTIVE_PATH_TOKENS = ("/cancel", "/rotate-key")
 
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next: Callable) -> Response:
     """
-    Access control middleware — DISABLED (commented out for single-user deployment).
-    All requests pass through without authentication.
-
-    # To re-enable, uncomment the block below and set ADMIN_API_KEY + tenant keys.
-    #
-    # public = (
-    #     request.method == "OPTIONS"
-    #     or request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json")
-    # )
-    # if public:
-    #     return await call_next(request)
-    #
-    # # Mandatory admin API key auth (fail closed when unset).
-    # key = request.headers.get("X-API-Key", "")
-    # if not key:
-    #     return JSONResponse(
-    #         status_code=401,
-    #         content={"detail": "Missing X-API-Key header. Set ADMIN_API_KEY and pass it as X-API-Key."},
-    #     )
-    # if not _ADMIN_API_KEY:
-    #     return JSONResponse(
-    #         status_code=503,
-    #         content={"detail": "Server misconfigured: ADMIN_API_KEY is not set."},
-    #     )
-    # if not _hmac.compare_digest(key, _ADMIN_API_KEY):
-    #     return JSONResponse(status_code=403, content={"detail": "Invalid API key."})
-    #
-    # role = get_request_role(request)
-    # if role not in VALID_ROLES:
-    #     return JSONResponse(
-    #         status_code=403,
-    #         content={"detail": "Invalid role. Allowed roles: admin, evaluator, viewer."},
-    #     )
-    # request.state.current_role = role
-    #
-    # # RBAC: viewer is read-only; tenant management is admin-only.
-    # if request.url.path.startswith("/api/tenants") and role != "admin":
-    #     return JSONResponse(status_code=403, content={"detail": "Admin role required."})
-    # if request.method in {"POST", "PUT", "PATCH", "DELETE"} and role == "viewer":
-    #     return JSONResponse(status_code=403, content={"detail": "Viewer role is read-only."})
-    #
-    # # Explicit confirmation for destructive operations.
-    # destructive_path = any(token in request.url.path for token in _DESTRUCTIVE_PATH_TOKENS)
-    # destructive = request.method == "DELETE" or destructive_path
-    # if destructive and request.headers.get("X-Confirm-Action", "").lower() != "true":
-    #     return JSONResponse(
-    #         status_code=400,
-    #         content={"detail": "Missing X-Confirm-Action: true header for destructive operation."},
-    #     )
-    #
-    # # Tenant is mandatory on data routes.
-    # if request.url.path.startswith("/api") and not request.url.path.startswith("/api/tenants"):
-    #     with Session(engine) as session:
-    #         try:
-    #             tenant = require_tenant(request, session)
-    #             request.state.current_tenant = tenant
-    #         except Exception as exc:
-    #             if hasattr(exc, "status_code"):
-    #                 return JSONResponse(status_code=exc.status_code, content={"detail": getattr(exc, "detail", "Unauthorized")})
-    #             raise
+    API key authentication (#S1).
+    - ADMIN_API_KEY set: all non-public routes require X-API-Key header.
+    - ADMIN_API_KEY unset: dev mode — requests pass but response carries warning header.
+    Public: /api/health, /docs, /redoc, /openapi.json, OPTIONS preflight.
     """
-    return await call_next(request)
+    public = (
+        request.method == "OPTIONS"
+        or request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json")
+    )
+    if public:
+        return await call_next(request)
 
-
-@app.middleware("http")
-async def audit_write_operations(request: Request, call_next: Callable) -> Response:
-    response = await call_next(request)
-    if request.url.path.startswith("/api") and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        actor = request.headers.get("X-Actor", "unknown")
-        role = getattr(request.state, "current_role", "unknown")
-        tenant = getattr(getattr(request.state, "current_tenant", None), "slug", "unknown")
-        logger.info(
-            "audit_log ts=%s actor=%s role=%s tenant=%s method=%s path=%s status=%s",
-            datetime.now(UTC).isoformat(),
-            actor,
-            role,
-            tenant,
-            request.method,
-            request.url.path,
-            response.status_code,
+    if not _ADMIN_API_KEY:
+        # Dev mode — warn operator, allow request
+        resp = await call_next(request)
+        resp.headers["X-Auth-Warning"] = (
+            "ADMIN_API_KEY not configured -- authentication disabled. "
+            "Set ADMIN_API_KEY env var before deploying to production."
         )
-    return response
+        return resp
+
+    # Production mode — enforce key using constant-time comparison to prevent timing attacks
+    key = request.headers.get("X-API-Key", "")
+    if not key:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing X-API-Key header. Set ADMIN_API_KEY and pass it as X-API-Key."},
+        )
+    if not _hmac.compare_digest(key, _ADMIN_API_KEY):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={"detail": "Invalid API key."})
+    return await call_next(request)
 
 
 # ── Routers ────────────────────────────────────────────────────────────────────
 
-tenant_scoped_routers = [
-    models.router, benchmarks.router, campaigns.router, results.router,
-    reports.router, catalog.router, leaderboard.router, sync.router, genome.router,
-    redbox.router, judge.router, agents.router, policy.router,
-    research.router, evidence.router, deep_analysis.router,
-    multiagent.router, events_router.router, monitoring.router, science.router,
-    statistics_router.router, plugins_router.router, capability_router.router,
-    scenarios_router.router, forecasting_router.router,
-    failure_patterns_router.router,
-    reward_hacking_router.router,
-    vibe_router.router,
-]
-for router in tenant_scoped_routers:
-    app.include_router(router, prefix="/api", dependencies=[Depends(require_tenant)])
-app.include_router(tenants.router, prefix="/api")
+for router in [models.router, benchmarks.router, campaigns.router, results.router,
+               reports.router, catalog.router, leaderboard.router, sync.router, genome.router,
+               redbox.router, judge.router, agents.router, policy.router, tenants.router,
+               research.router, evidence.router, deep_analysis.router,
+               multiagent.router, events_router.router,
+               monitoring.router, science.router]:
+    app.include_router(router, prefix="/api")
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
@@ -346,7 +239,7 @@ def health():
         "version": settings.app_version,
         "database": "postgresql" if is_postgres else "sqlite",
         "queue_mode": queue["mode"],
-        "queue_active": queue["in_memory_tasks"],
+        "queue_active": queue["running"],
         "bench_library_path": str(bench_path),
         "bench_library_exists": bench_exists,
         "bench_files_count": len(bench_files),
