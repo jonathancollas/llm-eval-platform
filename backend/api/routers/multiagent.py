@@ -567,7 +567,11 @@ def _get_sample_questions(benchmark, n_samples: int, session: Session) -> list[d
         import json as _json
         from pathlib import Path
         from core.config import get_settings as _gs
-        bench_path = Path(_gs().bench_library_path) / benchmark.dataset_path
+        from core.security import safe_bench_path
+        try:
+            bench_path = safe_bench_path(_gs().bench_library_path, benchmark.dataset_path)
+        except Exception:
+            return []
         if bench_path.exists():
             try:
                 data = _json.loads(bench_path.read_text())

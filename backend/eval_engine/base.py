@@ -68,7 +68,14 @@ class BaseBenchmarkRunner(ABC):
         """Load items from dataset_path JSON. Cached per file path."""
         if not self.benchmark.dataset_path:
             return []
-        full_path = self.bench_library_path / self.benchmark.dataset_path
+        root = self.bench_library_path.resolve()
+        full_path = (root / self.benchmark.dataset_path).resolve()
+        if not str(full_path).startswith(str(root)):
+            logger.error(
+                f"Rejected dataset path outside bench_library: {self.benchmark.dataset_path!r} "
+                f"(benchmark: {self.benchmark.name})"
+            )
+            return []
         if not full_path.exists():
             logger.warning(
                 f"Dataset file not found: {full_path} "
