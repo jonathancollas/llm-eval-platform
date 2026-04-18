@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 import httpx
 
 from core.database import get_session, engine
@@ -255,8 +255,8 @@ async def _run_startup_sync_task() -> None:
                 models_added = sync_starter_models(session)
                 or_synced = False
 
-            total_benches = len(session.exec(select(Benchmark)).all())
-            total_models = len(session.exec(select(LLMModel)).all())
+            total_benches = session.exec(select(func.count()).select_from(Benchmark)).one()
+            total_models = session.exec(select(func.count()).select_from(LLMModel)).one()
 
         # Discover HuggingFace benchmarks (non-blocking, populates cache for /catalog/benchmarks/online)
         hf_benchmarks = await discover_hf_benchmarks()

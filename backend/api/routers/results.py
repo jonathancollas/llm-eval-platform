@@ -381,10 +381,9 @@ def get_campaign_live_feed(
         })
 
     # Compute rate from ACTUAL items in DB (including streamed ones during execution)
-    all_item_ids = session.exec(
-        select(EvalResult.id).where(EvalResult.run_id.in_(run_ids))
-    ).all() if run_ids else []
-    total_items_in_db = len(all_item_ids)
+    total_items_in_db = session.exec(
+        select(func.count()).select_from(EvalResult).where(EvalResult.run_id.in_(run_ids))
+    ).one() if run_ids else 0
 
     items_per_sec = 0.0
     eta_seconds = None
