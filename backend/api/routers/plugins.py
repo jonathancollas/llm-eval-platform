@@ -6,7 +6,7 @@ from core.database import get_session
 from core.models import EvalRun
 from eval_engine.plugin_sdk import plugin_registry, ValidationResult
 from eval_engine.plugin_sdk.validator import validate_benchmark_plugin
-from eval_engine.research_export import ExportConfig, export_json_ld, export_csv, export_latex_table, export_bibtex, export_eval_card
+from eval_engine.research_export import ExportConfig, export_json_ld, export_csv, export_latex_table, export_bibtex, export_helm, export_eval_card
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
@@ -35,11 +35,16 @@ def export_run(run_id: int, format: str = Query("json_ld"), session: Session = D
     run = session.get(EvalRun, run_id)
     if not run: raise HTTPException(404, "Run not found")
     config = ExportConfig()
-    run_data = {"model_name": str(run.model_id), "benchmark_name": str(run.benchmark_id),
+    run_data = {"run_id": run_id, "model_name": str(run.model_id), "benchmark_name": str(run.benchmark_id),
                 "score": run.score or 0.0, "n_items": 0, "created_at": str(run.created_at)}
     if format == "json_ld": return {"export": export_json_ld(run_data, config)}
     if format == "csv": return {"export": export_csv([run_data], config)}
     if format == "latex": return {"export": export_latex_table([run_data], config)}
+    if format == "bibtex":
+        benchmarks = [{"name": run_data["benchmark_name"], "title": run_data["benchmark_name"],
+                       "authors": "", "year": config.date[:4], "url": ""}]
+        return {"export": export_bibtex(benchmarks)}
+    if format == "helm": return {"export": export_helm(run_data, config)}
     if format == "eval_card": return {"export": export_eval_card(run_data, {}, config)}
     raise HTTPException(400, f"Unknown format: {format}")
 

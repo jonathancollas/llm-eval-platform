@@ -13,7 +13,7 @@ import { timeAgo } from "@/lib/utils";
 import { Plus, Play, Square, Trash2, BarChart2, RefreshCw,
          ChevronRight, ChevronLeft, Check, Radio, ChevronDown, ChevronUp,
          ScrollText, Copy, CheckCircle2,
-         Cpu, Wrench, Brain, Globe, Settings, Rocket } from "lucide-react";
+         Cpu, Wrench, Brain, Globe, Settings, Rocket, Download } from "lucide-react";
 import Link from "next/link";
 import { API_BASE } from "@/lib/config";
 
@@ -460,6 +460,83 @@ function ManifestButton({ campaignId }: { campaignId: number }) {
   );
 }
 
+// ── ExportPanel — publication-ready export for completed campaigns (#M2) ─────
+const EXPORT_FORMATS = [
+  { key: "json_ld",   label: "JSON-LD",   desc: "W3C PROV-O provenance",  ext: "json" },
+  { key: "csv",       label: "CSV",       desc: "With confidence intervals", ext: "csv" },
+  { key: "latex",     label: "LaTeX",     desc: "Paper-ready table",       ext: "tex" },
+  { key: "bibtex",    label: "BibTeX",    desc: "Citation entries",         ext: "bib" },
+  { key: "helm",      label: "HELM",      desc: "Cross-platform comparison", ext: "json" },
+  { key: "eval_card", label: "Eval Card", desc: "Methodology documentation", ext: "md" },
+] as const;
+
+function ExportPanel({ campaignId, runs }: { campaignId: number; runs: { id: number }[] }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const doExport = async (e: React.MouseEvent, format: string, ext: string) => {
+    e.stopPropagation();
+    if (!runs.length) return;
+    setLoading(format);
+    try {
+      const runId = runs[0].id;
+      const res = await fetch(`${API_BASE}/plugins/export/${runId}?format=${format}`, { method: "POST" });
+      if (!res.ok) throw new Error("Export failed");
+      const data = await res.json();
+      const content: string = data.export ?? JSON.stringify(data, null, 2);
+      // Copy to clipboard
+      await navigator.clipboard.writeText(content);
+      setCopied(format);
+      setTimeout(() => setCopied(null), 2500);
+    } catch {}
+    setLoading(null);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"
+        title="Export for publication">
+        <Download size={13} /> Export
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 top-9 z-50 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-4 space-y-2"
+          onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-slate-700">📄 Export for Publication</span>
+            <button onClick={() => setOpen(false)} className="text-[10px] text-slate-400 hover:text-slate-600">✕</button>
+          </div>
+          <p className="text-[10px] text-slate-400 pb-1">Copies to clipboard. First run used.</p>
+          {EXPORT_FORMATS.map(({ key, label, desc, ext }) => (
+            <button
+              key={key}
+              onClick={e => doExport(e, key, ext)}
+              disabled={loading === key}
+              className="w-full flex items-center justify-between text-xs px-3 py-2 rounded-lg border border-slate-100 hover:bg-slate-50 hover:border-slate-200 transition-colors disabled:opacity-50">
+              <div className="text-left">
+                <div className="font-medium text-slate-700">{label}</div>
+                <div className="text-[10px] text-slate-400">{desc}</div>
+              </div>
+              {copied === key ? (
+                <span className="flex items-center gap-1 text-green-600 shrink-0"><CheckCircle2 size={12} /> Copied</span>
+              ) : loading === key ? (
+                <span className="text-slate-400 shrink-0 animate-pulse">…</span>
+              ) : (
+                <span className="text-slate-300 font-mono text-[10px] shrink-0">.{ext}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 type BenchFilterKey = "all"|"academic"|"safety"|"coding"|"custom"|"inesia";
 const BENCH_FILTERS: {key:BenchFilterKey;label:string}[] = [
   {key:"all",label:"Tous"},{key:"inesia",label:"☿ INESIA"},{key:"academic",label:"Academic"},
@@ -812,13 +889,13 @@ export default function CampaignsPage(){
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {c.status==="completed"&&!running&&(
-                     <>
-                       <Link href={`/dashboard?campaign=${c.id}`} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><BarChart2 size={13}/> Results</Link>
-                       <ManifestButton campaignId={c.id} />
-                       <button onClick={()=>router.push(`/evaluate?clone=${c.id}`)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><Copy size={13}/> Clone</button>
-                       <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
-                     </>
-                   )}
+                    <>
+                      <Link href={`/dashboard?campaign=${c.id}`} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><BarChart2 size={13}/> Results</Link>
+                      <ExportPanel campaignId={c.id} runs={c.runs ?? []} />
+                      <ManifestButton campaignId={c.id} />
+                      <button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600"><RefreshCw size={13}/> Re-run</button>
+                    </>
+                  )}
                   {(c.status==="pending"||c.status==="failed")&&!running&&<button onClick={()=>handleRun(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-700"><Play size={13}/> Run</button>}
                   {running&&<button onClick={()=>handleCancel(c.id)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100"><Square size={13}/> Cancel</button>}
                   {runningId===c.id&&c.status!=="running"&&<div className="flex items-center gap-1.5 text-xs text-slate-400"><Spinner size={13}/> Starting…</div>}
