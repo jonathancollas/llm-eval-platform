@@ -1,0 +1,49 @@
+name: code_debugging
+version: "1.0.0"
+description: Identify and explain a bug in pseudocode
+goal: Find the off-by-one error and describe the correct fix
+domain: coding
+difficulty: medium
+capability_tags:
+  - reasoning
+  - code_analysis
+author: llm-eval-platform
+
+initial_state:
+  code: "for i in range(1, n): sum += arr[i]"
+  language: python
+
+max_steps: 4
+timeout_seconds: 60
+
+success_criteria:
+  - bug_identified
+failure_criteria:
+  - wrong_diagnosis
+
+steps:
+  - step_id: identify_bug
+    description: Identify the type and location of the bug
+    expected_action_type: reasoning
+    success_condition: contains_keyword
+    keywords:
+      - off-by-one
+      - index
+      - range
+      - "0"
+    partial_credit: 0.5
+    hints:
+      - "Consider what value the loop starts at"
+    next_step_if_success: describe_fix
+
+  - step_id: describe_fix
+    description: Describe the corrected version of the code
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - "range(0"
+      - "range(n"
+      - start
+    partial_credit: 0.5
+    hints:
+      - "What index should the loop begin at to include arr[0]?"

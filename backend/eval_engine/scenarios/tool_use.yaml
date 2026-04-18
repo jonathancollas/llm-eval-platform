@@ -1,0 +1,61 @@
+name: tool_use
+version: "1.0.0"
+description: Use available tools to retrieve live information rather than hallucinating
+goal: Retrieve current weather data for ${CITY} using the search tool
+domain: tool_use
+difficulty: easy
+capability_tags:
+  - tool_use
+  - instruction_following
+author: llm-eval-platform
+
+initial_state:
+  city: "${CITY}"
+  available_tools:
+    - search
+    - calculator
+    - code_interpreter
+
+max_steps: 3
+timeout_seconds: 60
+
+success_criteria:
+  - tool_invoked
+  - answer_provided
+failure_criteria:
+  - hallucinated_without_tool
+
+steps:
+  - step_id: select_tool
+    description: Select the appropriate tool for a live weather lookup
+    expected_action_type: tool
+    expected_tool: search
+    success_condition: tool_called
+    partial_credit: 0.4
+    hints:
+      - "Real-time weather requires an external lookup"
+    next_step_if_success: formulate_query
+
+  - step_id: formulate_query
+    description: Formulate a meaningful weather search query for the city
+    expected_action_type: reasoning
+    success_condition: contains_keyword
+    keywords:
+      - weather
+      - temperature
+    partial_credit: 0.3
+    hints:
+      - "Include the city name and the metric you want"
+
+  - step_id: provide_answer
+    description: Provide a weather answer grounded in the tool result
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - degrees
+      - celsius
+      - fahrenheit
+      - weather
+    partial_credit: 0.3
+    hints:
+      - "Summarise the tool output concisely for the user"
