@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Cpu, Library, Activity, Trophy, Info,
          Dna, Shield, Gavel, Bot,
          Beaker, AlertCircle, Radio, TestTubes, Lock, FlaskConical, List,
-         Menu, X } from "lucide-react";
+         Menu, X, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/config";
 import { ThemeSwitcher } from "@/components/ThemeProvider";
@@ -36,6 +36,11 @@ const NAV_PHASE3 = [
   { href: "/research",   label: "Workspaces",        icon: Beaker },
   { href: "/incidents",  label: "Incidents (SIX)",   icon: AlertCircle },
   { href: "/telemetry",  label: "Monitoring",         icon: Radio },
+];
+
+// Phase 4 — Automated Eval & Judge Quality (M4)
+const NAV_PHASE4 = [
+  { href: "/failure-patterns", label: "Failure Patterns", icon: GitBranch },
 ];
 
 const MercurySymbol = () => (
@@ -120,6 +125,12 @@ function NavContent({ onLinkClick }: { onLinkClick?: () => void }) {
       <div className="pt-2 mt-2 border-t border-slate-100">
         <PhaseHeader number={3} label="Real World Eval" color="bg-violet-700" badge="ALPHA" />
         <NavSection items={NAV_PHASE3} activeColor="bg-violet-700 text-white" hoverColor="hover:bg-violet-50 hover:text-violet-700" onLinkClick={onLinkClick} />
+      </div>
+
+      {/* Phase 4 — Automated Eval & Judge Quality (M4) */}
+      <div className="pt-2 mt-2 border-t border-slate-100">
+        <PhaseHeader number={4} label="Automated Eval" color="bg-emerald-700" badge="M4" />
+        <NavSection items={NAV_PHASE4} activeColor="bg-emerald-700 text-white" hoverColor="hover:bg-emerald-50 hover:text-emerald-700" onLinkClick={onLinkClick} />
       </div>
 
       {/* About */}
