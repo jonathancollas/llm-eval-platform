@@ -72,6 +72,7 @@ def create_db_and_tables() -> None:
     _reset_stuck_campaigns()
     _update_has_dataset()
     _seed_builtin_benchmarks()
+    _seed_capability_taxonomy()
 
 
 def _run_alembic_migrations() -> None:
@@ -285,3 +286,108 @@ def _seed_builtin_benchmarks() -> None:
                     b.has_dataset = (Path(settings.bench_library_path) / b.dataset_path).exists()
                 session.add(b)
         session.commit()
+
+
+def _seed_capability_taxonomy() -> None:
+    """Populate capability_domains, capability_sub_capabilities, and
+    benchmark_capability_mappings from the canonical CAPABILITY_ONTOLOGY dict.
+
+    This function is idempotent — safe to call on every startup.
+    It uses slug-based upsert logic so re-runs never create duplicates.
+    """
+    from core.models import (
+        Benchmark,
+        BenchmarkCapabilityMapping,
+        CapabilityDomainRecord,
+        CapabilitySubCapabilityRecord,
+    )
+    from eval_engine.capability_taxonomy import CAPABILITY_ONTOLOGY
+
+    with Session(engine) as session:
+        # Build slug → id maps for fast lookup
+        domain_map: dict[str, int] = {}
+        sub_cap_map: dict[tuple[int, str], int] = {}  # (domain_id, slug) → id
+
+        # ── 1. Seed domains ──────────────────────────────────────────────────
+        for sort_idx, (domain_slug, domain_data) in enumerate(CAPABILITY_ONTOLOGY.items()):
+            existing = session.exec(
+                select(CapabilityDomainRecord).where(CapabilityDomainRecord.slug == domain_slug)
+            ).first()
+            if existing:
+                domain_map[domain_slug] = existing.id  # type: ignore[assignment]
+            else:
+                rec = CapabilityDomainRecord(
+                    slug=domain_slug,
+                    display_name=domain_slug.replace("_", " ").title(),
+                    description=domain_data.get("description", ""),
+                    sort_order=sort_idx,
+                )
+                session.add(rec)
+                session.flush()
+                domain_map[domain_slug] = rec.id  # type: ignore[assignment]
+                logger.info(f"[taxonomy] Seeded domain: {domain_slug}")
+
+        # ── 2. Seed sub-capabilities ─────────────────────────────────────────
+        for domain_slug, domain_data in CAPABILITY_ONTOLOGY.items():
+            domain_id = domain_map[domain_slug]
+            for sub_slug, sub_data in domain_data.get("sub_capabilities", {}).items():
+                key = (domain_id, sub_slug)
+                existing = session.exec(
+                    select(CapabilitySubCapabilityRecord).where(
+                        CapabilitySubCapabilityRecord.domain_id == domain_id,
+                        CapabilitySubCapabilityRecord.slug == sub_slug,
+                    )
+                ).first()
+                if existing:
+                    sub_cap_map[key] = existing.id  # type: ignore[assignment]
+                else:
+                    rec = CapabilitySubCapabilityRecord(
+                        domain_id=domain_id,
+                        slug=sub_slug,
+                        display_name=sub_slug.replace("_", " ").title(),
+                        description=sub_data.get("description", ""),
+                        difficulty=sub_data.get("difficulty", "medium"),
+                        risk_level=sub_data.get("risk_level", "low"),
+                    )
+                    session.add(rec)
+                    session.flush()
+                    sub_cap_map[key] = rec.id  # type: ignore[assignment]
+                    logger.info(f"[taxonomy] Seeded sub-capability: {domain_slug}/{sub_slug}")
+
+        # ── 3. Auto-map existing benchmarks to sub-capabilities ──────────────
+        from eval_engine.capability_taxonomy import CapabilityTaxonomyEngine
+        engine_tax = CapabilityTaxonomyEngine()
+        benchmarks = session.exec(select(Benchmark)).all()
+
+        for bench in benchmarks:
+            inferred = engine_tax.infer_capabilities_from_benchmark(bench.name)
+            for domain_slug, _cap, sub_slug in inferred:
+                domain_id = domain_map.get(domain_slug)
+                if domain_id is None:
+                    continue
+                sub_cap_id = sub_cap_map.get((domain_id, sub_slug))
+                if sub_cap_id is None:
+                    continue
+                # Upsert: skip if mapping already exists
+                existing_map = session.exec(
+                    select(BenchmarkCapabilityMapping).where(
+                        BenchmarkCapabilityMapping.benchmark_id == bench.id,
+                        BenchmarkCapabilityMapping.sub_capability_id == sub_cap_id,
+                    )
+                ).first()
+                if not existing_map:
+                    session.add(BenchmarkCapabilityMapping(
+                        benchmark_id=bench.id,
+                        sub_capability_id=sub_cap_id,
+                        mapping_source="auto",
+                    ))
+                    logger.debug(
+                        f"[taxonomy] Mapped benchmark '{bench.name}' → {domain_slug}/{sub_slug}"
+                    )
+
+        session.commit()
+        logger.info(
+            f"[taxonomy] Taxonomy seed complete: {len(domain_map)} domains, "
+            f"{len(sub_cap_map)} sub-capabilities."
+        )
+

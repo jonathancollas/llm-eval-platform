@@ -25,7 +25,7 @@ const NAV_ANALYSE = [
   { href: "/judge",       label: "LLM Judge",        icon: Gavel },
   { href: "/agents",      label: "Agents",           icon: Bot },
   { href: "/vibe",        label: "Vibe Check",       icon: Zap, badge: "NEW" },
-  { href: "/capability",  label: "Capability Intel", icon: Search },
+  { href: "/capabilities",  label: "Capability Intel", icon: BrainCircuit },
   { href: "/forecasting",       label: "Forecasting",        icon: LineChart },
   { href: "/frontier-metrics",  label: "Frontier Metrics",   icon: Crosshair },
 ];
