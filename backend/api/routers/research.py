@@ -574,6 +574,7 @@ def request_replication(
     try:
         reps = _json.loads(reps_raw)
     except Exception:
+        logger.debug("[research] failed to parse replication tags for workspace %s", workspace_id, exc_info=True)
         reps = []
     for rep in reps:
         if rep.get("type") == "replication_request" and rep.get("lab") == payload.replicating_lab and rep.get("status") == "pending":
@@ -611,6 +612,7 @@ def submit_replication_result(
     try:
         reps = _json.loads(reps_raw)
     except Exception:
+        logger.debug("[research] failed to parse replication tags for workspace %s", workspace_id, exc_info=True)
         reps = []
     concordance = _compute_concordance(
         payload.concordance_score,
@@ -676,6 +678,7 @@ def get_replications(workspace_id: int, session: Session = Depends(get_session))
     try:
         reps = _json.loads(getattr(ws, "tags", "[]") or "[]")
     except Exception:
+        logger.debug("[research] failed to parse replication tags for workspace %s", workspace_id, exc_info=True)
         reps = []
     replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
     completed = _get_completed_replications(replications)
@@ -726,6 +729,7 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
         replications = [r for r in reps if r.get("type") in ("replication_request", "replication_result")]
         confidence = _compute_scientific_confidence(workspace_id, replications)
     except Exception:
+        logger.debug("[research] failed to load replication data for workspace %s", workspace_id, exc_info=True)
         replications = []
         confidence = ScientificConfidence(
             workspace_id=workspace_id,

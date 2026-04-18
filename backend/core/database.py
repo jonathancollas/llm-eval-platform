@@ -75,6 +75,9 @@ def create_db_and_tables() -> None:
 
 def _run_alembic_migrations() -> None:
     """Run Alembic schema migrations."""
+    _migrate_add_columns()
+
+
 def _migrate_add_columns() -> None:
     """Add new columns to existing tables (idempotent). SQLite only — PostgreSQL uses create_all."""
     if not _is_sqlite:
