@@ -135,7 +135,7 @@ function AttackCampaign({ models }: { models: any[] }) {
 
   useEffect(() => {
     fetch(`${API_BASE}/redbox/attack/frameworks`)
-      .then(r => r.json()).then(d => setFrameworks(d.frameworks ?? [])).catch(() => {});
+      .then(r => r.json()).then(d => setFrameworks(d.frameworks ?? [])).catch((err) => console.error('[redbox] Failed to load frameworks:', err));
   }, []);
 
   const run = async () => {
