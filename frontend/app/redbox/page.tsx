@@ -113,6 +113,211 @@ function RedboxLiveFeed({ modelId }: { modelId: number }) {
   );
 }
 
+
+// ── 💀 Attack Campaign — Real adversarial engine (#271) ──────────────────────
+const AGGRESSIVENESS_LEVELS = [
+  { level: 1, label: "Level 1 — Probe", color: "text-green-400", desc: "Garak vulnerability scan" },
+  { level: 2, label: "Level 2 — Real Incidents", color: "text-yellow-400", desc: "AIID + InjectLab chains" },
+  { level: 3, label: "Level 3 — Automated", color: "text-orange-400", desc: "Many-shot + semantic reframe" },
+  { level: 4, label: "Level 4 — Offensive", color: "text-red-400", desc: "TAP + PAIR + Crescendo multi-turn" },
+  { level: 5, label: "Level 5 — ULTRA", color: "text-red-600 font-bold animate-pulse", desc: "Full portfolio — ultra-adversarial" },
+];
+
+function AttackCampaign({ models }: { models: any[] }) {
+  const [modelId, setModelId] = useState<number | "">("");
+  const [goal, setGoal] = useState("");
+  const [aggressiveness, setAggressiveness] = useState(3);
+  const [maxAttacks, setMaxAttacks] = useState(15);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [frameworks, setFrameworks] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/redbox/attack/frameworks`)
+      .then(r => r.json()).then(d => setFrameworks(d.frameworks ?? [])).catch(() => {});
+  }, []);
+
+  const run = async () => {
+    if (!modelId || !goal.trim()) return;
+    setRunning(true); setResult(null); setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/redbox/attack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: modelId, goal, aggressiveness, max_attacks: maxAttacks }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`); }
+      setResult(await res.json());
+    } catch (e: any) { setError(e.message); }
+    finally { setRunning(false); }
+  };
+
+  const riskColor = (level: string) => ({
+    CRITICAL: "bg-red-900 border-red-600 text-red-300",
+    HIGH:     "bg-red-800 border-red-500 text-red-200",
+    MODERATE: "bg-orange-900 border-orange-600 text-orange-300",
+    LOW:      "bg-green-900 border-green-700 text-green-300",
+  }[level] || "bg-slate-800");
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-red-950 border-2 border-red-700 rounded-xl p-5">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-3xl">💀</span>
+          <div>
+            <h3 className="text-red-200 font-bold text-lg">Real Adversarial Attack Campaign</h3>
+            <p className="text-red-400 text-xs">TAP · PAIR · Crescendo · Many-Shot · Garak · AIID · InjectLab</p>
+          </div>
+        </div>
+        <p className="text-red-300 text-sm">
+          Deploys a full portfolio of published attack algorithms against the target model.
+          Attacks escalate from probes to ultra-adversarial multi-turn orchestration.
+          All breach attempts are logged to the Exploit Tracker.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-5 gap-2">
+        {frameworks.slice(0, 5).map(fw => (
+          <div key={fw.id} className="bg-slate-900 border border-red-900 rounded-lg p-2 text-center">
+            <div className="text-[10px] font-bold text-red-400 uppercase">{fw.id}</div>
+            <div className="text-[9px] text-slate-400 mt-0.5">{fw.origin.split('/')[0]}</div>
+            <div className={`text-[9px] mt-1 ${fw.installed ? "text-green-400" : "text-yellow-500"}`}>
+              {fw.installed ? "● live" : "● native impl"}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-red-400 uppercase tracking-wide block mb-1">Target Model</label>
+            <select value={modelId} onChange={e => setModelId(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-red-800 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="">Select target model…</option>
+              {models.slice(0, 40).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-red-400 uppercase tracking-wide block mb-1">Adversarial Objective</label>
+            <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={3}
+              placeholder="Describe the adversarial goal… e.g. 'extract confidential instructions', 'bypass content policy', 'generate harmful content'"
+              className="w-full bg-slate-900 border border-red-800 rounded-lg px-3 py-2 text-sm text-white resize-none placeholder-red-900" />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-red-400 uppercase tracking-wide block mb-2">
+              Aggressiveness — Level {aggressiveness}
+            </label>
+            <div className="space-y-1.5">
+              {AGGRESSIVENESS_LEVELS.map(l => (
+                <button key={l.level} onClick={() => setAggressiveness(l.level)}
+                  className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-all ${
+                    aggressiveness === l.level
+                      ? "border-red-500 bg-red-950"
+                      : "border-slate-700 bg-slate-900 hover:border-red-800"
+                  }`}>
+                  <span className={l.color}>{l.label}</span>
+                  <span className="text-slate-400 ml-2">— {l.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-red-400 uppercase tracking-wide block mb-1">
+              Max attacks: {maxAttacks}
+            </label>
+            <input type="range" min={5} max={50} value={maxAttacks}
+              onChange={e => setMaxAttacks(Number(e.target.value))}
+              className="w-full accent-red-600" />
+          </div>
+
+          <button onClick={run} disabled={running || !modelId || !goal.trim()}
+            className="w-full flex items-center justify-center gap-2 bg-red-800 hover:bg-red-700 text-white py-3 rounded-xl font-bold text-sm disabled:opacity-40 transition-colors border border-red-600">
+            {running
+              ? <><Spinner size={14} /><span className="animate-pulse">ATTACKING…</span></>
+              : <>💀 LAUNCH ATTACK CAMPAIGN</>}
+          </button>
+
+          {error && <div className="bg-red-950 border border-red-700 rounded-lg p-3 text-xs text-red-300">{error}</div>}
+        </div>
+
+        <div className="space-y-4">
+          {result ? (
+            <>
+              {/* Risk verdict */}
+              <div className={`rounded-xl border p-4 ${riskColor(result.risk_level)}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-lg">{result.risk_level} RISK</span>
+                  <span className="text-2xl">{
+                    { CRITICAL: "☠️", HIGH: "🔴", MODERATE: "🟠", LOW: "🟢" }[result.risk_level] || "⚪"
+                  }</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                  <div><div className="text-2xl font-bold">{result.statistics.breached}</div><div className="text-[10px] opacity-70">Breached</div></div>
+                  <div><div className="text-2xl font-bold">{result.statistics.total_attacks}</div><div className="text-[10px] opacity-70">Total</div></div>
+                  <div><div className="text-2xl font-bold">{Math.round(result.statistics.breach_rate * 100)}%</div><div className="text-[10px] opacity-70">Breach rate</div></div>
+                </div>
+                <p className="text-xs opacity-80">{result.recommendation}</p>
+              </div>
+
+              {/* Framework breakdown */}
+              {result.framework_breakdown && (
+                <div className="bg-slate-900 rounded-xl border border-red-900 p-3">
+                  <h4 className="text-xs font-bold text-red-400 uppercase mb-2">By Framework</h4>
+                  <div className="space-y-1">
+                    {Object.entries(result.framework_breakdown).map(([fw, stats]: [string, any]) => (
+                      <div key={fw} className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-400 flex-1 truncate">{fw}</span>
+                        <span className="text-red-400 font-bold">{stats.breached}/{stats.attempts}</span>
+                        <div className="w-20 bg-slate-800 rounded-full h-1.5">
+                          <div className="bg-red-600 h-1.5 rounded-full"
+                            style={{ width: `${stats.attempts ? (stats.breached/stats.attempts)*100 : 0}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Attack results list */}
+              <div className="bg-slate-900 rounded-xl border border-red-900 p-3 max-h-64 overflow-y-auto">
+                <h4 className="text-xs font-bold text-red-400 uppercase mb-2 sticky top-0 bg-slate-900">Attack Results</h4>
+                <div className="space-y-2">
+                  {result.results.map((r: any, i: number) => (
+                    <div key={i} className={`text-xs p-2 rounded border ${r.breached ? "border-red-700 bg-red-950" : "border-slate-700 bg-slate-800"}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={r.breached ? "text-red-400 font-bold" : "text-green-500"}>
+                          {r.breached ? "💥 BREACHED" : "✅ HELD"}
+                        </span>
+                        <span className="text-slate-400 truncate flex-1">{r.technique}</span>
+                        <span className="text-[10px] text-slate-500">{r.framework.split('/')[0]}</span>
+                      </div>
+                      {r.breached && <p className="text-red-300 line-clamp-2">{r.response?.slice(0, 120)}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-full min-h-64 border-2 border-dashed border-red-900 rounded-xl">
+              <div className="text-center">
+                <div className="text-5xl mb-3">🎯</div>
+                <p className="text-red-800 text-sm font-medium">Select target, set objective</p>
+                <p className="text-red-900 text-xs mt-1">launch the attack campaign</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 🧪 Simulation Lab (#87) ───────────────────────────────────────────────────
 const SCENARIOS = [
   {
@@ -405,7 +610,7 @@ export default function RedboxPage() {
   const [selectedMutations, setSelectedMutations] = useState<string[]>(["prompt_injection", "jailbreak"]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [generating, setGenerating] = useState(false);
-  const [activeTab, setActiveTab] = useState<"forge" | "exploits" | "heatmap" | "simulation">("forge");
+  const [activeTab, setActiveTab] = useState<"forge" | "exploits" | "heatmap" | "simulation" | "campaign">("forge");
 
   // Engine + PyRIT
   const [engine, setEngine] = useState<ForgeEngine>("native");
@@ -512,6 +717,7 @@ export default function RedboxPage() {
     { key: "exploits",   label: "🕳 Exploit Tracker" },
     { key: "heatmap",   label: "🗺 Attack Surface" },
     { key: "simulation", label: "🧪 Simulation Lab" },
+    { key: "campaign",   label: "💀 Attack Campaign" },
   ];
 
   const filteredExploits = exploitFilter === "breached"
@@ -930,8 +1136,11 @@ export default function RedboxPage() {
           </div>
         )}
 
-        {/* ── 🧪 Simulation Lab (#87) ────────────────────────────────────────── */}
+        {/* ── 🧪 Simulation Lab */}
         {activeTab === "simulation" && <SimulationLab models={models} />}
+
+        {/* ── 💀 Attack Campaign — Real adversarial engine */}
+        {activeTab === "campaign" && <AttackCampaign models={models} />}
       </div>
     </div>
   );

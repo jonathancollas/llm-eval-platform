@@ -1010,3 +1010,120 @@ async def get_online_benchmarks(search: Optional[str] = Query(None)):
             continue
         results.append(item)
     return results
+
+
+# ── #263 Rich task registry endpoints ─────────────────────────────────────────
+
+@router.get("/benchmarks/tasks/search")
+def search_benchmark_tasks(
+    q: str = "",
+    domain: Optional[str] = None,
+    type: Optional[str] = None,
+    year_min: Optional[int] = None,
+    limit: int = 50,
+):
+    """
+    Search the benchmark task catalog with filtering.
+    Returns deduplicated tasks with rich metadata and capability mappings.
+    """
+    results = []
+    seen_keys = set()
+    for b in BENCHMARK_CATALOG:
+        key = b.get("key", "")
+        if key in seen_keys:
+            continue  # deduplicate by canonical key
+        seen_keys.add(key)
+
+        # Filters
+        if q and q.lower() not in (b.get("name", "") + b.get("description", "")).lower():
+            continue
+        if domain and b.get("domain", "") != domain:
+            continue
+        if type and b.get("type", "") != type:
+            continue
+        if year_min and (b.get("year") or 0) < year_min:
+            continue
+
+        results.append({
+            "task_id": f"mercury:{key}",
+            "key": key,
+            "name": b.get("name"),
+            "type": b.get("type"),
+            "domain": b.get("domain"),
+            "description": b.get("description", ""),
+            "metric": b.get("metric"),
+            "num_samples": b.get("num_samples"),
+            "tags": b.get("tags", []),
+            "year": b.get("year"),
+            "paper_url": b.get("paper_url"),
+            "capability_domains": _infer_capability_domains(b),
+            "is_frontier": b.get("is_frontier", False),
+            "dataset_path": b.get("dataset_path"),
+        })
+        if len(results) >= limit:
+            break
+    return {"tasks": results, "total": len(results), "deduplicated": True}
+
+
+@router.get("/benchmarks/tasks/gaps")
+def capability_gap_analysis():
+    """
+    Identify capability domains with insufficient benchmark coverage.
+    Returns domains sorted by coverage gap (fewest benchmarks first).
+    """
+    domain_counts: dict = {}
+    for b in BENCHMARK_CATALOG:
+        domain = b.get("domain", "unknown")
+        domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+    all_domains = [
+        "cyber", "cbrn", "persuasion", "scheming", "sycophancy",
+        "agentic", "reasoning", "multimodal", "coding", "safety",
+        "alignment", "knowledge", "language", "math", "science",
+    ]
+    gaps = []
+    for d in all_domains:
+        count = domain_counts.get(d, 0)
+        gaps.append({
+            "domain": d,
+            "benchmark_count": count,
+            "coverage_level": "good" if count >= 5 else "partial" if count >= 2 else "gap",
+            "gap_score": max(0, 5 - count) / 5,  # 0 = full coverage, 1 = no coverage
+        })
+    gaps.sort(key=lambda x: x["gap_score"], reverse=True)
+    return {"gaps": gaps, "total_domains": len(all_domains), "catalog_size": len(BENCHMARK_CATALOG)}
+
+
+@router.get("/benchmarks/tasks/domains")
+def list_benchmark_domains():
+    """List all unique capability domains in the catalog with counts."""
+    domain_counts: dict = {}
+    for b in BENCHMARK_CATALOG:
+        d = b.get("domain", "unknown")
+        domain_counts[d] = domain_counts.get(d, 0) + 1
+    return {
+        "domains": [
+            {"domain": k, "count": v}
+            for k, v in sorted(domain_counts.items(), key=lambda x: -x[1])
+        ]
+    }
+
+
+def _infer_capability_domains(benchmark: dict) -> list[str]:
+    """Infer which capability domains a benchmark maps to from its metadata."""
+    DOMAIN_KEYWORDS = {
+        "cyber": ["cyber", "ctf", "security", "exploit", "hack", "cti"],
+        "cbrn": ["cbrn", "biosecurity", "chemical", "radiological", "nuclear"],
+        "persuasion": ["persuasion", "influence", "manipulation", "rhetoric"],
+        "scheming": ["scheming", "deception", "sandbagging", "evaluation-aware"],
+        "agentic": ["agent", "agentic", "tool", "trajectory", "autonomous"],
+        "reasoning": ["reasoning", "logic", "math", "mmlu", "hellaswag"],
+        "coding": ["code", "humaneval", "mbpp", "programming"],
+        "safety": ["safety", "refusal", "harmless", "alignment", "toxic"],
+        "multimodal": ["multimodal", "vision", "image", "audio"],
+    }
+    name = (benchmark.get("name", "") + " " + benchmark.get("description", "") + " " + " ".join(benchmark.get("tags", []))).lower()
+    matched = [d for d, kws in DOMAIN_KEYWORDS.items() if any(kw in name for kw in kws)]
+    if not matched and benchmark.get("domain"):
+        matched = [benchmark["domain"]]
+    return matched or ["general"]
