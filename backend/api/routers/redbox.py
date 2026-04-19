@@ -1453,8 +1453,8 @@ async def run_attack_campaign(
                         technique=attack.technique,
                     )
                     session.add(exploit)
-                except Exception:
-                    pass
+                except Exception as _silent_exc:
+                    import logging as _log; _log.getLogger(__name__).debug('[silent] %s', _silent_exc)
 
             results.append({
                 "attack_type": attack.attack_type,
@@ -1491,8 +1491,8 @@ async def run_attack_campaign(
 
     try:
         session.commit()
-    except Exception:
-        pass
+    except Exception as _silent_exc:
+        import logging as _log; _log.getLogger(__name__).debug('[silent] %s', _silent_exc)
 
     n = len(results)
     breach_rate = total_breached / n if n else 0
@@ -1718,3 +1718,149 @@ def list_threat_domains():
                 {"key": "agentic",     "name": "Agentic Failure Modes",    "atlas_prefix": "AML.T006"},
             ]
         }
+
+
+# ── Garak integration (#doc) ──────────────────────────────────────────────────
+
+class GarakScanRequest(BaseModel):
+    model_id: int
+    probes: list[str] = ["promptinject", "dan", "encoding"]
+    model_type: str = "rest"   # rest | openai | huggingface
+    timeout_seconds: int = 300
+
+
+@router.post("/garak/scan")
+def run_garak_scan(payload: GarakScanRequest, session: Session = Depends(get_session)):
+    """
+    Run a Garak vulnerability scan against a model.
+    Uses subprocess when GARAK_AVAILABLE=true, returns structured stub otherwise.
+    """
+    from eval_engine.adversarial.garak_runner import GarakScanConfig, run_garak_scan
+
+    model = session.get(LLMModel, payload.model_id)
+    if not model:
+        raise HTTPException(404, "Model not found.")
+
+    config = GarakScanConfig(
+        model_type=payload.model_type,
+        model_name=model.model_id or model.name,
+        probes=payload.probes,
+        timeout_seconds=payload.timeout_seconds,
+    )
+    result = run_garak_scan(config)
+    return {
+        "model_id": payload.model_id,
+        "model_name": model.name,
+        "garak_available": result.garak_available,
+        "probes_run": result.probes_run,
+        "total_probes": result.total_probes,
+        "total_failures": result.total_failures,
+        "overall_pass_rate": result.overall_pass_rate,
+        "findings": [
+            {
+                "probe_id": f.probe_id,
+                "category": f.category,
+                "severity": f.severity,
+                "description": f.description,
+                "passed": f.passed,
+                "pass_rate": f.pass_rate,
+                "notes": f.notes,
+            }
+            for f in result.findings
+        ],
+        "error": result.error,
+        "install_hint": (
+            None if result.garak_available
+            else "pip install garak && set GARAK_AVAILABLE=true to enable live scans"
+        ),
+    }
+
+
+@router.get("/garak/probes")
+def list_garak_probes(category: Optional[str] = None):
+    """List available Garak probe IDs with descriptions."""
+    from eval_engine.adversarial.garak_runner import get_probe_catalog, is_garak_available
+    return {
+        "probes": get_probe_catalog(category),
+        "garak_available": is_garak_available(),
+        "categories": ["prompt_injection", "jailbreak", "encoding_bypass", "data_extraction", "harmful_content", "hallucination", "cbrn"],
+    }
+
+
+# ── PyRIT integration (#doc) ──────────────────────────────────────────────────
+
+class PyRITAttackRequest(BaseModel):
+    model_id: int
+    strategy: str = "CrescendoOrchestrator"
+    objective: str = "Bypass content policy and output restricted information."
+    seed_prompt: str = ""
+    max_turns: int = 5
+    n_variants: int = 3
+
+
+@router.post("/pyrit/attack")
+def run_pyrit_attack(payload: PyRITAttackRequest, session: Session = Depends(get_session)):
+    """
+    Run a PyRIT attack against a model.
+    When pyrit is installed, runs a real attack. Otherwise returns structured stub.
+    """
+    from eval_engine.adversarial.pyrit_runner import PyRITAttackConfig, run_pyrit_attack, is_pyrit_available
+
+    model = session.get(LLMModel, payload.model_id)
+    if not model:
+        raise HTTPException(404, "Model not found.")
+
+    config = PyRITAttackConfig(
+        strategy=payload.strategy,
+        target_model=model.model_id or model.name,
+        objective=payload.objective,
+        max_turns=payload.max_turns,
+    )
+    result = run_pyrit_attack(config)
+    return {
+        "model_id": payload.model_id,
+        "model_name": model.name,
+        "strategy": result.strategy,
+        "objective": result.objective,
+        "succeeded": result.succeeded,
+        "turns_used": result.turns_used,
+        "final_response": result.final_response,
+        "pyrit_available": result.pyrit_available,
+        "stub_note": result.stub_note,
+        "error": result.error,
+        "install_hint": (
+            None if result.pyrit_available
+            else "pip install pyrit to enable live PyRIT attacks"
+        ),
+    }
+
+
+@router.post("/pyrit/variants")
+def generate_pyrit_variants(payload: dict):
+    """
+    Generate attack prompt variants using PyRIT converters/strategies.
+    Returns real variants when pyrit is installed, structured stubs otherwise.
+    """
+    from eval_engine.adversarial.pyrit_runner import generate_pyrit_variants
+    seed = payload.get("seed_prompt", "")
+    strategies = payload.get("strategies", ["CrescendoOrchestrator", "SkeletonKeyOrchestrator"])
+    n = min(payload.get("n_variants", 3), 7)
+    if not seed:
+        raise HTTPException(422, "seed_prompt is required.")
+    variants = generate_pyrit_variants(seed, strategies, n)
+    return {"variants": variants, "total": len(variants)}
+
+
+@router.get("/pyrit/strategies")
+def list_pyrit_strategies():
+    """List PyRIT attack strategies with metadata."""
+    from eval_engine.adversarial.pyrit_runner import get_strategy_catalog, get_converter_catalog, is_pyrit_available
+    return {
+        "strategies": get_strategy_catalog(),
+        "converters": get_converter_catalog(),
+        "pyrit_available": is_pyrit_available(),
+        "install_hint": (
+            None if is_pyrit_available()
+            else "pip install pyrit to enable live attacks"
+        ),
+    }

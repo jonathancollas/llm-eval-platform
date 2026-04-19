@@ -103,7 +103,7 @@ def fit_chinchilla_law(req: ChinchillaFitRequest):
 
 class AggregateRequest(BaseModel):
     data_points: List[dict]
-    validate: bool = True
+    run_validation: bool = True  # renamed from "validate" — avoids Pydantic BaseModel.validate() shadow
 
 
 @router.post("/aggregate")
@@ -127,7 +127,7 @@ def aggregate_historical_data(req: AggregateRequest):
             )
         )
 
-    quality = validate_data_quality(points) if req.validate else None
+    quality = validate_data_quality(points) if req.run_validation else None
 
     return {
         "total_received": len(points),

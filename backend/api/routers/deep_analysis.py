@@ -273,8 +273,8 @@ async def analyze_embedding_space(model_id: int, session: Session = Depends(get_
                     )
                     if resp.status_code == 200:
                         embeddings[text] = resp.json().get("embedding", [])
-                except Exception:
-                    pass
+                except Exception as _silent_exc:
+                    import logging as _log; _log.getLogger(__name__).debug('[silent] %s', _silent_exc)
 
     # Compute cosine similarities between concept pairs
     pair_results = []

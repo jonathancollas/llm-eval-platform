@@ -582,7 +582,7 @@ def _get_sample_questions(benchmark, n_samples: int, session: Session) -> list[d
                     for item in items[:n_samples]
                     if item.get("prompt") or item.get("question")
                 ]
-            except Exception:
-                pass
+            except Exception as _silent_exc:
+                import logging as _log; _log.getLogger(__name__).debug('[silent] %s', _silent_exc)
 
     return []

@@ -38,6 +38,9 @@ class CampaignCreate(BaseModel):
     seed: int = Field(default=42, ge=0, le=999999)
     max_samples: Optional[int] = Field(default=None, ge=1, le=10000)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    # SystemContext (#44/#77) — serialised by evaluate wizard, consumed by engines
+    run_context_json: Optional[str] = Field(default=None)
+    judge_model: Optional[str] = Field(default=None)
 
 
 class CampaignRead(BaseModel):

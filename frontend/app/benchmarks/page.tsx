@@ -414,6 +414,16 @@ export default function BenchmarksPage() {
     fetch(`${API_BASE}/models?limit=100`).then(r => r.ok ? r.json() : null).then(d => d && setModels(d.items ?? [])).catch((err) => console.warn("[fetch error]", err));
   }, []);
 
+  // #263 Coverage gap analysis
+  const [gaps, setGaps] = useState<any[]>([]);
+  const [showGaps, setShowGaps] = useState(false);
+  useEffect(() => {
+    fetch(`${API_BASE}/catalog/benchmarks/tasks/gaps`)
+      .then(r => r.json())
+      .then(d => setGaps(d.gaps ?? []))
+      .catch(() => {});
+  }, []);
+
   const handleFlipSource = async (b: Benchmark) => {
     const newSource = b.source === "inesia" ? "public" : "inesia";
     try {
@@ -513,6 +523,10 @@ export default function BenchmarksPage() {
                 {importing ? "Import…" : `${newBenchmarks} nouveau${newBenchmarks > 1 ? "x" : ""}`}
               </button>
             )}
+            <button onClick={() => setShowGaps(prev => !prev)}
+              className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+              🗺 Gap Analysis
+            </button>
             <button onClick={() => setShowCatalog(true)}
               className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
               🔍 Catalogue
@@ -528,6 +542,36 @@ export default function BenchmarksPage() {
           </div>
         }
       />
+
+      {/* #263 Coverage Gap Banner */}
+      {showGaps && gaps.length > 0 && (
+        <div className="mx-4 sm:mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🗺</span>
+              <span className="font-medium text-sm text-slate-900">Coverage Gap Analysis</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded">#263</span>
+            </div>
+            <button onClick={() => setShowGaps(false)} className="text-xs text-slate-400 hover:text-slate-600">✕ Close</button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+            {gaps.slice(0, 15).map((g: any) => (
+              <div key={g.domain} className={`rounded-lg p-2.5 border text-xs ${
+                g.coverage_level === "good"    ? "bg-green-50 border-green-200 text-green-800" :
+                g.coverage_level === "partial" ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+                                                 "bg-red-50 border-red-200 text-red-800"
+              }`}>
+                <div className="font-semibold capitalize">{g.domain}</div>
+                <div className="opacity-70">{g.benchmark_count} benchmark{g.benchmark_count !== 1 ? "s" : ""}</div>
+                <div className="mt-1 h-1 rounded-full bg-black/10 overflow-hidden">
+                  <div className="h-full rounded-full bg-current"
+                    style={{ width: `${Math.min(100, (g.benchmark_count / 10) * 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {importMsg && (
         <div className="mx-4 sm:mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">

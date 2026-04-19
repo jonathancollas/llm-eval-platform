@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { resultsApi, campaignsApi, reportsApi, genomeApi, judgeApi } from "@/lib/api";
+import { resultsApi, campaignsApi, reportsApi, genomeApi, judgeApi, statisticsApi } from "@/lib/api";
 import type { DashboardData, Campaign, Report, GenomeData, FailedItemsData, FailedItem, FailedRun } from "@/lib/api";
 import { API_BASE, OLLAMA_BASE_URL } from "@/lib/config";
 import { PageHeader } from "@/components/PageHeader";
@@ -11,7 +11,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
-import { Download, FileText, AlertTriangle, XCircle, Zap, Bug, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, Gavel } from "lucide-react";
+import { Download, FileText, AlertTriangle, XCircle, Zap, Bug, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, Gavel, BarChart2, TrendingUp, CheckCircle2 } from "lucide-react";
 
 const CHART_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4"];
 
@@ -137,6 +137,189 @@ function HeatmapSection({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+
+// ── #257 Statistical Significance Panel ───────────────────────────────────────
+function ConfidencePanel({ heatmap }: { heatmap: DashboardData["heatmap"] }) {
+  const [selected, setSelected] = useState<[number, number] | null>(null);
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [confData, setConfData] = useState<Record<number, any>>({});
+
+  // Get cells that have run_ids
+  const cells = useMemo(() =>
+    heatmap.filter(c => (c as any).run_id != null) as (typeof heatmap[number] & { run_id: number })[],
+    [heatmap]
+  );
+
+  // Load confidence intervals for each run on mount
+  useEffect(() => {
+    cells.forEach(cell => {
+      statisticsApi.runConfidence(cell.run_id)
+        .then(d => setConfData(prev => ({ ...prev, [cell.run_id]: d })))
+        .catch(() => {});
+    });
+  }, [cells]);
+
+  const compareRuns = async () => {
+    if (!selected) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const r = await statisticsApi.compareRuns(selected[0], selected[1]);
+      setResult(r);
+    } catch { /* swallow */ }
+    setLoading(false);
+  };
+
+  if (cells.length === 0) {
+    // Show CI panel with mocked hint when no run_ids available
+    const hasScores = heatmap.some(c => c.score != null);
+    if (!hasScores) return null;
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <BarChart2 size={15} className="text-blue-500" />
+          <h3 className="font-medium text-slate-900 text-sm">Statistical Significance</h3>
+          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-medium">#257</span>
+        </div>
+        <p className="text-xs text-slate-500">
+          Run evaluations through Mercury to get per-run confidence intervals, p-values and McNemar tests.
+          The backend endpoints <code className="bg-slate-50 px-1 rounded">/statistics/run/:id/confidence</code> and{" "}
+          <code className="bg-slate-50 px-1 rounded">/statistics/compare-runs</code> are live.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart2 size={15} className="text-blue-500" />
+        <h3 className="font-medium text-slate-900 text-sm">Statistical Significance</h3>
+        <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded font-medium">#257</span>
+      </div>
+
+      {/* Per-run confidence intervals */}
+      <div className="space-y-2 mb-5">
+        {cells.map(cell => {
+          const ci = confData[(cell as any).run_id];
+          const lo = ci?.confidence_interval_95?.lower;
+          const hi = ci?.confidence_interval_95?.upper;
+          const score = cell.score ?? 0;
+          return (
+            <div key={(cell as any).run_id} className="flex items-center gap-3 text-xs">
+              <div className="w-32 text-slate-600 truncate font-medium">{cell.model_name}</div>
+              <div className="w-28 text-slate-400 truncate">{cell.benchmark_name}</div>
+              <div className="flex-1 relative h-4 bg-slate-100 rounded overflow-hidden">
+                {/* Score bar */}
+                <div className="absolute inset-y-0 left-0 bg-blue-200 rounded"
+                  style={{ width: `${score * 100}%` }} />
+                {/* CI band */}
+                {lo != null && hi != null && (
+                  <div className="absolute inset-y-0 bg-blue-400/40 rounded"
+                    style={{ left: `${lo * 100}%`, width: `${(hi - lo) * 100}%` }} />
+                )}
+              </div>
+              <div className="w-24 text-right font-mono text-slate-700">
+                {(score * 100).toFixed(1)}%
+                {lo != null && hi != null && (
+                  <span className="text-slate-400 ml-1 text-[10px]">
+                    [{(lo * 100).toFixed(0)}–{(hi * 100).toFixed(0)}]
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Pairwise comparison */}
+      {cells.length >= 2 && (
+        <div className="border-t border-slate-100 pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp size={13} className="text-slate-500" />
+            <span className="text-xs font-medium text-slate-700">Compare two runs (McNemar / permutation)</span>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <select
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700"
+              onChange={e => setSelected(prev => [Number(e.target.value), prev?.[1] ?? cells[1]?.run_id ?? 0])}
+              defaultValue=""
+            >
+              <option value="" disabled>Run A…</option>
+              {cells.map(c => (
+                <option key={(c as any).run_id} value={(c as any).run_id}>
+                  {c.model_name} / {c.benchmark_name}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-slate-400 self-center">vs</span>
+            <select
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700"
+              onChange={e => setSelected(prev => [prev?.[0] ?? cells[0]?.run_id ?? 0, Number(e.target.value)])}
+              defaultValue=""
+            >
+              <option value="" disabled>Run B…</option>
+              {cells.map(c => (
+                <option key={(c as any).run_id} value={(c as any).run_id}>
+                  {c.model_name} / {c.benchmark_name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={compareRuns}
+              disabled={!selected || loading}
+              className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-slate-700"
+            >
+              {loading ? "…" : "Compare"}
+            </button>
+          </div>
+
+          {result && (
+            <div className="mt-3 p-3 bg-slate-50 rounded-lg text-xs space-y-1.5">
+              {result.mcnemar && (
+                <div className="flex items-center gap-2">
+                  {result.mcnemar.significant
+                    ? <CheckCircle2 size={12} className="text-green-500 shrink-0" />
+                    : <AlertTriangle size={12} className="text-yellow-500 shrink-0" />}
+                  <span className="font-medium">McNemar:</span>
+                  <span>p = {result.mcnemar.p_value?.toFixed(4)}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                    result.mcnemar.significant
+                      ? "bg-green-100 text-green-700"
+                      : "bg-yellow-100 text-yellow-700"
+                  }`}>
+                    {result.mcnemar.significant ? "SIGNIFICANT" : "not significant"}
+                  </span>
+                </div>
+              )}
+              {result.permutation && (
+                <div className="flex items-center gap-2">
+                  {result.permutation.significant
+                    ? <CheckCircle2 size={12} className="text-green-500 shrink-0" />
+                    : <AlertTriangle size={12} className="text-yellow-500 shrink-0" />}
+                  <span className="font-medium">Permutation:</span>
+                  <span>p = {result.permutation.p_value?.toFixed(4)}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                    result.permutation.significant
+                      ? "bg-green-100 text-green-700"
+                      : "bg-yellow-100 text-yellow-700"
+                  }`}>
+                    {result.permutation.significant ? "SIGNIFICANT" : "not significant"}
+                  </span>
+                </div>
+              )}
+              {result.interpretation && (
+                <p className="text-slate-500 italic mt-1">{result.interpretation}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -790,6 +973,7 @@ function DashboardContent() {
                   <WinRateSection winRates={data.win_rates} />
                 </div>
                 <HeatmapSection heatmap={data.heatmap} />
+                <ConfidencePanel heatmap={data.heatmap} />
               </div>
             )}
 

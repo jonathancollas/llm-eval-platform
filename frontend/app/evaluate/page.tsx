@@ -666,12 +666,33 @@ function EvalStudioInner() {
       } catch (err) { console.warn("[error]", err); }
     }
     try {
-      await campaignsApi.create({
+      // Build SystemContext payload — audit requirement: model-in-system not model-in-isolation
+      const systemContext = {
+        autonomy_level: form.autonomy_level,
+        tools: form.tools,
+        has_memory: form.has_memory,
+        has_orchestration: form.has_orchestration,
+        deployment_context: form.deployment_context,
+        eval_type: evalType,
+        risk_domains: form.risk_domains ?? [],
+      };
+      const campaign = await campaignsApi.create({
         name: form.name || `${typeLabel} eval · ${new Date().toLocaleDateString()}`,
         description: descParts.join(" | "),
         model_ids: form.model_ids, benchmark_ids: form.benchmark_ids,
         max_samples: form.max_samples, temperature: form.temperature,
+        // SystemContext serialised into run_context_json for engine consumption
+        run_context_json: JSON.stringify(systemContext),
+        judge_model: evalType === "safety" ? "claude-3-5-sonnet-20241022" : undefined,
       });
+
+      // Wire to engines post-creation (non-blocking background calls)
+      // #257 — generate reproducibility fingerprint for this eval configuration
+      if (campaign?.id) {
+        fetch(`${API_BASE}/research/manifests/generate/${campaign.id}`, { method: "POST" })
+          .catch(err => console.warn("[evaluate] manifest generation failed (non-fatal):", err));
+      }
+
       router.push("/campaigns");
     } catch (e: any) {
       console.error(e.message ?? String(e));

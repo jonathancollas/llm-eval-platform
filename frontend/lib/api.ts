@@ -138,7 +138,7 @@ export interface Campaign {
   completed_at: string | null; runs: EvalRunSummary[];
 }
 
-export interface HeatmapCell { model_name: string; benchmark_name: string; score: number | null; status: string; }
+export interface HeatmapCell { model_name: string; benchmark_name: string; score: number | null; status: string; run_id?: number; }
 export interface WinRateRow { model_name: string; wins: number; losses: number; ties: number; win_rate: number; }
 export interface DashboardData {
   campaign_id: number; campaign_name: string; status: string;
@@ -250,6 +250,13 @@ export const statisticsApi = {
     }),
   runConfidence: (runId: number) =>
     apiFetch<any>(`/statistics/run/${runId}/confidence`),
+  fingerprint: (runId: number) =>
+    apiFetch<any>(`/statistics/run/${runId}/fingerprint`),
+  validateReproducibility: (runIdA: number, runIdB: number) =>
+    apiFetch<any>("/statistics/validate-reproducibility", {
+      method: "POST",
+      body: JSON.stringify({ run_id_a: runIdA, run_id_b: runIdB }),
+    }),
 };
 
 export const capabilityApi = {

@@ -605,12 +605,238 @@ function SimulationLab({ models }: { models: any[] }) {
   );
 }
 
+
+// ── #271 Structured Threat-Model Red Teaming ─────────────────────────────────
+const THREAT_DOMAINS = [
+  { key: "cyber",      label: "Cybersecurity",         icon: "🔐", atlas: "AML.T005x" },
+  { key: "cbrn",       label: "CBRN Uplift",           icon: "☢️",  atlas: "AML.T004x" },
+  { key: "persuasion", label: "Influence Operations",  icon: "🎭", atlas: "AML.T004x" },
+  { key: "scheming",   label: "Deceptive Alignment",   icon: "🧩", atlas: "AML.T003x" },
+  { key: "agentic",    label: "Agentic Failure Modes", icon: "🤖", atlas: "AML.T006x" },
+];
+
+const ATTACK_SURFACES = [
+  { key: "prompt_injection",  label: "Prompt Injection" },
+  { key: "jailbreak",         label: "Jailbreak" },
+  { key: "multi_turn",        label: "Multi-Turn Escalation" },
+  { key: "crescendo",         label: "Crescendo Attack" },
+  { key: "indirect_injection",label: "Indirect Injection" },
+];
+
+function StructuredThreatPanel({ models }: { models: LLMModelSlim[] }) {
+  const [domain, setDomain] = useState("cyber");
+  const [surface, setSurface] = useState("prompt_injection");
+  const [modelId, setModelId] = useState<number | "">("");
+  const [nVariants, setNVariants] = useState(5);
+  const [running, setRunning] = useState(false);
+  const [plan, setPlan] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [domains, setDomains] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/redbox/threat-domains`)
+      .then(r => r.json())
+      .then(d => { if (d.domains?.length) setDomains(d.domains); })
+      .catch(() => {});
+  }, []);
+
+  const generate = async () => {
+    if (!modelId) return;
+    setRunning(true); setError(null); setPlan(null);
+    try {
+      const res = await fetch(`${API_BASE}/redbox/structured-attack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model_id: modelId,
+          threat_domain: domain,
+          attack_surface: surface,
+          n_variants: nVariants,
+          include_defenses: true,
+        }),
+      });
+      if (!res.ok) { setError(`Error ${res.status}`); return; }
+      setPlan(await res.json());
+    } catch (e: any) {
+      setError(e.message);
+    } finally { setRunning(false); }
+  };
+
+  const selectedDomain = THREAT_DOMAINS.find(d => d.key === domain);
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="bg-slate-900 rounded-xl p-5 text-white">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg">🎯</span>
+          <h2 className="font-semibold">Structured Threat-Model Red Teaming</h2>
+          <span className="text-[10px] px-1.5 py-0.5 bg-red-500/20 text-red-300 border border-red-500/30 rounded font-mono">#271</span>
+        </div>
+        <p className="text-xs text-slate-400 mt-1">
+          Anchored to MITRE ATLAS · FRONTIER_KILLCHAIN · 7-phase LLM kill chain.
+          Unlike generative mutation, each variant targets a validated threat-model technique.
+        </p>
+      </div>
+
+      {/* Config */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Domain */}
+        <div>
+          <label className="text-xs font-medium text-slate-700 block mb-2">Threat Domain</label>
+          <div className="grid grid-cols-1 gap-1.5">
+            {THREAT_DOMAINS.map(d => (
+              <button key={d.key} onClick={() => setDomain(d.key)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-left transition-colors border ${
+                  domain === d.key
+                    ? "bg-red-50 border-red-300 text-red-800 font-medium"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}>
+                <span>{d.icon}</span>
+                <span className="flex-1">{d.label}</span>
+                <span className="text-[10px] font-mono text-slate-400">{d.atlas}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Attack surface + model */}
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-slate-700 block mb-2">Attack Surface</label>
+            <div className="space-y-1">
+              {ATTACK_SURFACES.map(s => (
+                <button key={s.key} onClick={() => setSurface(s.key)}
+                  className={`w-full flex items-center px-3 py-2 rounded-lg text-xs text-left border transition-colors ${
+                    surface === s.key
+                      ? "bg-orange-50 border-orange-300 text-orange-800 font-medium"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-700 block mb-2">Target Model</label>
+            <select value={modelId} onChange={e => setModelId(Number(e.target.value))}
+              className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 bg-white">
+              <option value="">Select model…</option>
+              {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-700 block mb-1">
+              Variants: <span className="text-red-600 font-bold">{nVariants}</span>
+            </label>
+            <input type="range" min={1} max={7} value={nVariants}
+              onChange={e => setNVariants(Number(e.target.value))}
+              className="w-full accent-red-500" />
+          </div>
+
+          <button onClick={generate} disabled={!modelId || running}
+            className="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-2.5 rounded-lg disabled:opacity-40 transition-colors">
+            {running ? "Generating attack plan…" : `Generate ${nVariants} structured attacks`}
+          </button>
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+      </div>
+
+      {/* Results */}
+      {plan && (
+        <div className="space-y-3">
+          {/* Summary */}
+          <div className="bg-slate-900 rounded-xl p-4 text-white flex flex-wrap gap-4 text-xs">
+            <div><span className="text-slate-400">Model:</span> <strong>{plan.model_name}</strong></div>
+            <div><span className="text-slate-400">Domain:</span> <strong>{selectedDomain?.icon} {plan.threat_domain}</strong></div>
+            <div><span className="text-slate-400">Surface:</span> <strong>{plan.attack_surface}</strong></div>
+            <div><span className="text-slate-400">Risk:</span>
+              <span className={`ml-1 px-1.5 py-0.5 rounded font-bold ${
+                plan.domain_risk_level === "high" ? "bg-red-500/20 text-red-300" : "bg-yellow-500/20 text-yellow-300"
+              }`}>{plan.domain_risk_level?.toUpperCase() ?? "HIGH"}</span>
+            </div>
+          </div>
+
+          {/* Attack variants */}
+          <div className="space-y-2">
+            {(plan.attack_variants ?? []).map((v: any) => (
+              <div key={v.id} className="bg-white border border-slate-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-6 h-6 rounded-full bg-red-100 text-red-700 text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {v.phase ?? v.id}
+                  </span>
+                  <span className="font-semibold text-sm text-slate-900">{v.name}</span>
+                  {v.mitre_reference && v.mitre_reference !== "N/A" && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+                      {v.mitre_reference}
+                    </span>
+                  )}
+                </div>
+                {v.objective && <p className="text-xs text-slate-500 mb-2">{v.objective}</p>}
+                {v.example_prompt && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 mt-2">
+                    <div className="text-[10px] text-slate-400 font-medium mb-1">Example prompt vector</div>
+                    <p className="text-xs text-slate-700 font-mono">{v.example_prompt}</p>
+                  </div>
+                )}
+                {v.mutations?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {v.mutations.map((m: string) => (
+                      <span key={m} className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded">
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Defenses & evaluation criteria */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {plan.defenses_to_test?.length > 0 && (
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+                <h4 className="text-xs font-semibold text-green-800 mb-2">🛡 Defenses to test</h4>
+                <ul className="space-y-1">
+                  {plan.defenses_to_test.map((d: string) => (
+                    <li key={d} className="text-xs text-green-700 flex items-center gap-1.5">
+                      <span className="w-1 h-1 rounded-full bg-green-400 shrink-0" />
+                      {d.replace(/_/g, " ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {plan.evaluation_criteria && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                <h4 className="text-xs font-semibold text-blue-800 mb-2">📋 Evaluation criteria</h4>
+                <ul className="space-y-1 text-xs text-blue-700">
+                  <li>Harm threshold: {plan.evaluation_criteria.harm_threshold}</li>
+                  <li>Refusal expected: {plan.evaluation_criteria.refusal_expected ? "Yes" : "No"}</li>
+                  <li>Partial compliance: {plan.evaluation_criteria.partial_compliance_is_failure ? "Failure" : "Acceptable"}</li>
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {plan.methodology && (
+            <p className="text-xs text-slate-400 italic px-1">{plan.methodology}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RedboxPage() {
   const [seed, setSeed] = useState("");
   const [selectedMutations, setSelectedMutations] = useState<string[]>(["prompt_injection", "jailbreak"]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [generating, setGenerating] = useState(false);
-  const [activeTab, setActiveTab] = useState<"forge" | "exploits" | "heatmap" | "simulation" | "campaign">("forge");
+  const [activeTab, setActiveTab] = useState<"forge" | "exploits" | "heatmap" | "simulation" | "campaign" | "threat">("forge");
 
   // Engine + PyRIT
   const [engine, setEngine] = useState<ForgeEngine>("native");
@@ -718,6 +944,7 @@ export default function RedboxPage() {
     { key: "heatmap",   label: "🗺 Attack Surface" },
     { key: "simulation", label: "🧪 Simulation Lab" },
     { key: "campaign",   label: "💀 Attack Campaign" },
+    { key: "threat",     label: "🎯 Structured Threats" },
   ];
 
   const filteredExploits = exploitFilter === "breached"
@@ -1141,6 +1368,7 @@ export default function RedboxPage() {
 
         {/* ── 💀 Attack Campaign — Real adversarial engine */}
         {activeTab === "campaign" && <AttackCampaign models={models} />}
+        {activeTab === "threat" && <StructuredThreatPanel models={models} />}
       </div>
     </div>
   );
