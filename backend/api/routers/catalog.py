@@ -15,7 +15,11 @@ from sqlmodel import Session, select
 from core.config import get_settings
 from core.database import get_session
 from core.models import LLMModel
-from eval_engine.harness_runner import get_catalog_for_api as _harness_catalog
+from eval_engine.harness_runner import (
+    get_catalog_for_api as _harness_catalog,
+    search_harness_tasks as _search_harness_tasks,
+)
+
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 settings = get_settings()
@@ -95,6 +99,17 @@ class CatalogBenchmark(BaseModel):
     methodology_note: Optional[str] = None
     paper_url: Optional[str] = None
     year: Optional[int] = None
+
+
+class HarnessSearchResult(BaseModel):
+    key: str
+    name: str
+    domain: str
+    description: str
+    metric: str
+    few_shot: int
+    is_frontier: bool
+    is_curated: bool
 
 
 # ── Models (OpenRouter) ──────────────────────────────────────────────────────
@@ -977,6 +992,23 @@ def get_benchmark_catalog(
         if search and search.lower() not in b["name"].lower() and search.lower() not in b["description"].lower(): continue
         results.append(CatalogBenchmark(**b))
     return results
+
+
+@router.get("/benchmarks/harness-search", response_model=list[HarnessSearchResult])
+def search_all_harness_benchmarks(
+    q: str = Query("", description="Search query — substring match against task name"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum results to return"),
+):
+    """
+    Search ALL available lm-eval tasks (14 000+), not just the curated set.
+
+    Curated tasks (from HARNESS_CATALOG) are ranked first when they match.
+    Pass `q` with at least one character to get useful results.
+    The full task index is built lazily from the installed lm-eval library and
+    cached in memory; subsequent calls are fast.
+    """
+    results = _search_harness_tasks(query=q, limit=limit)
+    return [HarnessSearchResult(**r) for r in results]
 
 
 @router.get("/benchmarks/online", response_model=list[HFDiscoveredBenchmark])
