@@ -21,10 +21,30 @@ os.environ.setdefault("BENCH_LIBRARY_PATH", os.path.join(os.path.dirname(__file_
 
 
 @pytest.fixture(scope="module")
-def app():
-    """Create test app with isolated in-memory DB."""
+def app(tmp_path_factory):
+    """Create test app with a clean isolated DB (avoids stale schema from other tests)."""
+    import sqlite3
+    from sqlalchemy import create_engine as sa_create_engine
+    from sqlmodel import SQLModel, Session
+    # Use a per-module temp DB so schema is always current
+    db_path = tmp_path_factory.mktemp("http_test") / "test_http.db"
+    test_engine = sa_create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(test_engine)
+    # Override the database engine used by the app
+    import core.database as _db
+    original_engine = _db.engine
+    _db.engine = test_engine
+    # Override get_session to use our test engine
+    def _test_get_session():
+        with Session(test_engine) as session:
+            yield session
     from main import app as _app
-    return _app
+    from core.database import get_session
+    _app.dependency_overrides[get_session] = _test_get_session
+    yield _app
+    # Restore
+    _app.dependency_overrides.pop(get_session, None)
+    _db.engine = original_engine
 
 
 @pytest.fixture(scope="module")

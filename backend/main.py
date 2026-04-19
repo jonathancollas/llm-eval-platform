@@ -28,6 +28,14 @@ from api.routers import events as events_router
 from eval_engine.event_pipeline import register_default_subscribers
 from api.routers import monitoring
 from api.routers import science
+from api.routers import statistics as statistics_router
+from api.routers import plugins as plugins_router
+from api.routers import scenarios as scenarios_router
+from api.routers import capability as capability_router
+from api.routers import vibe as vibe_router
+from api.routers import forecasting as forecasting_router
+from api.routers import failure_patterns as failure_patterns_router
+from api.routers import reward_hacking as reward_hacking_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -217,7 +225,10 @@ for router in [models.router, benchmarks.router, campaigns.router, results.route
                redbox.router, judge.router, agents.router, policy.router, tenants.router,
                research.router, evidence.router, deep_analysis.router,
                multiagent.router, events_router.router,
-               monitoring.router, science.router]:
+               monitoring.router, science.router,
+               statistics_router.router, plugins_router.router, scenarios_router.router,
+               capability_router.router, vibe_router.router, forecasting_router.router,
+               failure_patterns_router.router, reward_hacking_router.router]:
     app.include_router(router, prefix="/api")
 
 
