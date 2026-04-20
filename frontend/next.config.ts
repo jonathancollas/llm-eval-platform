@@ -12,7 +12,7 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
-      "connect-src 'self' https://openrouter.ai https://api.lakera.ai",
+      "connect-src 'self' https://openrouter.ai https://api.lakera.ai https://llm-eval-backend-kqlh.onrender.com",
       "frame-ancestors 'none'",
     ].join("; "),
   },
