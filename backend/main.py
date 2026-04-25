@@ -55,6 +55,10 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, create_db_and_tables)
 
+    # 1b. Surface unsafe auth config in deployment logs
+    from core.auth import warn_if_unsafe_config
+    warn_if_unsafe_config()
+
     # 2. Wire event-sourced pipeline subscribers
     register_default_subscribers()
     logger.info("Startup — event bus subscribers registered.")
