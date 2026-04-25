@@ -1,0 +1,90 @@
+# Mercury Retrograde — root .dockerignore
+# Applies to docker builds run from the repository root.
+# Audit reference: P0-4.
+
+# ── Version control ──────────────────────────────────────────────────────────
+.git
+.github
+.gitignore
+.gitattributes
+
+# ── Secrets & local config (NEVER ship in images) ────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# ── Local databases (user data, NEVER ship) ──────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+backend/data/
+data/
+
+# ── Local logs ───────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Python build artifacts & caches ──────────────────────────────────────────
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/htmlcov
+**/.coverage
+**/.coverage.*
+**/coverage.xml
+**/.tox
+**/.nox
+**/*.egg-info
+**/dist
+**/build
+**/.venv
+**/venv
+
+# ── Node / Next.js artifacts ─────────────────────────────────────────────────
+**/node_modules
+**/.next
+**/.turbo
+**/.swc
+**/out
+*.tsbuildinfo
+
+# ── Editor & OS detritus ─────────────────────────────────────────────────────
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Documentation build outputs ──────────────────────────────────────────────
+docs/_build
+site/
+
+# ── Test/eval ephemeral output ───────────────────────────────────────────────
+promptfoo-*-results.json
+promptfoo-*.html
+test-results/
+playwright-report/
+*.lcov
+.benchmarks/
+
+# ── Local scratch & user uploads (never ship to image) ───────────────────────
+bench_library/custom/
+uploads/
+tmp/
+.tmp/
+
+# ── This file itself isn't useful inside the image ───────────────────────────
+.dockerignore
