@@ -124,15 +124,25 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 import os as _os
 import time as _time
+import asyncio as _asyncio
 from collections import defaultdict as _defaultdict
 
 # ── Simple in-memory rate limiter ──────────────────────────────────────────────
+# Note: this is per-process and per-pod. With multiple uvicorn workers or pods,
+# the actual cap is RPM × workers — to be replaced by Redis-backed limiter
+# (audit P1-14) in a follow-up PR. The asyncio lock below addresses only the
+# in-process race between concurrent coroutines reading and writing the same
+# IP's window before the update is committed.
 _rate_limit_store: dict[str, list[float]] = _defaultdict(list)
 _RATE_LIMIT_RPM = int(_os.getenv("RATE_LIMIT_RPM", "120"))  # requests per minute
 _RATE_LIMIT_ENABLED = _os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 # Hard cap on timestamps kept per IP to prevent unbounded memory growth.
 # We never need to store more than RPM entries for any single IP.
 _RATE_LIMIT_MAX_STORE = _RATE_LIMIT_RPM
+# Lock to serialise concurrent read-modify-write on _rate_limit_store. Without
+# it, two coroutines for the same IP can both pass the threshold check before
+# either appends, doubling the effective limit briefly.
+_rate_limit_lock = _asyncio.Lock()
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next: Callable) -> Response:
@@ -142,15 +152,18 @@ async def rate_limit_middleware(request: Request, call_next: Callable) -> Respon
     if request.url.path in ("/api/health", "/api/docs", "/api/redoc", "/api/openapi.json"):
         return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
-    now = _time.time()
-    # Prune timestamps outside the 60-second window
-    window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
-    # Cap stored entries to prevent memory growth from burst IPs
-    _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:]
-    if len(window) >= _RATE_LIMIT_RPM:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)})
-    _rate_limit_store[client_ip].append(now)
+    async with _rate_limit_lock:
+        now = _time.time()
+        # Prune timestamps outside the 60-second window
+        window = [t for t in _rate_limit_store[client_ip] if now - t < 60]
+        if len(window) >= _RATE_LIMIT_RPM:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Max {}/min.".format(_RATE_LIMIT_RPM)},
+            )
+        # Cap stored entries to prevent memory growth from burst IPs, then append.
+        _rate_limit_store[client_ip] = window[-_RATE_LIMIT_MAX_STORE:] + [now]
     return await call_next(request)
 
 
