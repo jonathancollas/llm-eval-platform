@@ -1,5 +1,4 @@
 """Capability Taxonomy — 7-domain ontology with CapabilityTaxonomyEngine."""
-import math
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from typing import Optional

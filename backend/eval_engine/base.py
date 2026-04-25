@@ -5,7 +5,7 @@ Every benchmark is a plugin that implements this interface.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Optional
 import json
 import logging
 import random

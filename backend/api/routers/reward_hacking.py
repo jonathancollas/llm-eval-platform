@@ -32,15 +32,9 @@ from eval_engine.reward_hacking import (
     performance_plateau_detection,
     distribution_shift_score,
     answer_pattern_analysis,
-    cross_benchmark_fingerprint,
-    capability_inconsistency_score,
     elicitation_gap_score,
     context_shift_score,
     compute_deception_result,
-    outlier_score,
-    performance_effort_ratio,
-    composite_anomaly_score,
-    generate_alerts,
     RewardHackingReport,
 )
 

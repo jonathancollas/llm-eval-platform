@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from sqlmodel import Session, select
 from core.database import get_session
 from core.models import JudgeEvaluation

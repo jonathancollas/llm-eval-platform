@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from core.database import get_session
 from core.models import LLMModel, ModelProvider
-from core.security import encrypt_api_key, decrypt_api_key
+from core.security import encrypt_api_key
 from core.utils import safe_json_load
 
 router = APIRouter(prefix="/models", tags=["models"])

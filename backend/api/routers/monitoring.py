@@ -18,7 +18,7 @@ from sqlmodel import Session, select, desc
 
 from core.database import get_session
 from core.config import get_settings
-from core.models import TelemetryEvent, LLMModel
+from core.models import TelemetryEvent
 from eval_engine.monitoring import ContinuousMonitoringEngine
 from eval_engine.safety.llama_guard import classify_runtime_safety
 

@@ -17,11 +17,9 @@ All model calls go through InferenceAdapter — never raw API calls.
 """
 
 import asyncio
-import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Optional
 

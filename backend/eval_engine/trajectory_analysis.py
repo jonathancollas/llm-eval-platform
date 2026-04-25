@@ -1,6 +1,5 @@
 """Trajectory Intelligence Engine — analyze agent execution traces."""
 from dataclasses import dataclass, field
-from typing import Optional
 
 @dataclass
 class LoopDetection:

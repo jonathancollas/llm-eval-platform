@@ -290,7 +290,6 @@ async def _execute_campaign_inner(campaign_id: int) -> None:
 
         # Auto-compute Failure Genome
         try:
-            from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome
             _compute_genome_for_campaign(campaign_id, session)
             logger.info(f"Campaign {campaign_id}: Failure Genome computed.")
             asyncio.create_task(_bus.emit(

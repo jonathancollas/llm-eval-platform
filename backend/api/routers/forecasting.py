@@ -13,7 +13,6 @@ from eval_engine.capability_forecasting import (
     fit_logistic,
     fit_chinchilla,
     validate_data_quality,
-    ForecastCalibrationRecord,
 )
 from eval_engine.frontier_metrics import FrontierMetricsEngine, MetricCorrelations
 

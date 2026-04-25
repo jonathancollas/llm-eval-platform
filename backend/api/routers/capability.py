@@ -9,7 +9,6 @@ from core.models import (
     Benchmark,
     CapabilityDomainRecord,
     CapabilitySubCapabilityRecord,
-    BenchmarkCapabilityMapping,
     CapabilityEvalScore,
 )
 from eval_engine.capability_taxonomy import CAPABILITY_ONTOLOGY, CapabilityTaxonomyEngine, CapabilityScore

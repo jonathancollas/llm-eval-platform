@@ -7,7 +7,6 @@ import importlib
 import json
 import logging
 import time
-from datetime import datetime
 from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -319,7 +318,6 @@ PROMPTFOO_DIFFICULTY_INCREMENT = 0.04
 from eval_engine.adversarial.artkit_runner import (
     ARTKIT_PIPELINE_REGISTRY,
     ARTKIT_DIFFICULTY_INCREMENT,
-    is_artkit_available,
 )
 
 # ── OpenRT attack method mapping ───────────────────────────────────────────────
@@ -328,7 +326,6 @@ from eval_engine.adversarial.artkit_runner import (
 from eval_engine.adversarial.openrt_runner import (
     OPENRT_ATTACK_METHODS,
     OPENRT_DIFFICULTY_INCREMENT,
-    is_openrt_available,
 )
 
 
@@ -1373,7 +1370,7 @@ async def run_attack_campaign(
     Returns: attack results, breach statistics, severity distribution, recommendations.
     """
     from eval_engine.adversarial.attack_engine import (
-        RedRoomOrchestrator, detect_breach, Attack
+        RedRoomOrchestrator, detect_breach
     )
     from eval_engine.litellm_client import complete
     from core.models import RedboxExploit
@@ -1650,7 +1647,7 @@ def structured_threat_attack(
     this endpoint uses the threat taxonomy to select structured, validated
     attack templates appropriate for the threat domain.
     """
-    from eval_engine.adversarial_taxonomy import FRONTIER_KILLCHAIN, MUTATION_TAXONOMY
+    from eval_engine.adversarial_taxonomy import FRONTIER_KILLCHAIN
 
     model = session.get(LLMModel, payload.model_id)
     if not model:
@@ -1804,7 +1801,7 @@ def run_pyrit_attack(payload: PyRITAttackRequest, session: Session = Depends(get
     Run a PyRIT attack against a model.
     When pyrit is installed, runs a real attack. Otherwise returns structured stub.
     """
-    from eval_engine.adversarial.pyrit_runner import PyRITAttackConfig, run_pyrit_attack, is_pyrit_available
+    from eval_engine.adversarial.pyrit_runner import PyRITAttackConfig, run_pyrit_attack
 
     model = session.get(LLMModel, payload.model_id)
     if not model:

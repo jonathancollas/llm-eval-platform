@@ -19,12 +19,8 @@ When those packages ARE installed, this engine defers to them.
 """
 from __future__ import annotations
 
-import asyncio
-import random
 import re
-import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
 
 # ── Data types ────────────────────────────────────────────────────────────────
 

@@ -21,7 +21,7 @@ from fastapi import Request, HTTPException, Depends
 from sqlmodel import Session, select
 
 from core.database import get_session
-from core.models import Tenant, User
+from core.models import Tenant
 
 logger = logging.getLogger(__name__)
 VALID_ROLES = {"admin", "evaluator", "viewer"}
