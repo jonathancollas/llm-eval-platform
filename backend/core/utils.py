@@ -26,14 +26,63 @@ CONFIDENCE_RESPONSE_SIGNAL_WEIGHT = 0.2
 def resolve_safe_path(base: Path, relative: str) -> Path:
     """Resolve *relative* under *base* and verify it stays within *base*.
 
-    Raises ``ValueError`` if the resolved path escapes the base directory.
-    Callers in an HTTP context should catch ``ValueError`` and raise an
-    appropriate ``HTTPException``.
+    Defends against:
+      - Path traversal via ``..`` (e.g. ``../../etc/passwd``)
+      - Absolute paths (e.g. ``/etc/passwd``) — which os.path.join silently
+        drops the base from
+      - Null-byte injection (e.g. ``valid.json\\x00../../etc/passwd``)
+      - Symlink escapes (resolved with ``Path.resolve()`` which follows
+        symlinks; the boundary check then verifies the final target is
+        still under base)
+
+    Raises ``ValueError`` if any check fails. Callers in an HTTP context
+    should catch ``ValueError`` and raise an appropriate ``HTTPException``
+    (typically 400).
+
+    Examples::
+
+        >>> base = Path('/var/data')
+        >>> resolve_safe_path(base, 'foo.json')
+        PosixPath('/var/data/foo.json')
+        >>> resolve_safe_path(base, '../etc/passwd')
+        Traceback (most recent call last):
+            ...
+        ValueError: path traversal detected: ...
+        >>> resolve_safe_path(base, '/etc/passwd')
+        Traceback (most recent call last):
+            ...
+        ValueError: absolute paths are not allowed: ...
     """
+    if not isinstance(relative, str):
+        raise ValueError(f"path must be a string, got {type(relative).__name__}")
+
+    if "\x00" in relative:
+        raise ValueError("path contains null byte")
+
+    if not relative or relative.strip() == "":
+        raise ValueError("path is empty")
+
+    # Reject explicit absolute paths and Windows drive prefixes.
+    # Don't rely on Path.is_absolute() alone — on POSIX, "C:/x" is not
+    # absolute but on Windows it would be.
+    rel_path = Path(relative)
+    if rel_path.is_absolute() or relative.startswith(("/", "\\")):
+        raise ValueError(f"absolute paths are not allowed: {relative!r}")
+    if len(relative) >= 2 and relative[1] == ":":
+        raise ValueError(f"drive-letter paths are not allowed: {relative!r}")
+
+    # Resolve both, then assert containment via relative_to().
     base_resolved = base.resolve()
-    resolved = (base / relative).resolve()
-    # relative_to() raises ValueError when *resolved* is not under base_resolved
-    resolved.relative_to(base_resolved)
+    resolved = (base_resolved / rel_path).resolve()
+
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError as exc:
+        # Re-raise with a clearer message that doesn't leak the absolute path.
+        raise ValueError(
+            f"path traversal detected: {relative!r} escapes base directory"
+        ) from exc
+
     return resolved
 
 

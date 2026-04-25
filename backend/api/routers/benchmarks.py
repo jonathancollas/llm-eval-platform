@@ -13,6 +13,7 @@ from pathlib import Path
 from core.database import get_session
 from core.models import Benchmark, BenchmarkType
 from core.config import get_settings
+from core.utils import resolve_safe_path
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -56,8 +57,13 @@ def _citation_count(b: Benchmark) -> int:
 def _to_read(b: Benchmark) -> BenchmarkRead:
     has_dataset = False
     if b.dataset_path:
-        full = Path(settings.bench_library_path) / b.dataset_path
-        has_dataset = full.exists()
+        try:
+            full = resolve_safe_path(Path(settings.bench_library_path), b.dataset_path)
+            has_dataset = full.exists()
+        except ValueError:
+            # DB row contains a path that escapes bench_library_path —
+            # treat as missing rather than leak information about the FS.
+            has_dataset = False
     return BenchmarkRead(
         id=b.id,
         name=b.name,
@@ -380,8 +386,16 @@ async def get_benchmark_items(
 
     # 1. Try local JSON file first
     if benchmark.dataset_path:
-        full_path = Path(settings.bench_library_path) / benchmark.dataset_path
-        if full_path.exists():
+        try:
+            full_path = resolve_safe_path(
+                Path(settings.bench_library_path), benchmark.dataset_path
+            )
+        except ValueError:
+            # Reject malformed dataset_path silently (don't leak FS layout).
+            # We still try the HuggingFace fallback below.
+            full_path = None
+
+        if full_path is not None and full_path.exists():
             try:
                 with open(full_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -744,7 +758,17 @@ def fork_benchmark(
     fork_dataset_path = parent.dataset_path
     if parent.dataset_path:
         import shutil
-        src = Path(settings.bench_library_path) / parent.dataset_path
+        try:
+            src = resolve_safe_path(
+                Path(settings.bench_library_path), parent.dataset_path
+            )
+        except ValueError:
+            # Parent has a malformed dataset_path — refuse to fork rather
+            # than silently producing a benchmark without data.
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot fork: parent benchmark has an invalid dataset_path.",
+            )
         if src.exists():
             dst_name = f"fork_{benchmark_id}_{src.name}"
             dst = Path(settings.bench_library_path) / "custom" / dst_name
