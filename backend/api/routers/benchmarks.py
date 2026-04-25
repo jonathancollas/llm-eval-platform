@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, UTC
 import json
 import uuid
 from pathlib import Path
@@ -738,7 +738,7 @@ def fork_benchmark(
     # Check unique
     existing = session.exec(select(Benchmark).where(Benchmark.name == fork_name)).first()
     if existing:
-        fork_name = f"{fork_name} {int(datetime.utcnow().timestamp())}"
+        fork_name = f"{fork_name} {int(datetime.now(UTC).timestamp())}"
 
     # Copy dataset if exists
     fork_dataset_path = parent.dataset_path
@@ -756,7 +756,7 @@ def fork_benchmark(
     parent_config = json.loads(parent.config_json) if parent.config_json else {}
     fork_config = {
         **parent_config,
-        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.utcnow().isoformat()},
+        "forked_from": {"id": parent.id, "name": parent.name, "forked_at": datetime.now(UTC).isoformat()},
         "fork_type": payload.fork_type,
         "changes_description": payload.changes_description,
         "forked_by": payload.forked_by,
@@ -882,7 +882,7 @@ def add_benchmark_citation(
         "paper_doi": payload.get("paper_doi", ""),
         "citing_lab": payload.get("citing_lab", ""),
         "year": payload.get("year"),
-        "added_at": datetime.utcnow().isoformat(),
+        "added_at": datetime.now(UTC).isoformat(),
     }
     citations.append(citation_entry)
     config["citations"] = citations

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime, UTC
 from sqlmodel import Session, select
 from core.database import get_session
 from core.models import AgentTrajectory
@@ -307,7 +308,7 @@ def record_calibration(req: CalibrationRecordRequest):
         "actual_score": round(req.actual_score, 4),
         "absolute_error": round(abs(req.predicted_score - req.actual_score), 4),
         "horizon_label": req.horizon_label,
-        "recorded_at": __import__("datetime").datetime.utcnow().isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
     }
     _calibration_store.setdefault(req.capability, []).append(record)
     return record
