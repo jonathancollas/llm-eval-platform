@@ -66,6 +66,13 @@ async def lifespan(app: FastAPI):
     register_default_subscribers()
     logger.info("Startup — event bus subscribers registered.")
 
+    # 2b. Announce Red Room charter status (audit P0-2 / §7)
+    try:
+        from eval_engine.redroom import announce_charter_at_startup
+        announce_charter_at_startup()
+    except ImportError:
+        logger.debug("Red Room module not present yet — skipping charter announce.")
+
     # 3. Sync catalog benchmarks in executor (CPU-bound, no network)
     logger.info("Startup — syncing benchmark catalog...")
     def _sync_catalog():
