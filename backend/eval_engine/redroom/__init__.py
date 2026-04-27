@@ -38,6 +38,37 @@ from eval_engine.redroom.runner import (
     run_probe,
     build_default_registry,
 )
+from eval_engine.redroom.integrations.garak_runner import (
+    GARAK_ALLOWLIST,
+    GarakAllowlistError,
+    GarakSubprocessError,
+    GarakRunner,
+)
+from eval_engine.redroom.integrations.pyrit_runner import (
+    PYRIT_ALLOWLIST,
+    PyRITAllowlistError,
+    PyRITSubprocessError,
+    PyRITRunner,
+)
+from eval_engine.redroom.coevolution import (
+    CalibrationItem,
+    CalibrationReport,
+    CoevolutionConfig,
+    CoevolutionResult,
+    CoevolutionRound,
+    Strategy,
+    StrategyMemory,
+    calibrate_judge,
+    run_coevolution,
+)
+from eval_engine.redroom.composition import (
+    AgentStack,
+    AttackPlan,
+    AttackStep,
+    CompositionResult,
+    StepOutcome,
+    run_compositional_attack,
+)
 
 __all__ = [
     # charter
@@ -65,4 +96,30 @@ __all__ = [
     "RunOutput",
     "run_probe",
     "build_default_registry",
+    # integrations
+    "GARAK_ALLOWLIST",
+    "GarakAllowlistError",
+    "GarakSubprocessError",
+    "GarakRunner",
+    "PYRIT_ALLOWLIST",
+    "PyRITAllowlistError",
+    "PyRITSubprocessError",
+    "PyRITRunner",
+    # coevolution (D5)
+    "Strategy",
+    "StrategyMemory",
+    "CoevolutionConfig",
+    "CoevolutionResult",
+    "CoevolutionRound",
+    "run_coevolution",
+    "CalibrationItem",
+    "CalibrationReport",
+    "calibrate_judge",
+    # composition (D7)
+    "AgentStack",
+    "AttackPlan",
+    "AttackStep",
+    "CompositionResult",
+    "StepOutcome",
+    "run_compositional_attack",
 ]
