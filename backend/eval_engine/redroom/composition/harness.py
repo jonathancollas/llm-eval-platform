@@ -69,6 +69,22 @@ class AgentStack:
     def get(self, name: str) -> ComponentCallable:
         return self.components[name]
 
+    def fingerprint(self) -> str:
+        """Stable sha256 of the sorted component-name list.
+
+        Same set of component names → same fingerprint, regardless of
+        the actual callables behind them. This is what makes a system
+        identifiable across runs, deployments, and process restarts.
+        """
+        import hashlib
+        names = sorted(self.components.keys())
+        blob = "\n".join(names).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
+
+    def component_names(self) -> list[str]:
+        """Sorted, audit-friendly list of component names."""
+        return sorted(self.components.keys())
+
 
 @dataclasses.dataclass(frozen=True)
 class AttackStep:

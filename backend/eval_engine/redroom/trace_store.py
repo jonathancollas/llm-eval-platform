@@ -130,6 +130,13 @@ class RedRoomTrace(SQLModel, table=True):
     # tenant scope. NULL for the first row of a tenant.
     prev_signature: str | None = Field(default=None, max_length=64)
 
+    # ── System linkage (D7 / E2) ──────────────────────────────────
+    # Optional FK into redroom_systems. NOT included in the signed
+    # payload — adding it would invalidate every pre-E2 row's signature.
+    # Operators auditing chains see system_id as informational; it does
+    # not affect verify_chain().
+    system_id: int | None = Field(default=None, index=True)
+
 
 # ────────────────────────────────────────────────────────────────────
 #  Secret loading
@@ -245,6 +252,7 @@ def write_trace(
     engine: str | None = None,
     payload: dict | None = None,
     created_by_user_id: int | None = None,
+    system_id: int | None = None,
 ) -> RedRoomTrace:
     """Append a single trace row to the chain.
 
@@ -292,6 +300,9 @@ def write_trace(
         prev_signature=prev.row_signature if prev is not None else None,
         # row_signature: filled below
         row_signature="",  # placeholder so dataclass validates
+        # NOT signed (see RedRoomTrace docstring): adding system_id to
+        # the canonical payload would invalidate every pre-E2 row.
+        system_id=system_id,
     )
     # Compute the signature now that all signed fields are populated except
     # row_signature itself (which is the output — excluded from canonicalization).

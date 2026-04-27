@@ -14,6 +14,7 @@ The harness:
 
 Aggressiveness: L5.
 """
+from eval_engine.redroom.composition._db_models import RedRoomSystem
 from eval_engine.redroom.composition.harness import (
     AgentStack,
     AttackPlan,
@@ -22,12 +23,19 @@ from eval_engine.redroom.composition.harness import (
     StepOutcome,
     run_compositional_attack,
 )
+from eval_engine.redroom.composition.system_registry import (
+    lookup_system_by_id,
+    register_system,
+)
 
 __all__ = [
     "AgentStack",
     "AttackPlan",
     "AttackStep",
     "CompositionResult",
+    "RedRoomSystem",
     "StepOutcome",
+    "lookup_system_by_id",
+    "register_system",
     "run_compositional_attack",
 ]
