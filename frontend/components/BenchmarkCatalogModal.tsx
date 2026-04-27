@@ -1,10 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { benchmarksApi } from "@/lib/api";
 import { Badge } from "./Badge";
 import { Spinner } from "./Spinner";
 import { benchmarkTypeColor } from "@/lib/utils";
-import { X, Plus, CheckCircle, AlertTriangle, Shield, ExternalLink } from "lucide-react";
+import { X, Plus, CheckCircle, AlertTriangle, Shield, ExternalLink, Search } from "lucide-react";
 
 import { API_BASE } from "@/lib/config";
 
@@ -21,6 +21,17 @@ interface HFDiscoveredBenchmark {
   description: string; tags: string[]; gated: boolean; card_data: Record<string, unknown>;
 }
 
+interface HarnessSearchResult {
+  key: string;
+  name: string;
+  domain: string;
+  description: string;
+  metric: string;
+  few_shot: number;
+  is_frontier: boolean;
+  is_curated: boolean;
+}
+
 const DOMAIN_ICONS: Record<string, string> = {
   "reasoning": "🧠", "raisonnement": "🧠", "maths": "🔢", "math": "🔢",
   "factuality": "📚", "factualité": "📚", "knowledge": "🎓", "connaissances": "🎓",
@@ -28,6 +39,7 @@ const DOMAIN_ICONS: Record<string, string> = {
   "cyber": "🔒", "disinformation": "📡", "alignment": "⚖️",
   "NLI": "🔗", "medicine": "🏥", "law": "⚖️",
   "finance": "💹", "science": "🔭", "instruction following": "📋",
+  "safety": "🛡️", "other": "📊",
 };
 
 const FILTER_TABS = [
@@ -43,7 +55,7 @@ const FILTER_TABS = [
 ] as const;
 
 type FilterKey = typeof FILTER_TABS[number]["key"];
-type TabMode = "catalog" | "discovered";
+type TabMode = "catalog" | "harness" | "discovered";
 
 export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const [tabMode, setTabMode] = useState<TabMode>("catalog");
@@ -57,6 +69,15 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
   const [adding, setAdding] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
   const [addAllProgress, setAddAllProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // ── lm-eval harness search tab state ─────────────────────────────────────
+  const [harnessQuery, setHarnessQuery] = useState("");
+  const [harnessResults, setHarnessResults] = useState<HarnessSearchResult[]>([]);
+  const [harnessLoading, setHarnessLoading] = useState(false);
+  const [harnessError, setHarnessError] = useState<string | null>(null);
+  const [harnessAdded, setHarnessAdded] = useState<Set<string>>(new Set());
+  const [harnessAdding, setHarnessAdding] = useState<string | null>(null);
+  const harnessDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Discovered tab state ──────────────────────────────────────────────────
   const [hfBenches, setHfBenches] = useState<HFDiscoveredBenchmark[]>([]);
@@ -99,6 +120,30 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
     if (mode === "discovered") loadHfBenches();
   };
 
+  // Debounced harness search
+  const handleHarnessSearch = (q: string) => {
+    setHarnessQuery(q);
+    if (harnessDebounce.current) clearTimeout(harnessDebounce.current);
+    harnessDebounce.current = setTimeout(() => {
+      const trimmed = q.trim();
+      if (!trimmed) {
+        setHarnessResults([]);
+        return;
+      }
+      setHarnessLoading(true);
+      setHarnessError(null);
+      fetch(`${API_BASE}/catalog/benchmarks/harness-search?q=${encodeURIComponent(trimmed)}&limit=100`)
+        .then(async (r) => {
+          const data = await r.json().catch(() => null);
+          if (!r.ok) throw new Error(data?.detail ?? `HTTP ${r.status} ${r.statusText}`);
+          if (!Array.isArray(data)) throw new Error("Invalid response");
+          setHarnessResults(data);
+        })
+        .catch((e) => setHarnessError(String(e)))
+        .finally(() => setHarnessLoading(false));
+    }, 300);
+  };
+
   const filtered = catalog.filter(b => {
     if (filter === "all") return true;
     if (filter === "frontier") return b.is_frontier;
@@ -130,6 +175,27 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
     const ok = await addOne(b);
     if (ok) setAdded(prev => new Set([...prev, b.key]));
     setAdding(null);
+  };
+
+  const handleHarnessAdd = async (h: HarnessSearchResult) => {
+    setHarnessAdding(h.key);
+    try {
+      await benchmarksApi.create({
+        name: h.name,
+        type: h.is_frontier ? "safety" : "academic",
+        description: h.description,
+        tags: ["lm-eval", h.domain, "harness", ...(h.is_curated ? ["curated"] : [])],
+        metric: h.metric.split(",")[0],
+        num_samples: 50,
+        config: {},
+      });
+      setHarnessAdded(prev => new Set([...prev, h.key]));
+    } catch (e: any) {
+      if (String(e).includes("409") || String(e).includes("already")) {
+        setHarnessAdded(prev => new Set([...prev, h.key]));
+      }
+    }
+    setHarnessAdding(null);
   };
 
   const handleAddAll = async () => {
@@ -165,7 +231,7 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
       if (res.ok) {
         setHfImported(prev => new Set([...prev, b.id]));
       }
-    } catch (err) { console.warn("[error]", err); }
+    } catch {}
     setHfImporting(null);
   };
 
@@ -191,6 +257,8 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-slate-400 mt-0.5">
               {tabMode === "catalog"
                 ? `INESIA · ${catalog.length} worldwide benchmarks`
+                : tabMode === "harness"
+                ? "lm-evaluation-harness · 14 000+ tasks"
                 : `HuggingFace · ${hfBenches.length} datasets discovered`}
             </p>
           </div>
@@ -206,6 +274,15 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
             }`}
           >
             📋 INESIA Catalog
+          </button>
+          <button
+            onClick={() => handleTabChange("harness")}
+            className={`pb-2.5 text-xs font-medium border-b-2 transition-colors px-1 flex items-center gap-1.5 ${
+              tabMode === "harness" ? "border-blue-500 text-blue-700" : "border-transparent text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            🔬 lm-eval Library
+            <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">14k+</span>
           </button>
           <button
             onClick={() => handleTabChange("discovered")}
@@ -323,6 +400,95 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
           </>
         )}
 
+        {/* ── lm-eval HARNESS SEARCH TAB ── */}
+        {tabMode === "harness" && (
+          <>
+            <div className="px-6 py-3 border-b border-slate-100 flex items-center gap-3">
+              <Search size={14} className="text-slate-400 shrink-0" />
+              <input
+                autoFocus
+                value={harnessQuery}
+                onChange={e => handleHarnessSearch(e.target.value)}
+                placeholder="Search 14 000+ lm-eval tasks by name (e.g. mmlu, hellaswag, gsm8k…)"
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              {harnessResults.length > 0 && (
+                <span className="text-xs text-slate-400 shrink-0">{harnessResults.length} results</span>
+              )}
+            </div>
+
+            <div className="mx-6 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-2.5">
+              <span className="text-blue-600 text-base shrink-0">🔬</span>
+              <p className="text-xs text-blue-700">
+                Search the complete lm-evaluation-harness library. Curated tasks (with rich metadata) are shown first.
+                Adding a task here imports it into your benchmark library for use in evaluations.
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+              {harnessLoading ? (
+                <div className="flex justify-center py-16"><Spinner size={24} /></div>
+              ) : harnessError ? (
+                <div className="text-center py-16 text-red-500 text-sm">
+                  Search failed.<br /><span className="text-xs text-slate-400">{harnessError}</span>
+                </div>
+              ) : !harnessQuery.trim() ? (
+                <div className="text-center py-16 text-slate-400 text-sm">
+                  <Search size={32} className="mx-auto mb-3 opacity-30" />
+                  Type to search 14 000+ available lm-eval tasks.
+                </div>
+              ) : harnessResults.length === 0 ? (
+                <div className="text-center py-16 text-slate-400 text-sm">No tasks found for &quot;{harnessQuery}&quot;.</div>
+              ) : (
+                harnessResults.map(h => {
+                  const isAdded = harnessAdded.has(h.key);
+                  const isAdding = harnessAdding === h.key;
+                  const icon = DOMAIN_ICONS[h.domain] ?? "📊";
+                  return (
+                    <div key={h.key}
+                      className={`p-4 border rounded-xl transition-colors ${
+                        h.is_frontier ? "border-red-100 hover:border-red-200 bg-red-50/30"
+                        : h.is_curated ? "border-blue-100 hover:border-blue-200 bg-blue-50/20"
+                        : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"}`}>
+                      <div className="flex items-start gap-3">
+                        <span className="text-xl shrink-0 mt-0.5">{icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-medium text-slate-900 text-sm">{h.name}</span>
+                            <Badge className="bg-blue-100 text-blue-600">lm-eval</Badge>
+                            {h.is_curated && <Badge className="bg-green-100 text-green-600">curated</Badge>}
+                            {h.is_frontier && <Badge className="bg-red-100 text-red-600"><Shield size={10} className="inline mr-1" />Frontier</Badge>}
+                          </div>
+                          <p className="text-xs text-slate-500 mb-1">{h.description}</p>
+                          <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
+                            <span>metric: <span className="font-mono">{h.metric}</span></span>
+                            <span>{h.few_shot}-shot</span>
+                            <span>{h.domain}</span>
+                            <span className="font-mono text-[10px] text-slate-300">{h.key}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => !isAdded && !isAdding && handleHarnessAdd(h)}
+                          disabled={isAdding || isAdded}
+                          className={`shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                            isAdded ? "bg-green-50 text-green-600 border border-green-200"
+                            : "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"}`}>
+                          {isAdding ? <Spinner size={12} /> : isAdded ? <CheckCircle size={12} /> : <Plus size={12} />}
+                          {isAdded ? "Added" : "Add"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-100 text-xs text-slate-400 flex items-center justify-between">
+              <span>{harnessAdded.size} task{harnessAdded.size !== 1 ? "s" : ""} added this session</span>
+              <span>Source: <a href="https://github.com/EleutherAI/lm-evaluation-harness" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">EleutherAI lm-eval-harness</a></span>
+            </div>
+          </>
+        )}
+
         {/* ── DISCOVERED TAB ── */}
         {tabMode === "discovered" && (
           <>
@@ -403,4 +569,3 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-

@@ -2,7 +2,8 @@
 lm-evaluation-harness runner — EleutherAI standardized scoring.
 
 Auto-discovers available tasks from lm-eval at startup.
-Provides a curated catalog of 60+ top benchmarks across all domains.
+Provides a curated catalog of 60+ top benchmarks, plus search access to all
+14 000+ tasks available in the installed lm-eval library.
 """
 import asyncio
 import logging
@@ -216,6 +217,147 @@ def get_catalog_for_api() -> list[dict]:
                 "is_frontier": meta["domain"] in ("CBRN-E", "cybersécurité offensive", "safety"),
             })
     return sorted(result, key=lambda x: (x["domain"], x["name"]))
+
+
+# ── Domain prefix map for auto-generated metadata ─────────────────────────────
+
+_DOMAIN_PREFIXES: list[tuple[str, str]] = [
+    ("mmlu", "knowledge"),
+    ("leaderboard_mmlu", "knowledge"),
+    ("gpqa", "knowledge"),
+    ("leaderboard_gpqa", "knowledge"),
+    ("truthfulqa", "factuality"),
+    ("triviaqa", "factuality"),
+    ("nq_open", "factuality"),
+    ("gsm8k", "maths"),
+    ("minerva_math", "maths"),
+    ("leaderboard_math", "maths"),
+    ("mgsm", "maths"),
+    ("math", "maths"),
+    ("aime", "maths"),
+    ("humaneval", "code"),
+    ("mbpp", "code"),
+    ("ds1000", "code"),
+    ("cruxeval", "code"),
+    ("livecodebench", "code"),
+    ("swebench", "code"),
+    ("hellaswag", "raisonnement"),
+    ("arc_", "raisonnement"),
+    ("winogrande", "raisonnement"),
+    ("piqa", "raisonnement"),
+    ("siqa", "raisonnement"),
+    ("boolq", "raisonnement"),
+    ("copa", "raisonnement"),
+    ("openbookqa", "raisonnement"),
+    ("commonsense", "raisonnement"),
+    ("logiqa", "raisonnement"),
+    ("bbh", "raisonnement"),
+    ("drop", "raisonnement"),
+    ("lambada", "raisonnement"),
+    ("leaderboard_bbh", "raisonnement"),
+    ("leaderboard_musr", "raisonnement"),
+    ("wmdp", "safety"),
+    ("harmbench", "safety"),
+    ("ifeval", "instruction following"),
+    ("leaderboard_ifeval", "instruction following"),
+    ("mt_bench", "instruction following"),
+    ("french_bench", "français"),
+    ("include_base_44_french", "français"),
+    ("belebele_fra", "français"),
+    ("fquad", "français"),
+    ("piaf", "français"),
+    ("mgsm_direct_fr", "français"),
+    ("belebele", "multilingual"),
+    ("xnli", "NLI"),
+    ("anli", "NLI"),
+    ("wic", "NLI"),
+    ("medqa", "medicine"),
+    ("pubmedqa", "medicine"),
+    ("legalbench", "law"),
+    ("financebench", "finance"),
+    ("scienceqa", "science"),
+    ("agentbench", "agentic"),
+    ("tau_bench", "agentic"),
+]
+
+
+def _infer_domain(task_name: str) -> str:
+    """Infer a domain label from the task name using prefix matching."""
+    lower = task_name.lower()
+    for prefix, domain in _DOMAIN_PREFIXES:
+        if lower.startswith(prefix):
+            return domain
+    return "other"
+
+
+# ── Full-library search (all available lm-eval tasks) ─────────────────────────
+
+_all_tasks_sorted: Optional[list[str]] = None
+
+
+def _get_all_tasks_sorted() -> list[str]:
+    """Return sorted list of all available lm-eval task names (cached)."""
+    global _all_tasks_sorted
+    if _all_tasks_sorted is not None:
+        return _all_tasks_sorted
+    available = get_available_harness_tasks()
+    _all_tasks_sorted = sorted(available)
+    logger.info(f"Full harness task index built: {len(_all_tasks_sorted)} tasks.")
+    return _all_tasks_sorted
+
+
+def search_harness_tasks(query: str, limit: int = 50) -> list[dict]:
+    """
+    Search ALL available lm-eval tasks by name.
+
+    Curated tasks (from HARNESS_CATALOG) are ranked first when they match.
+    Returns up to *limit* results.  Used by the /catalog/benchmarks/harness-search
+    endpoint to let users discover any of the 14 000+ tasks in lm-eval.
+    """
+    query_lower = query.strip().lower()
+    all_tasks = _get_all_tasks_sorted()
+
+    curated_matches: list[dict] = []
+    other_matches: list[dict] = []
+
+    for task_name in all_tasks:
+        if query_lower and query_lower not in task_name.lower():
+            continue
+        meta = HARNESS_CATALOG.get(task_name)
+        if meta:
+            curated_matches.append({
+                "key": task_name,
+                "name": _task_display_name(task_name),
+                "lm_eval_task": task_name,
+                "domain": meta["domain"],
+                "metric": meta["metric"],
+                "few_shot": meta["few_shot"],
+                "description": meta["description"],
+                "source": "lm-eval-harness",
+                "is_frontier": meta["domain"] in ("CBRN-E", "cybersécurité offensive", "safety"),
+                "is_curated": True,
+            })
+        else:
+            # Collect enough non-curated results to fill the limit
+            remaining = limit - len(curated_matches)
+            if len(other_matches) < max(remaining, limit):
+                domain = _infer_domain(task_name)
+                other_matches.append({
+                    "key": task_name,
+                    "name": _task_display_name(task_name),
+                    "lm_eval_task": task_name,
+                    "domain": domain,
+                    "metric": "acc,none",
+                    "few_shot": 0,
+                    "description": f"lm-evaluation-harness task: {task_name}",
+                    "source": "lm-eval-harness",
+                    "is_frontier": False,
+                    "is_curated": False,
+                })
+
+    # Curated results first, then fill remaining slots with non-curated
+    combined = curated_matches + other_matches
+    return combined[:limit]
 
 
 def _task_display_name(task: str) -> str:
