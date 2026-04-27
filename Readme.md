@@ -8,7 +8,7 @@
 # MERCURY RETROGRADE
 **Research Operating System for Frontier AI Evaluation**  
 
-[Architecture](docs/architecture.md) · [Manifesto](Manifesto.md) · [License](License)
+[Architecture](docs/architecture.md) · [Manifesto](Manifesto.md) · [Red Room runbook](docs/redroom-operations.md) · [License](License)
 
 </div>
 
@@ -48,12 +48,16 @@ The platform supports both **academic benchmarking** and **frontier risk evaluat
 - agent trajectory evaluation
 - confidence grading
 
-### Adversarial Testing
-- jailbreak and prompt injection scenarios
-- mutation-based attack generation
-- breach replay
-- risk severity scoring
-- attack surface heatmaps
+### Adversarial Testing — Red Room (Phase D / E)
+- charter-gated security policy (`REDROOM_*` env vars)
+- HMAC-signed, chain-linked trace store (tamper-evident)
+- 8 probe families: AIID replay, Many-shot, Crescendo, Garak,
+  PyRIT (PAIR / TAP), coevolution with persistent memory,
+  sandbagging detection, compositional attacks, indirect prompt
+  injection
+- HTML Risk Artifact for vendor disclosure
+- HTTP API at `/api/redroom/v2/*`
+- See [docs/redroom-operations.md](docs/redroom-operations.md) for the operational runbook
 
 ### Infrastructure
 - FastAPI backend
