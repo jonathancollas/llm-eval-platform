@@ -61,6 +61,14 @@ from eval_engine.redroom.coevolution import (
     calibrate_judge,
     run_coevolution,
 )
+from eval_engine.redroom.composition import (
+    AgentStack,
+    AttackPlan,
+    AttackStep,
+    CompositionResult,
+    StepOutcome,
+    run_compositional_attack,
+)
 
 __all__ = [
     # charter
@@ -107,4 +115,11 @@ __all__ = [
     "CalibrationItem",
     "CalibrationReport",
     "calibrate_judge",
+    # composition (D7)
+    "AgentStack",
+    "AttackPlan",
+    "AttackStep",
+    "CompositionResult",
+    "StepOutcome",
+    "run_compositional_attack",
 ]
