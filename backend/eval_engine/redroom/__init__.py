@@ -50,6 +50,17 @@ from eval_engine.redroom.integrations.pyrit_runner import (
     PyRITSubprocessError,
     PyRITRunner,
 )
+from eval_engine.redroom.coevolution import (
+    CalibrationItem,
+    CalibrationReport,
+    CoevolutionConfig,
+    CoevolutionResult,
+    CoevolutionRound,
+    Strategy,
+    StrategyMemory,
+    calibrate_judge,
+    run_coevolution,
+)
 
 __all__ = [
     # charter
@@ -86,4 +97,14 @@ __all__ = [
     "PyRITAllowlistError",
     "PyRITSubprocessError",
     "PyRITRunner",
+    # coevolution (D5)
+    "Strategy",
+    "StrategyMemory",
+    "CoevolutionConfig",
+    "CoevolutionResult",
+    "CoevolutionRound",
+    "run_coevolution",
+    "CalibrationItem",
+    "CalibrationReport",
+    "calibrate_judge",
 ]
