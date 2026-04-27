@@ -28,7 +28,6 @@ os.environ["REDROOM_MAX_AGGRESSIVENESS"] = "3"
 from eval_engine.redroom import (  # noqa: E402
     PYRIT_ALLOWLIST,
     PyRITAllowlistError,
-    PyRITRunner,
     PyRITSubprocessError,
     RunInputs,
     TraceKind,
@@ -45,7 +44,6 @@ from eval_engine.redroom.integrations.pyrit_runner import (  # noqa: E402
 )
 from eval_engine.redroom.probes.pyrit_probe import PyRITProbe  # noqa: E402
 from eval_engine.redroom.trace_store import RedRoomTrace  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════
 #  Fixtures

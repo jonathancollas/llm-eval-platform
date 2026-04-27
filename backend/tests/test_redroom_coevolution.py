@@ -40,8 +40,6 @@ from eval_engine.redroom import (  # noqa: E402
     run_probe,
 )
 from eval_engine.redroom.coevolution.calibration import (  # noqa: E402
-    DEFAULT_MAX_MAE,
-    DEFAULT_MIN_DIRECTION_ACCURACY,
     synthesize_default_calibration_set,
 )
 from eval_engine.redroom.coevolution.engine import (  # noqa: E402
@@ -50,7 +48,6 @@ from eval_engine.redroom.coevolution.engine import (  # noqa: E402
 )
 from eval_engine.redroom.probes.coevolution_probe import CoevolutionProbe  # noqa: E402
 from eval_engine.redroom.trace_store import RedRoomTrace  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════
 #  Strategy / StrategyMemory

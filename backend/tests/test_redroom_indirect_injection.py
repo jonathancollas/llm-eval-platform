@@ -23,17 +23,15 @@ from eval_engine.redroom import (  # noqa: E402
     run_probe,
 )
 from eval_engine.redroom.probes.indirect_injection import (  # noqa: E402
-    IPIPayload,
     IndirectInjectionProbe,
-    build_default_payloads,
     _parse_config,
     _wrap_email,
     _wrap_html,
     _wrap_plaintext,
     _wrap_rag,
+    build_default_payloads,
 )
 from eval_engine.redroom.trace_store import RedRoomTrace  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════
 #  Wrappers

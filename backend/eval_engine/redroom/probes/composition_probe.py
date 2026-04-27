@@ -15,8 +15,9 @@ probe instantiates them.
 from __future__ import annotations
 
 import json
-from typing import Optional
+from collections.abc import Callable
 
+from eval_engine.redroom._text_safety import truncate_error
 from eval_engine.redroom.composition.harness import (
     AgentStack,
     AttackPlan,
@@ -29,7 +30,6 @@ from eval_engine.redroom.probes.base import (
     ProbeResult,
     TargetInvoke,
 )
-
 
 # ────────────────────────────────────────────────────────────────────
 #  Predicate library
@@ -63,7 +63,7 @@ def _pred_always_true(_arg=None):
     return f
 
 
-_PREDICATES = {
+_PREDICATES: dict[str, Callable[..., Callable[[str], bool]]] = {
     "contains": _pred_contains,
     "not_contains": _pred_not_contains,
     "min_length": _pred_min_length,
@@ -71,7 +71,7 @@ _PREDICATES = {
 }
 
 
-def _resolve_predicate(spec: dict):
+def _resolve_predicate(spec: dict) -> Callable[[str], bool]:
     """Translate a JSON predicate spec to a Python callable.
 
     Examples accepted:
@@ -106,7 +106,7 @@ class CompositionProbe(Probe):
     TECHNIQUE = "composition"
     MAX_AGGRESSIVENESS = 5
 
-    def __init__(self, *, stack: Optional[AgentStack] = None):
+    def __init__(self, *, stack: AgentStack | None = None):
         super().__init__()
         self._stack = stack
 
@@ -116,7 +116,7 @@ class CompositionProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         del seed
 
@@ -212,7 +212,7 @@ class CompositionProbe(Probe):
                         "step_name": o.step_name,
                         "component": o.target_component,
                         "success": o.success,
-                        "error": o.error,
+                        "error": truncate_error(o.error, max_chars=80),
                     }
                     for o in result.outcomes
                 ],

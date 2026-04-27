@@ -56,7 +56,7 @@ import dataclasses
 import logging
 import os
 from enum import IntEnum
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import HTTPException
 
@@ -100,10 +100,10 @@ class CharterPolicy:
     # all levels. Operators who want a softer rollout can set
     # REDROOM_REQUIRE_CONSENT_ABOVE to require a UI consent banner above
     # the chosen level.
-    require_signed_consent_above: Optional[Aggressiveness] = None
+    require_signed_consent_above: Aggressiveness | None = None
 
     # Aggressiveness level above which TWO admin approvals are required.
-    require_dual_approval_above: Optional[Aggressiveness] = None
+    require_dual_approval_above: Aggressiveness | None = None
 
     # ── Disclosure ────────────────────────────────────────────────
     # The default disclosure track for findings produced under this charter.
@@ -152,25 +152,25 @@ def _parse_target_set(raw: str) -> frozenset[TargetClass]:
     return frozenset(parts)  # type: ignore[arg-type]
 
 
-def _parse_aggressiveness(raw: Optional[str], default: Aggressiveness) -> Aggressiveness:
+def _parse_aggressiveness(raw: str | None, default: Aggressiveness) -> Aggressiveness:
     if raw is None:
         return default
     try:
         n = int(raw)
     except ValueError:
-        raise ValueError(f"aggressiveness must be 1..5, got {raw!r}")
+        raise ValueError(f"aggressiveness must be 1..5, got {raw!r}") from None
     if n < 1 or n > 5:
         raise ValueError(f"aggressiveness must be 1..5, got {n}")
     return Aggressiveness(n)
 
 
-def _parse_optional_aggressiveness(raw: Optional[str]) -> Optional[Aggressiveness]:
+def _parse_optional_aggressiveness(raw: str | None) -> Aggressiveness | None:
     if raw is None or raw.strip() == "" or raw.lower() == "none":
         return None
     return _parse_aggressiveness(raw, Aggressiveness.LLM_ATTACKER)
 
 
-def _parse_disclosure(raw: Optional[str], default: DisclosureTrack) -> DisclosureTrack:
+def _parse_disclosure(raw: str | None, default: DisclosureTrack) -> DisclosureTrack:
     if raw is None or not raw.strip():
         return default
     v = raw.strip().lower()
@@ -253,7 +253,7 @@ class CharterDecision:
     effective_disclosure: DisclosureTrack
 
 
-def authorize(request: AttackRequest, policy: Optional[CharterPolicy] = None) -> CharterDecision:
+def authorize(request: AttackRequest, policy: CharterPolicy | None = None) -> CharterDecision:
     """Decide whether this request is allowed under the charter.
 
     Returns a CharterDecision with allowed=False and a human-readable reason
@@ -349,7 +349,7 @@ def authorize(request: AttackRequest, policy: Optional[CharterPolicy] = None) ->
     )
 
 
-def enforce(request: AttackRequest, policy: Optional[CharterPolicy] = None) -> CharterDecision:
+def enforce(request: AttackRequest, policy: CharterPolicy | None = None) -> CharterDecision:
     """Authorize, raise HTTPException(403) on refusal. Convenience wrapper."""
     decision = authorize(request, policy)
     if not decision.allowed:

@@ -18,14 +18,14 @@ Aggressiveness: L4.
 from __future__ import annotations
 
 import json
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
+from eval_engine.redroom._text_safety import text_envelope
 from eval_engine.redroom.coevolution.engine import (
     CoevolutionConfig,
     run_coevolution,
 )
 from eval_engine.redroom.coevolution.strategy_memory import (
-    Strategy,
     StrategyMemory,
 )
 from eval_engine.redroom.probes.base import (
@@ -34,7 +34,6 @@ from eval_engine.redroom.probes.base import (
     ProbeResult,
     TargetInvoke,
 )
-
 
 AttackerCallable = Callable[[str], Awaitable[str]]
 JudgeCallable = Callable[[str, str], Awaitable[float]]
@@ -49,9 +48,9 @@ class CoevolutionProbe(Probe):
     def __init__(
         self,
         *,
-        attacker: Optional[AttackerCallable] = None,
-        judge: Optional[JudgeCallable] = None,
-        memory: Optional[StrategyMemory] = None,
+        attacker: AttackerCallable | None = None,
+        judge: JudgeCallable | None = None,
+        memory: StrategyMemory | None = None,
     ):
         super().__init__()
         self._attacker = attacker
@@ -64,7 +63,7 @@ class CoevolutionProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         if not prompt_seed:
             return ProbeResult(
@@ -157,7 +156,7 @@ class CoevolutionProbe(Probe):
             technique=self.TECHNIQUE,
             attempts=attempts,
             metadata={
-                "objective": result.objective,
+                **text_envelope(result.objective, name="objective"),
                 "stop_reason": result.stop_reason,
                 "success": result.success,
                 "success_threshold": result.success_threshold,

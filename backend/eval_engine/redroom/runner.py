@@ -32,7 +32,6 @@ import dataclasses
 import logging
 import time
 import uuid
-from typing import Awaitable, Callable, Optional
 
 from sqlmodel import Session
 
@@ -99,10 +98,10 @@ class RunInputs:
     aggressiveness: int = 2
     seed: int = 0
     max_turns: int = 4
-    prompt_seed: Optional[str] = None
+    prompt_seed: str | None = None
     has_signed_consent: bool = False
     dual_approval_signers: tuple[str, ...] = ()
-    created_by_user_id: Optional[int] = None
+    created_by_user_id: int | None = None
     # Hard wall-clock cap for the whole probe run, in seconds.
     # Defaults to 60s — operators tighten or loosen via the charter
     # max_duration_seconds, which the runner clamps to.
@@ -118,7 +117,7 @@ class RunOutput:
     """
 
     decision: CharterDecision
-    result: Optional[ProbeResult]
+    result: ProbeResult | None
     duration_seconds: float
     session_uuid: str            # the run's stable id, surfaces in URLs
 
@@ -132,8 +131,8 @@ async def run_probe(
     inputs: RunInputs,
     *,
     session: Session,
-    registry: Optional[dict[str, Probe]] = None,
-    policy: Optional[CharterPolicy] = None,
+    registry: dict[str, Probe] | None = None,
+    policy: CharterPolicy | None = None,
 ) -> RunOutput:
     """Run one probe, end to end, with full audit trail.
 
@@ -221,7 +220,7 @@ async def run_probe(
             ),
             timeout=effective_timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         duration = time.monotonic() - started
         # Record the abort as a single PROBE trace with timeout reason.
         # We don't have actual prompts/responses to record — that's

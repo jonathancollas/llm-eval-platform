@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import dataclasses
 import random
-from typing import Optional
 
 from eval_engine.redroom.probes.base import (
     Probe,
@@ -98,7 +97,7 @@ class ManyShotProbe(Probe):
     TECHNIQUE = "many_shot"
     MAX_AGGRESSIVENESS = 2
 
-    def __init__(self, shot_bank: Optional[tuple[CompliancePair, ...]] = None):
+    def __init__(self, shot_bank: tuple[CompliancePair, ...] | None = None):
         super().__init__()
         self._shot_bank = shot_bank or DEFAULT_SHOT_BANK
         if len(self._shot_bank) < 2:
@@ -110,7 +109,7 @@ class ManyShotProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         del max_turns  # single-turn from the target's view
 

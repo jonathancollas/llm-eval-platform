@@ -34,7 +34,9 @@ import re
 import shutil
 import subprocess  # noqa: S404 — sandboxed via no-shell + arg validation
 import tempfile
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+
+from eval_engine.redroom._text_safety import text_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +87,8 @@ def run_pyrit_subprocess(
     *,
     target_model_id: str,
     timeout_seconds: int = 120,
-    pyrit_executable: Optional[str] = None,
-    extra_args: Optional[tuple[str, ...]] = None,
+    pyrit_executable: str | None = None,
+    extra_args: tuple[str, ...] | None = None,
 ) -> dict:
     """Invoke ``pyrit-cli`` (or compatible) as a sandboxed subprocess.
 
@@ -166,7 +168,7 @@ class _Round:
     prompt: str
     response: str
     score: float
-    parent_turn: Optional[int] = None  # TAP only — which node we branched from
+    parent_turn: int | None = None  # TAP only — which node we branched from
 
 
 @dataclasses.dataclass(frozen=True)
@@ -202,7 +204,7 @@ async def run_pair(
     objective: str,
     max_rounds: int = 5,
     success_threshold: float = 0.8,
-    initial_prompt: Optional[str] = None,
+    initial_prompt: str | None = None,
 ) -> _AlgorithmResult:
     """Run PAIR: iterative refinement until success_threshold or budget.
 
@@ -276,7 +278,7 @@ async def run_pair(
                 success_threshold=success_threshold,
                 metadata={
                     "algorithm": "pair",
-                    "objective": objective,
+                    **text_envelope(objective, name="objective"),
                     "stopped_at_turn": turn,
                     "stop_reason": "threshold_met",
                 },
@@ -288,7 +290,7 @@ async def run_pair(
         success_threshold=success_threshold,
         metadata={
             "algorithm": "pair",
-            "objective": objective,
+            **text_envelope(objective, name="objective"),
             "stopped_at_turn": len(rounds) - 1 if rounds else -1,
             "stop_reason": "budget_exhausted" if rounds else "no_rounds",
         },
@@ -318,7 +320,7 @@ async def run_tap(
     branching_factor: int = 2,
     beam_width: int = 2,
     success_threshold: float = 0.8,
-    initial_prompt: Optional[str] = None,
+    initial_prompt: str | None = None,
 ) -> _AlgorithmResult:
     """Run TAP: tree of attacks with pruning.
 
@@ -377,7 +379,7 @@ async def run_tap(
             success_threshold=success_threshold,
             metadata={
                 "algorithm": "tap",
-                "objective": objective,
+                **text_envelope(objective, name="objective"),
                 "stopped_at_turn": 0,
                 "stop_reason": "seed_already_jailbroke",
                 "branching_factor": branching_factor,
@@ -451,7 +453,7 @@ async def run_tap(
                         success_threshold=success_threshold,
                         metadata={
                             "algorithm": "tap",
-                            "objective": objective,
+                            **text_envelope(objective, name="objective"),
                             "stopped_at_turn": child_round.turn,
                             "stop_reason": "threshold_met",
                             "branching_factor": branching_factor,
@@ -472,7 +474,7 @@ async def run_tap(
         success_threshold=success_threshold,
         metadata={
             "algorithm": "tap",
-            "objective": objective,
+            **text_envelope(objective, name="objective"),
             "stop_reason": "budget_exhausted",
             "branching_factor": branching_factor,
             "beam_width": beam_width,
@@ -525,7 +527,7 @@ class PyRITRunner:
         objective: str,
         max_rounds: int = 5,
         success_threshold: float = 0.8,
-        initial_prompt: Optional[str] = None,
+        initial_prompt: str | None = None,
         branching_factor: int = 2,
         beam_width: int = 2,
     ) -> _AlgorithmResult:

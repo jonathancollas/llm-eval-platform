@@ -26,7 +26,7 @@ Aggressiveness: L3 — LLM-driven attacker tier.
 from __future__ import annotations
 
 import json
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 from eval_engine.redroom.integrations.pyrit_runner import (
     PYRIT_ALLOWLIST,
@@ -39,7 +39,6 @@ from eval_engine.redroom.probes.base import (
     ProbeResult,
     TargetInvoke,
 )
-
 
 AttackerCallable = Callable[[str], Awaitable[str]]
 JudgeCallable = Callable[[str, str], Awaitable[float]]
@@ -54,9 +53,9 @@ class PyRITProbe(Probe):
     def __init__(
         self,
         *,
-        attacker: Optional[AttackerCallable] = None,
-        judge: Optional[JudgeCallable] = None,
-        runner: Optional[PyRITRunner] = None,
+        attacker: AttackerCallable | None = None,
+        judge: JudgeCallable | None = None,
+        runner: PyRITRunner | None = None,
     ):
         super().__init__()
         self._attacker = attacker
@@ -69,7 +68,7 @@ class PyRITProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         del seed  # algorithms are stateless w.r.t. seed in our impl
         if not prompt_seed:

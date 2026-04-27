@@ -37,9 +37,8 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, UTC
-from enum import Enum
-from typing import Optional
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlmodel import Field, Session, SQLModel, select
 
@@ -51,7 +50,7 @@ logger = logging.getLogger(__name__)
 # ────────────────────────────────────────────────────────────────────
 
 
-class TraceKind(str, Enum):
+class TraceKind(StrEnum):
     """The high-level kind of event being recorded."""
 
     AUTHORIZE = "authorize"  # Charter decision, before any attack runs
@@ -62,7 +61,7 @@ class TraceKind(str, Enum):
     EXPORT = "export"        # An artifact was generated and exported
 
 
-class TraceVerdict(str, Enum):
+class TraceVerdict(StrEnum):
     """For PROBE / FINDING events, the outcome."""
 
     NEUTRAL = "neutral"
@@ -87,21 +86,21 @@ class RedRoomTrace(SQLModel, table=True):
     __tablename__ = "redroom_traces"
 
     # ── Identity ──────────────────────────────────────────────────
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     # External UUID for stable referencing across systems (e.g. Risk Artifact PDFs)
     uuid: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
 
     # ── Context ───────────────────────────────────────────────────
     tenant_id: int = Field(index=True)
     session_id: str = Field(index=True, max_length=64)  # groups events of one Red Room session
-    target_model_id: Optional[int] = Field(default=None, index=True)
+    target_model_id: int | None = Field(default=None, index=True)
     target_class: str = Field(max_length=20)  # 'self' | 'open_weight' | 'public_api'
     aggressiveness: int = Field(ge=1, le=5)
 
     # ── Event ─────────────────────────────────────────────────────
     kind: str = Field(max_length=20)         # TraceKind value
-    verdict: Optional[str] = Field(default=None, max_length=20)  # TraceVerdict, optional
-    engine: Optional[str] = Field(default=None, max_length=40)   # 'native' | 'garak' | 'pyrit' | ...
+    verdict: str | None = Field(default=None, max_length=20)  # TraceVerdict, optional
+    engine: str | None = Field(default=None, max_length=40)   # 'native' | 'garak' | 'pyrit' | ...
 
     # ── Payload ───────────────────────────────────────────────────
     # Compact JSON payload of the event. Contents depend on kind:
@@ -121,7 +120,7 @@ class RedRoomTrace(SQLModel, table=True):
 
     # ── Provenance ────────────────────────────────────────────────
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True)
-    created_by_user_id: Optional[int] = Field(default=None)
+    created_by_user_id: int | None = Field(default=None)
 
     # ── Integrity ─────────────────────────────────────────────────
     # HMAC-SHA256 of the canonical serialization of the row's stable fields.
@@ -129,7 +128,7 @@ class RedRoomTrace(SQLModel, table=True):
     row_signature: str = Field(max_length=64, index=True)
     # Chain link: signature of the immediately preceding row in the same
     # tenant scope. NULL for the first row of a tenant.
-    prev_signature: Optional[str] = Field(default=None, max_length=64)
+    prev_signature: str | None = Field(default=None, max_length=64)
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -208,8 +207,8 @@ def _compute_signature(row: RedRoomTrace) -> str:
 def compute_replay_hash(
     technique: str,
     prompt: str,
-    target_model_id: Optional[int],
-    extra: Optional[dict] = None,
+    target_model_id: int | None,
+    extra: dict | None = None,
 ) -> str:
     """Stable hash over the input/config tuple. Same inputs → same hash.
 
@@ -241,11 +240,11 @@ def write_trace(
     target_class: str,
     aggressiveness: int,
     replay_hash: str,
-    target_model_id: Optional[int] = None,
-    verdict: Optional[TraceVerdict] = None,
-    engine: Optional[str] = None,
-    payload: Optional[dict] = None,
-    created_by_user_id: Optional[int] = None,
+    target_model_id: int | None = None,
+    verdict: TraceVerdict | None = None,
+    engine: str | None = None,
+    payload: dict | None = None,
+    created_by_user_id: int | None = None,
 ) -> RedRoomTrace:
     """Append a single trace row to the chain.
 
@@ -262,7 +261,7 @@ def write_trace(
     prev = session.exec(
         select(RedRoomTrace)
         .where(RedRoomTrace.tenant_id == tenant_id)
-        .order_by(RedRoomTrace.id.desc())
+        .order_by(RedRoomTrace.id.desc())  # type: ignore[union-attr]
         .limit(1)
     ).first()
 
@@ -331,18 +330,21 @@ def verify_chain(session: Session, tenant_id: int) -> int:
     rows = session.exec(
         select(RedRoomTrace)
         .where(RedRoomTrace.tenant_id == tenant_id)
-        .order_by(RedRoomTrace.id.asc())
+        .order_by(RedRoomTrace.id.asc())  # type: ignore[union-attr]
     ).all()
 
-    prev_sig: Optional[str] = None
+    prev_sig: str | None = None
     for r in rows:
+        # row.id is None pre-flush; here we're reading committed rows so
+        # it's always populated, but mypy can't know that.
+        row_id: int = r.id if r.id is not None else -1
         # 1. Row signature integrity
         if not verify_row(r):
-            raise ChainIntegrityError(r.id, "row_signature mismatch")
+            raise ChainIntegrityError(row_id, "row_signature mismatch")
         # 2. Chain link integrity
         if r.prev_signature != prev_sig:
             raise ChainIntegrityError(
-                r.id,
+                row_id,
                 f"prev_signature mismatch (expected {prev_sig!r}, got {r.prev_signature!r})",
             )
         prev_sig = r.row_signature

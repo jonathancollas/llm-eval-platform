@@ -13,19 +13,19 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from fastapi import HTTPException  # noqa: E402
+
 from eval_engine.redroom.charter import (  # noqa: E402
     Aggressiveness,
     AttackRequest,
     CharterPolicy,
+    _parse_aggressiveness,
+    _parse_optional_aggressiveness,
+    _parse_target_set,
     authorize,
     enforce,
     load_charter,
-    _parse_target_set,
-    _parse_aggressiveness,
-    _parse_optional_aggressiveness,
 )
-from fastapi import HTTPException  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════════
 #  load_charter — env var parsing

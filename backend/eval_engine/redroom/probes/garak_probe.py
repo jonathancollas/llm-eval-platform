@@ -18,8 +18,6 @@ runner option, not the default.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from eval_engine.redroom.integrations.garak_runner import (
     GARAK_ALLOWLIST,
     GarakAllowlistError,
@@ -39,7 +37,7 @@ class GarakProbe(Probe):
     TECHNIQUE = "garak"
     MAX_AGGRESSIVENESS = 3
 
-    def __init__(self, runner: Optional[GarakRunner] = None):
+    def __init__(self, runner: GarakRunner | None = None):
         super().__init__()
         self._runner = runner or GarakRunner()
 
@@ -49,7 +47,7 @@ class GarakProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         del seed  # static corpus — same prompts regardless of seed
         if not prompt_seed:

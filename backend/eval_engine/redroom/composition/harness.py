@@ -34,7 +34,7 @@ import dataclasses
 import logging
 import re
 import time
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class StepOutcome:
     output: str
     success: bool
     duration_seconds: float
-    error: Optional[str] = None     # populated when step raised
+    error: str | None = None     # populated when step raised
 
 
 @dataclasses.dataclass(frozen=True)
@@ -243,7 +243,7 @@ async def run_compositional_attack(
             )
             output = _normalize_output(raw_output)
             error = None
-        except asyncio.TimeoutError:
+        except TimeoutError:
             output = ""
             error = "step_timeout"
         except Exception as exc:  # noqa: BLE001

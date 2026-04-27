@@ -33,11 +33,9 @@ from eval_engine.redroom import (  # noqa: E402
 )
 from eval_engine.redroom.probes.sandbagging import (  # noqa: E402
     DEFAULT_FRAMING_PAIRS,
-    FramingPair,
     SandbaggingProbe,
 )
 from eval_engine.redroom.trace_store import RedRoomTrace  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════
 #  Default framing pairs sanity

@@ -26,8 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, Iterable, Optional
-
+from collections.abc import Awaitable, Callable
 
 # ────────────────────────────────────────────────────────────────────
 #  Types
@@ -52,8 +51,8 @@ class ProbeAttempt:
     prompt: str
     response: str
     # Per-attempt judge verdict (set by the runner after JUDGE pass)
-    refusal_score: Optional[float] = None
-    leaked: Optional[bool] = None
+    refusal_score: float | None = None
+    leaked: bool | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -76,7 +75,7 @@ class ProbeResult:
     # If the probe ran to completion, this is None. If it bailed early
     # (timeout, target error, target refused too many times in a row),
     # this is the reason — useful for telemetry and retry decisions.
-    aborted_reason: Optional[str] = None
+    aborted_reason: str | None = None
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -121,7 +120,7 @@ class Probe(ABC):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         """Run the probe once.
 
