@@ -24,7 +24,43 @@ _ALLOWED_ENGINES = {"native", "garak", "pyrit", "artkit", "deepteam", "openrt", 
 _DEFAULT_ENGINES = ["native"]
 
 
-def build_attack_preview(session: Session, slots: dict) -> AttackPayload:
+_ATTACK_VERBS_STRIP = (
+    "red-team", "redteam", "red team", "attack", "attaque", "pentest",
+    "jailbreak", "exploit",
+)
+
+
+def _scan_query_for_target(session: Session, query: str) -> Optional[str]:
+    """Best-effort scan of the raw query for a model name when slots are empty.
+
+    Drops the leading attack verb, then probes the resolver with the leading
+    head of the query (3..1 tokens). Returns the candidate string for the
+    first match with score >= 0.85, or None.
+    """
+    if not query:
+        return None
+    text = query.strip()
+    lower = text.lower()
+    for verb in _ATTACK_VERBS_STRIP:
+        if lower.startswith(verb):
+            text = text[len(verb):].strip(" \t:,")
+            break
+    # Stop at the first parameter-like marker.
+    for marker in (" goal=", " goal ", " aggr=", " aggressiveness=", " engines="):
+        idx = text.lower().find(marker)
+        if idx >= 0:
+            text = text[:idx]
+    head_tokens = text.split()[:3]
+    while head_tokens:
+        cand = " ".join(head_tokens)
+        results = resolve_model(session, cand, limit=1)
+        if results and results[0].score >= 0.85:
+            return cand
+        head_tokens.pop()
+    return None
+
+
+def build_attack_preview(session: Session, slots: dict, query: str = "") -> AttackPayload:
     clarifications: list[str] = []
 
     # ── Resolve target model ─────────────────────────────────────────
@@ -35,6 +71,8 @@ def build_attack_preview(session: Session, slots: dict) -> AttackPayload:
         target_raw = str(slots["model_names"][0])
     elif "model_name" in slots and slots["model_name"]:
         target_raw = str(slots["model_name"])
+    elif query:
+        target_raw = _scan_query_for_target(session, query)
 
     target_id: Optional[int] = None
     target_name: Optional[str] = None

@@ -59,7 +59,7 @@ class SearchEngine:
         t0 = time.time()
         det = classify_deterministic(query)
         if det.confidence >= _DETERMINISTIC_THRESHOLD:
-            payload = await self._build_payload(det.intent, det.slots, det.route, det.route_label)
+            payload = await self._build_payload(det.intent, det.slots, det.route, det.route_label, query=query)
             return IntentResponse(
                 query=query,
                 intent=SearchIntent(det.intent) if det.intent != "unknown" else SearchIntent.UNKNOWN,
@@ -72,7 +72,7 @@ class SearchEngine:
         # Deterministic was not confident enough: escalate to LLM.
         try:
             llm = await classify_with_llm(query)
-            payload = await self._build_payload(llm.intent, llm.slots)
+            payload = await self._build_payload(llm.intent, llm.slots, query=query)
             intent_enum = SearchIntent(llm.intent) if llm.intent in {
                 "navigate", "ask", "launch", "attack"
             } else SearchIntent.UNKNOWN
@@ -159,6 +159,7 @@ class SearchEngine:
         slots: dict,
         route: Optional[str] = None,
         route_label: str = "",
+        query: str = "",
     ):
         if intent == "navigate":
             final_route = route or str(slots.get("route") or "/")
@@ -181,10 +182,10 @@ class SearchEngine:
             )
 
         if intent == "launch":
-            return build_launch_preview(self.session, slots)
+            return build_launch_preview(self.session, slots, query=query)
 
         if intent == "attack":
-            return build_attack_preview(self.session, slots)
+            return build_attack_preview(self.session, slots, query=query)
 
         # Unknown intent → AskPayload "I don't know"
         return AskPayload(

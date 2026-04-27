@@ -23,6 +23,70 @@ from eval_engine.search.resolvers import resolve_model, resolve_benchmark
 from eval_engine.search.schema import LaunchPayload, LaunchPreview, LaunchSlots
 
 
+# ── Verbs/connectors stripped before bare-entity scanning ─────────────────
+_LAUNCH_VERBS_STRIP = (
+    "evaluate", "evalue", "évalue", "eval", "run", "launch", "lance",
+    "tester", "test", "exécute", "execute",
+)
+_CONNECTORS_STRIP = (
+    "on", "with", "for", "using", "against", "sur", "avec", "pour", "contre",
+)
+
+
+def _scan_query_for_entities(
+    session: Session, query: str, kind: str
+) -> list[str]:
+    """Best-effort bare-text entity extractor.
+
+    Pulls candidate tokens out of the query (after dropping the verb and
+    common connectors) and keeps only those that resolve to a concrete
+    model/benchmark with score >= 0.85 (exact or prefix match).
+
+    Returns the matched candidate strings (not IDs) so the caller's existing
+    resolution path runs unchanged with full ambiguity handling.
+    """
+    if not query or kind not in ("model", "benchmark"):
+        return []
+
+    tokens = query.strip().split()
+    # Drop leading verb if present
+    while tokens and tokens[0].lower().rstrip(":,.") in _LAUNCH_VERBS_STRIP:
+        tokens = tokens[1:]
+
+    # Build candidate substrings: every contiguous run of non-connector tokens.
+    candidates: list[str] = []
+    run: list[str] = []
+    for tok in tokens:
+        clean = tok.strip("\"'`,.;:()[]{}")
+        if not clean:
+            continue
+        if clean.lower() in _CONNECTORS_STRIP:
+            if run:
+                candidates.append(" ".join(run))
+                run = []
+            continue
+        # Skip pure-numeric and parameter-like tokens (e.g. "L2", "50").
+        if clean.isdigit():
+            continue
+        if len(clean) <= 2 and clean.isalnum():
+            continue
+        if "=" in clean:
+            continue
+        run.append(clean)
+    if run:
+        candidates.append(" ".join(run))
+
+    resolver = resolve_model if kind == "model" else resolve_benchmark
+    matched: list[str] = []
+    seen: set[int] = set()
+    for cand in candidates:
+        results = resolver(session, cand, limit=1)
+        if results and results[0].score >= 0.85 and results[0].id not in seen:
+            matched.append(cand)
+            seen.add(results[0].id)
+    return matched
+
+
 DEFAULT_AVERAGE_INPUT_TOKENS = 800
 DEFAULT_AVERAGE_OUTPUT_TOKENS = 300
 # Conservative default when we cannot estimate cost at all (free / Ollama).
@@ -32,6 +96,7 @@ MINIMUM_DISPLAY_COST_USD = 0.0
 def build_launch_preview(
     session: Session,
     slots: dict,
+    query: str = "",
 ) -> LaunchPayload:
     """
     Build a CampaignCreate preview from classifier slots.
@@ -43,6 +108,11 @@ def build_launch_preview(
         max_samples: int             (optional)
         autonomy_level: "L1".."L5"   (optional)
         temperature: float           (optional)
+
+    The ``query`` argument is the original NL query — used as a fallback
+    when slots have no explicit @model / #benchmark markers (the
+    deterministic classifier only extracts those prefix forms). The bare-
+    text scan is best-effort: only confident matches (>= 0.85) are kept.
     """
     clarifications: list[str] = []
 
@@ -52,6 +122,10 @@ def build_launch_preview(
         model_query_list = [str(m) for m in slots["model_names"] if m]
     elif "model_name" in slots and slots["model_name"]:
         model_query_list = [str(slots["model_name"])]
+
+    if not model_query_list and query:
+        scan = _scan_query_for_entities(session, query, kind="model")
+        model_query_list = scan
 
     resolved_models: list[LLMModel] = []
     for q in model_query_list:
@@ -81,6 +155,10 @@ def build_launch_preview(
         bench_query_list = [str(b) for b in slots["benchmark_names"] if b]
     elif "benchmark_name" in slots and slots["benchmark_name"]:
         bench_query_list = [str(slots["benchmark_name"])]
+
+    if not bench_query_list and query:
+        scan = _scan_query_for_entities(session, query, kind="benchmark")
+        bench_query_list = scan
 
     resolved_benchmarks: list[Benchmark] = []
     for q in bench_query_list:
