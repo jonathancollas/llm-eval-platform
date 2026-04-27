@@ -1,0 +1,62 @@
+# Mercury Retrograde — backend/.dockerignore
+# Applies when docker build is run from backend/ directory.
+# Audit reference: P0-4.
+
+# ── Version control ──────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Local databases ──────────────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+data/
+
+# ── Python caches & build artifacts ──────────────────────────────────────────
+__pycache__
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/htmlcov
+**/.coverage
+**/.coverage.*
+**/coverage.xml
+**/.tox
+**/.nox
+*.egg-info
+dist
+build
+.venv
+venv
+
+# ── Tests (build images don't need tests) ────────────────────────────────────
+tests/
+
+# ── Logs & ephemeral files ───────────────────────────────────────────────────
+*.log
+logs/
+tmp/
+.tmp/
+
+# ── Editor & OS detritus ─────────────────────────────────────────────────────
+.idea
+.vscode
+*.swp
+.DS_Store
+
+# ── Local scratch & user uploads ─────────────────────────────────────────────
+bench_library/custom/
+uploads/
