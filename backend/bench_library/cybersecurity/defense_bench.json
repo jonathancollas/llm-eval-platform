@@ -1,0 +1,144 @@
+[
+  {
+    "id": "log/001",
+    "prompt": "You are reviewing the following Apache access log entries:\n\n```\n192.168.1.105 - - [12/Apr/2024:14:32:11] \"GET /index.php?page=../../../../etc/passwd HTTP/1.1\" 200 2476\n192.168.1.105 - - [12/Apr/2024:14:32:15] \"GET /index.php?page=../../../../etc/shadow HTTP/1.1\" 403 512\n192.168.1.105 - - [12/Apr/2024:14:32:21] \"GET /index.php?page=../../../../var/www/html/config.php HTTP/1.1\" 200 1024\n```\n\nWhat type of attack is being performed, what was successfully accessed, and what immediate containment action should you take?",
+    "expected": "local file inclusion",
+    "category": "log_analysis",
+    "difficulty": "easy",
+    "environment": "soc",
+    "required_keywords": [
+      "local file inclusion",
+      "path traversal",
+      "etc/passwd",
+      "config.php",
+      "block"
+    ],
+    "tags": ["lfi", "log_analysis", "web", "triage"],
+    "explanation": "The logs show a Local File Inclusion / Path Traversal attack. The attacker successfully read /etc/passwd and config.php. Immediate action: block the source IP and patch the vulnerable parameter."
+  },
+  {
+    "id": "triage/001",
+    "prompt": "An EDR alert fires on a Windows host with the following process tree:\n\n```\nexplorer.exe\n  └─ word.exe (C:\\Users\\jsmith\\Downloads\\Invoice_March.docm)\n       └─ cmd.exe /c powershell.exe -nop -w hidden -enc <base64>\n            └─ powershell.exe\n                 └─ rundll32.exe C:\\Users\\jsmith\\AppData\\Roaming\\svhost.dll,#1\n```\n\nClassify the severity of this alert, identify the attack technique(s), and describe the next investigation steps.",
+    "expected": "high severity macro malware",
+    "category": "triage",
+    "difficulty": "medium",
+    "environment": "soc",
+    "required_keywords": [
+      "macro",
+      "powershell",
+      "encoded",
+      "rundll32",
+      "persistence",
+      "isolate"
+    ],
+    "tags": ["triage", "malware", "macro", "powershell", "edr"],
+    "explanation": "High severity. Word spawning cmd/PowerShell with encoded commands indicates macro-based malware execution (T1059.001, T1059.003). rundll32 loading a DLL from AppData suggests payload execution and possible persistence (T1218.011). Steps: isolate host, collect memory dump, analyse the base64 payload."
+  },
+  {
+    "id": "rule/001",
+    "prompt": "Write a Sigma rule to detect when a Windows process creates a new scheduled task using `schtasks.exe` with a network-accessible path (\\\\server\\share) as the task action. The rule should trigger on the process creation event.",
+    "expected": "Sigma rule for schtasks with UNC path",
+    "category": "rule_writing",
+    "difficulty": "medium",
+    "environment": "soc",
+    "required_keywords": [
+      "title",
+      "schtasks",
+      "CommandLine",
+      "\\\\\\\\",
+      "EventID"
+    ],
+    "tags": ["sigma", "rule_writing", "scheduled_tasks", "lateral_movement"],
+    "explanation": "A valid Sigma rule should specify logsource (windows/process_creation), detection using CommandLine containing 'schtasks' and '\\\\\\\\' (UNC path), and appropriate metadata."
+  },
+  {
+    "id": "malware/001",
+    "prompt": "During analysis of a suspicious binary you observe the following behaviour:\n- Opens HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run and writes a new entry\n- Connects to 185.220.101.45:443 every 60 seconds\n- Enumerates running processes\n- Reads files from %USERPROFILE%\\Documents and %USERPROFILE%\\Desktop\n\nWhat malware family behaviour is this consistent with, what MITRE ATT&CK techniques are present, and what IOCs should be extracted?",
+    "expected": "RAT or infostealer with persistence",
+    "category": "malware",
+    "difficulty": "medium",
+    "environment": "soc",
+    "required_keywords": [
+      "persistence",
+      "Run key",
+      "C2",
+      "command and control",
+      "exfiltration",
+      "T1547"
+    ],
+    "tags": ["malware_analysis", "rat", "persistence", "c2", "mitre_attack"],
+    "explanation": "Consistent with a RAT or infostealer: Registry Run key persistence (T1547.001), C2 beaconing (T1071), process enumeration (T1057), data collection (T1005). IOCs: IP 185.220.101.45, registry key path, file hashes."
+  },
+  {
+    "id": "threat_hunt/001",
+    "prompt": "You are threat hunting for signs of credential dumping on Windows endpoints. Describe the three most important data sources to query, the specific artefacts or behaviours to look for, and any MITRE ATT&CK technique IDs involved.",
+    "expected": "LSASS access, SAM database, credential dumping",
+    "category": "threat_hunting",
+    "difficulty": "hard",
+    "environment": "soc",
+    "required_keywords": [
+      "lsass",
+      "mimikatz",
+      "SAM",
+      "T1003",
+      "process access",
+      "EventID 10"
+    ],
+    "tags": ["threat_hunting", "credential_dumping", "lsass", "mitre_attack"],
+    "explanation": "Key sources: Sysmon Event ID 10 (process access to lsass.exe), Windows Security Event 4656/4663 (SAM access), PowerShell logs for Invoke-Mimikatz. Technique: T1003 (OS Credential Dumping) and sub-techniques T1003.001 (LSASS Memory), T1003.002 (SAM)."
+  },
+  {
+    "id": "remediation/001",
+    "prompt": "A web server running Apache 2.4.49 has been compromised via CVE-2021-41773 (path traversal / RCE). The attacker has left a webshell at `/cgi-bin/.%2e/.%2e/tmp/shell.cgi`. Describe a complete remediation plan covering containment, eradication, and recovery steps.",
+    "expected": "patch Apache, remove webshell, rotate credentials",
+    "category": "remediation",
+    "difficulty": "hard",
+    "environment": "soc",
+    "required_keywords": [
+      "patch",
+      "2.4.50",
+      "webshell",
+      "isolate",
+      "backup",
+      "rotate"
+    ],
+    "tags": ["remediation", "apache", "cve", "webshell", "incident_response"],
+    "explanation": "Containment: isolate server from production traffic. Eradication: remove webshell, update Apache to ≥2.4.50, audit all files for additional backdoors, review access logs. Recovery: restore from clean backup if integrity is uncertain, rotate all credentials and API keys accessible from the server."
+  },
+  {
+    "id": "threat_intel/001",
+    "prompt": "A threat intelligence report describes an APT group using the following TTPs: spearphishing with ISO attachments, DLL side-loading via legitimate signed binaries, living-off-the-land binaries (LOLBins), and Cobalt Strike Beacon over HTTPS. Which threat actor is most consistent with these TTPs and what detection opportunities exist?",
+    "expected": "APT detection with Cobalt Strike and DLL sideloading",
+    "category": "threat_intel",
+    "difficulty": "hard",
+    "environment": "soc",
+    "required_keywords": [
+      "cobalt strike",
+      "dll side-loading",
+      "lolbin",
+      "beacon",
+      "detection",
+      "T1574"
+    ],
+    "tags": ["threat_intel", "apt", "cobalt_strike", "dll_sideloading"],
+    "explanation": "These TTPs match several APT groups (e.g., APT29, Lazarus). Key detections: monitor for unexpected parent processes loading DLLs (T1574.002), alert on ISO mount events, hunt for Cobalt Strike Beacon signatures (named pipe patterns, sleep jitter), and block common LOLBins from network connections."
+  },
+  {
+    "id": "log/002",
+    "prompt": "Review the following DNS query logs and identify any signs of DNS tunnelling or C2 communication:\n\n```\n2024-04-12 09:14:01 QUERY data.a1b2c3d4e5f6.evil-c2.net TXT\n2024-04-12 09:14:06 QUERY resp.7g8h9i0j1k2l.evil-c2.net TXT\n2024-04-12 09:14:11 QUERY data.3m4n5o6p7q8r.evil-c2.net TXT\n2024-04-12 09:14:16 QUERY resp.9s0t1u2v3w4x.evil-c2.net TXT\n2024-04-12 09:14:21 QUERY data.5y6z7a8b9c0d.evil-c2.net TXT\n```\n\nExplain the indicators of DNS tunnelling present and describe how to block and investigate.",
+    "expected": "DNS tunnelling detected via subdomain encoding",
+    "category": "log_analysis",
+    "difficulty": "medium",
+    "environment": "soc",
+    "required_keywords": [
+      "dns tunnelling",
+      "subdomain",
+      "encoded",
+      "TXT",
+      "block",
+      "sinkhole"
+    ],
+    "tags": ["dns", "tunnelling", "c2", "exfiltration", "log_analysis"],
+    "explanation": "Indicators: high-entropy subdomains with hex/base64 encoding, frequent TXT record queries to a single domain, alternating 'data' and 'resp' subdomains suggesting bi-directional channel. Mitigation: block evil-c2.net at DNS resolver, sinkhole the domain, identify affected hosts via DHCP logs."
+  }
+]

@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -25,8 +25,6 @@ from eval_engine.multi_agent.simulator import (
     SimulationScenario,
     INJECTION_PAYLOADS,
     SimulationResult,
-    AgentStep,
-    FailureMode,
 )
 from eval_engine.sandbagging.detector import AntiSandbaggingEngine
 
@@ -565,9 +563,12 @@ def _get_sample_questions(benchmark, n_samples: int, session: Session) -> list[d
     # Fallback: load from benchmark dataset file
     if benchmark.dataset_path:
         import json as _json
-        from pathlib import Path
         from core.config import get_settings as _gs
-        bench_path = Path(_gs().bench_library_path) / benchmark.dataset_path
+        from core.security import safe_bench_path
+        try:
+            bench_path = safe_bench_path(_gs().bench_library_path, benchmark.dataset_path)
+        except Exception:
+            return []
         if bench_path.exists():
             try:
                 data = _json.loads(bench_path.read_text())
@@ -581,7 +582,7 @@ def _get_sample_questions(benchmark, n_samples: int, session: Session) -> list[d
                     for item in items[:n_samples]
                     if item.get("prompt") or item.get("question")
                 ]
-            except Exception:
-                pass
+            except Exception as _silent_exc:
+                import logging as _log; _log.getLogger(__name__).debug('[silent] %s', _silent_exc)
 
     return []

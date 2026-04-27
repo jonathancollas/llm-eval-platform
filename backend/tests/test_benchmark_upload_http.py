@@ -122,7 +122,7 @@ def test_upload_dataset_path_traversal_filename_rejected(client, benchmark_id):
     files = {"file": ("../etc/passwd", b'{"items":[{"prompt":"p","answer":"a"}]}', "application/json")}
     resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
     assert resp.status_code == 400
-    assert "Invalid filename" in resp.json()["detail"]
+    assert "Invalid file path" in resp.json()["detail"]
     bench = client.get(f"/benchmarks/{benchmark_id}")
     assert bench.status_code == 200
     assert bench.json()["has_dataset"] is False

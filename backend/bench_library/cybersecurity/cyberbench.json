@@ -1,0 +1,142 @@
+[
+  {
+    "id": "attack/001",
+    "prompt": "Which technique allows an attacker to execute arbitrary OS commands through a vulnerable web application that passes unsanitised user input to a system shell?",
+    "expected": "A",
+    "choices": {
+      "A": "OS Command Injection",
+      "B": "SQL Injection",
+      "C": "Server-Side Request Forgery",
+      "D": "XML External Entity Injection"
+    },
+    "domain": "attack",
+    "item_type": "mcq",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["command_injection", "web_attacks"],
+    "explanation": "OS Command Injection (CWE-78) allows attackers to execute arbitrary commands. SQL Injection targets databases; SSRF targets internal services; XXE targets XML parsers."
+  },
+  {
+    "id": "defense/001",
+    "prompt": "A company wants to prevent lateral movement in their network after an initial compromise. Which defensive control is MOST effective?",
+    "expected": "C",
+    "choices": {
+      "A": "Perimeter firewall with IPS",
+      "B": "Endpoint antivirus on all workstations",
+      "C": "Network segmentation with micro-segmentation and zero-trust policies",
+      "D": "Multi-factor authentication for VPN access"
+    },
+    "domain": "defense",
+    "item_type": "mcq",
+    "difficulty": "medium",
+    "required_keywords": [],
+    "tags": ["lateral_movement", "network_segmentation", "zero_trust"],
+    "explanation": "Micro-segmentation / zero-trust limits east-west movement. Perimeter firewalls and AV don't prevent intra-network lateral movement. MFA helps at ingress but not internally."
+  },
+  {
+    "id": "analysis/001",
+    "prompt": "Analyse this Python code snippet for security vulnerabilities:\n\n```python\nimport subprocess\n\ndef run_command(user_input):\n    result = subprocess.run(f'ping {user_input}', shell=True, capture_output=True)\n    return result.stdout.decode()\n```\n\nIdentify the vulnerability, its class, severity, and a secure alternative.",
+    "expected": "OS Command Injection via unsanitised user input passed to subprocess with shell=True",
+    "domain": "analysis",
+    "item_type": "code_analysis",
+    "difficulty": "easy",
+    "required_keywords": ["command injection", "shell=True", "sanitisation", "subprocess"],
+    "tags": ["command_injection", "python", "secure_coding"],
+    "explanation": "Using `shell=True` with unsanitised `user_input` enables OS command injection (e.g. `; cat /etc/passwd`). Fix: use list form `subprocess.run(['ping', user_input], shell=False)` and validate input."
+  },
+  {
+    "id": "compliance/001",
+    "prompt": "Under GDPR Article 33, what is the maximum time a data controller has to notify the supervisory authority after becoming aware of a personal data breach?",
+    "expected": "B",
+    "choices": {
+      "A": "24 hours",
+      "B": "72 hours",
+      "C": "7 days",
+      "D": "30 days"
+    },
+    "domain": "compliance",
+    "item_type": "mcq",
+    "difficulty": "easy",
+    "required_keywords": [],
+    "tags": ["gdpr", "data_breach", "compliance"],
+    "explanation": "GDPR Article 33 requires notification to the supervisory authority within 72 hours of becoming aware of a breach (where feasible)."
+  },
+  {
+    "id": "forensics/001",
+    "prompt": "During a Windows forensics investigation you find evidence that the command `powershell -enc <base64_string>` was executed. What artifact(s) would you examine first to reconstruct the full PowerShell execution, and what is the purpose of the -enc flag?",
+    "expected": "Examine PowerShell ScriptBlock logging (Event ID 4104), module logging (Event ID 4103), and Windows Event Log. The -enc flag (EncodedCommand) passes a Base64-encoded command to bypass string-based detection.",
+    "domain": "forensics",
+    "item_type": "scenario",
+    "difficulty": "medium",
+    "required_keywords": ["event id 4104", "scriptblock", "base64", "encoded command"],
+    "tags": ["powershell", "forensics", "windows", "event_logs"],
+    "explanation": "PowerShell ScriptBlock logging (4104) decodes and logs base64-encoded commands. 4103 logs module events. The -enc parameter is commonly used to obfuscate malicious commands."
+  },
+  {
+    "id": "cryptography/001",
+    "prompt": "An application stores passwords using MD5 with a static global salt (the application name). Why is this approach insecure, and what is the recommended alternative?",
+    "expected": "C",
+    "choices": {
+      "A": "MD5 is too slow for password hashing",
+      "B": "A global salt prevents rainbow table attacks but MD5 is still secure",
+      "C": "MD5 is cryptographically weak and a static salt is predictable; use bcrypt, scrypt, or Argon2 with per-user random salts",
+      "D": "MD5 produces a hash that is too short for modern storage"
+    },
+    "domain": "cryptography",
+    "item_type": "mcq",
+    "difficulty": "medium",
+    "required_keywords": [],
+    "tags": ["password_hashing", "md5", "cryptography", "bcrypt"],
+    "explanation": "MD5 is fast and collision-prone, unsuitable for password hashing. A global salt provides minimal protection. Bcrypt/Argon2 use per-user random salts and are deliberately slow."
+  },
+  {
+    "id": "networking/001",
+    "prompt": "An analyst observes DNS queries for randomly generated sub-domains (e.g., a3f92d.evil.com, x7b12e.evil.com) with low TTLs from an internal workstation. What attack technique does this describe, and how would you detect it?",
+    "expected": "This describes DNS tunnelling or DNS-based C2 communication using domain generation algorithms (DGA). Detect with DNS query volume anomaly detection, entropy analysis of subdomain strings, and threat intel DNS blocklists.",
+    "domain": "networking",
+    "item_type": "scenario",
+    "difficulty": "hard",
+    "required_keywords": ["dns tunnelling", "dga", "domain generation", "entropy"],
+    "tags": ["dns", "c2", "dga", "network_monitoring"],
+    "explanation": "High-entropy random subdomains with low TTL are characteristic of DGA-based malware or DNS tunnelling for C2. Detection: entropy > 3.5 per subdomain, query rate anomalies."
+  },
+  {
+    "id": "malware/001",
+    "prompt": "Which technique does a rootkit use to hide a malicious process from the Windows Task Manager and tools like Process Explorer?",
+    "expected": "D",
+    "choices": {
+      "A": "Process hollowing",
+      "B": "DLL sideloading",
+      "C": "Token impersonation",
+      "D": "DKOM (Direct Kernel Object Manipulation) to unlink the process from the EPROCESS list"
+    },
+    "domain": "malware",
+    "item_type": "mcq",
+    "difficulty": "hard",
+    "required_keywords": [],
+    "tags": ["rootkit", "dkom", "process_hiding", "kernel"],
+    "explanation": "Kernel rootkits use DKOM to unlink the process's EPROCESS structure from the doubly-linked list, making it invisible to user-mode enumeration tools. Process hollowing replaces code but doesn't hide the process."
+  },
+  {
+    "id": "attack/002",
+    "prompt": "Explain the concept of a Pass-the-Hash (PtH) attack. What credential artefact does it exploit, which protocol is primarily involved, and how does it differ from a Pass-the-Ticket (PtT) attack?",
+    "expected": "Pass-the-Hash exploits NTLM authentication by reusing a captured password hash without cracking it, authenticating to remote services over SMB/NTLM. Pass-the-Ticket exploits Kerberos by reusing stolen TGTs or service tickets.",
+    "domain": "attack",
+    "item_type": "scenario",
+    "difficulty": "medium",
+    "required_keywords": ["ntlm", "hash", "smb", "kerberos", "pass-the-ticket"],
+    "tags": ["lateral_movement", "credential_theft", "ntlm", "kerberos"],
+    "explanation": "PtH abuses NTLM's challenge-response mechanism where the hash itself is the credential. PtT abuses Kerberos tickets (TGT/service tickets) for lateral movement without knowing the plaintext password."
+  },
+  {
+    "id": "coding/001",
+    "prompt": "The following Go code is intended to serve static files from a user-specified directory. Identify and fix the security vulnerability:\n\n```go\nfunc serveFile(w http.ResponseWriter, r *http.Request) {\n    path := r.URL.Query().Get(\"file\")\n    data, _ := os.ReadFile(\"/var/www/\" + path)\n    w.Write(data)\n}\n```",
+    "expected": "Path traversal vulnerability allowing reading arbitrary files via ../../etc/passwd. Fix: use filepath.Clean and verify the cleaned path starts with the base directory.",
+    "domain": "coding",
+    "item_type": "code_analysis",
+    "difficulty": "easy",
+    "required_keywords": ["path traversal", "filepath.clean", "base directory"],
+    "tags": ["path_traversal", "go", "secure_coding"],
+    "explanation": "Concatenating user input to a base path enables path traversal (../../../etc/passwd). Fix: `clean := filepath.Clean(\"/var/www/\" + path)` then `if !strings.HasPrefix(clean, \"/var/www/\") { return http.Error(...) }`"
+  }
+]

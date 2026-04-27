@@ -20,7 +20,6 @@ This module implements:
   3. Auto-generated causal hypotheses per cluster
   4. Cross-model pattern detection
 """
-from __future__ import annotations
 
 import re
 import math

@@ -2,12 +2,10 @@
 Tenant management — INFRA-3
 CRUD for tenants and users. Admin-only endpoints.
 """
-import json
 import logging
 import os
 import hmac
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field

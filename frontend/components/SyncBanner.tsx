@@ -3,10 +3,10 @@ import { useSync } from "@/lib/useSync";
 import { Spinner } from "./Spinner";
 
 export function SyncBanner() {
-  const { syncing, synced, benchmarksAdded, modelsAdded } = useSync();
+  const { syncing, synced, benchmarksAdded, modelsAdded, hfBenchmarksDiscovered } = useSync();
 
   // Show a brief confirmation only if something was actually imported
-  const showConfirm = synced && (benchmarksAdded > 0 || modelsAdded > 0);
+  const showConfirm = synced && (benchmarksAdded > 0 || modelsAdded > 0 || hfBenchmarksDiscovered > 0);
 
   if (!syncing && !showConfirm) return null;
 
@@ -22,6 +22,7 @@ export function SyncBanner() {
           ✓ Catalog synchronized
           {benchmarksAdded > 0 && ` · ${benchmarksAdded} benchmark${benchmarksAdded > 1 ? "s" : ""} added`}
           {modelsAdded > 0 && ` · ${modelsAdded} model${modelsAdded > 1 ? "s" : ""} added`}
+          {hfBenchmarksDiscovered > 0 && ` · ${hfBenchmarksDiscovered} HuggingFace benchmark${hfBenchmarksDiscovered > 1 ? "s" : ""} discovered`}
         </span>
       )}
     </div>

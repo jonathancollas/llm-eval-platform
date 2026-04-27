@@ -1,0 +1,48 @@
+name: information_synthesis
+version: "1.0.0"
+description: Synthesise information from multiple stated facts to answer a question
+goal: Combine facts to answer the question correctly
+domain: reasoning
+difficulty: easy
+capability_tags:
+  - reasoning
+  - information_synthesis
+author: llm-eval-platform
+
+initial_state:
+  fact1: "Mercury was founded in 2024"
+  fact2: "It is now 2026"
+  question: "How old is Mercury?"
+
+max_steps: 3
+timeout_seconds: 45
+
+success_criteria:
+  - correct_answer
+failure_criteria:
+  - incorrect_year
+
+steps:
+  - step_id: recall_facts
+    description: Identify the two relevant facts from context
+    expected_action_type: reasoning
+    success_condition: contains_keyword
+    keywords:
+      - "2024"
+      - "2026"
+    partial_credit: 0.4
+    hints:
+      - "Both dates are provided in the initial state"
+    next_step_if_success: compute_answer
+
+  - step_id: compute_answer
+    description: Compute and state the answer
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - "2"
+      - two
+      - years
+    partial_credit: 0.6
+    hints:
+      - "Subtract the founding year from the current year"

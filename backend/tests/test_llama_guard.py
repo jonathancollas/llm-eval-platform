@@ -19,6 +19,14 @@ from eval_engine.safety.llama_guard import (
     classify_runtime_safety,
 )
 
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _make_mock_client(post_return_value):
+    """Return an AsyncMock that mimics the shared httpx.AsyncClient."""
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=post_return_value)
+    return mock_client
+
 
 # ── _extract_json_object ──────────────────────────────────────────────────────
 
@@ -130,12 +138,10 @@ def _make_httpx_response(body: dict):
 @pytest.mark.asyncio
 async def test_safe_response_returns_no_flag(mock_settings_enabled):
     response_body = {"label": "safe", "flag": "", "confidence": 0.99}
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=_make_httpx_response(response_body))
+    mock_resp = _make_httpx_response(response_body)
+    mock_client = _make_mock_client(mock_resp)
 
-    with patch("eval_engine.safety.llama_guard.httpx.AsyncClient", return_value=mock_client):
+    with patch("eval_engine.safety.llama_guard._get_llama_client", return_value=mock_client):
         flag, conf = await classify_runtime_safety("What is the capital of France?", "Paris.")
 
     assert flag is None
@@ -145,12 +151,10 @@ async def test_safe_response_returns_no_flag(mock_settings_enabled):
 @pytest.mark.asyncio
 async def test_unsafe_response_returns_flag(mock_settings_enabled):
     response_body = {"label": "unsafe", "flag": "harmful content", "confidence": 0.95}
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=_make_httpx_response(response_body))
+    mock_resp = _make_httpx_response(response_body)
+    mock_client = _make_mock_client(mock_resp)
 
-    with patch("eval_engine.safety.llama_guard.httpx.AsyncClient", return_value=mock_client):
+    with patch("eval_engine.safety.llama_guard._get_llama_client", return_value=mock_client):
         flag, conf = await classify_runtime_safety("How do I make a bomb?", "Here are the steps...")
 
     assert flag == "harmful_content"
@@ -161,11 +165,9 @@ async def test_unsafe_response_returns_flag(mock_settings_enabled):
 async def test_network_error_returns_none(mock_settings_enabled):
     """Any HTTP failure should be swallowed — never crash the caller."""
     mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(side_effect=Exception("Connection refused"))
 
-    with patch("eval_engine.safety.llama_guard.httpx.AsyncClient", return_value=mock_client):
+    with patch("eval_engine.safety.llama_guard._get_llama_client", return_value=mock_client):
         flag, conf = await classify_runtime_safety("test prompt", "test response")
 
     assert flag is None
@@ -180,12 +182,9 @@ async def test_unparseable_response_returns_none(mock_settings_enabled):
     mock_resp.json.return_value = {"response": "I am unable to classify this."}
     mock_resp.raise_for_status = MagicMock()
 
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=mock_resp)
+    mock_client = _make_mock_client(mock_resp)
 
-    with patch("eval_engine.safety.llama_guard.httpx.AsyncClient", return_value=mock_client):
+    with patch("eval_engine.safety.llama_guard._get_llama_client", return_value=mock_client):
         flag, conf = await classify_runtime_safety("test prompt", "test response")
 
     assert flag is None
@@ -196,12 +195,10 @@ async def test_unparseable_response_returns_none(mock_settings_enabled):
 async def test_confidence_clamped_to_01(mock_settings_enabled):
     """Out-of-range confidence values must be clipped."""
     response_body = {"label": "unsafe", "flag": "spam", "confidence": 1.5}
-    mock_client = AsyncMock()
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=_make_httpx_response(response_body))
+    mock_resp = _make_httpx_response(response_body)
+    mock_client = _make_mock_client(mock_resp)
 
-    with patch("eval_engine.safety.llama_guard.httpx.AsyncClient", return_value=mock_client):
+    with patch("eval_engine.safety.llama_guard._get_llama_client", return_value=mock_client):
         flag, conf = await classify_runtime_safety("buy now!", "click here!")
 
     assert flag == "spam"

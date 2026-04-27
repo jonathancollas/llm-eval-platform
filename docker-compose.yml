@@ -23,7 +23,7 @@ services:
     env_file:
       - .env          # Load all secrets from .env (not committed to git)
     environment:
-      - DATABASE_URL=sqlite:///./data/eval_platform.db
+      - DATABASE_URL=sqlite:///./data/llm_eval.db
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -50,7 +50,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=sqlite:///./data/eval_platform.db
+      - DATABASE_URL=sqlite:///./data/llm_eval.db
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

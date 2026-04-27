@@ -17,6 +17,10 @@ pytest-asyncio>=0.25.0
 lm-eval>=0.4.4
 # NOTE: sqlitedict (transitive dep of lm-eval) has CVE-2024-35515 (insecure deserialization).
 # No fixed version is available yet. Monitor https://github.com/RaRe-Technologies/sqlitedict/issues.
+# MITIGATION: harness_runner.py calls simple_evaluate with use_cache=None and cache_requests=False
+# to ensure sqlitedict is never invoked at runtime.
 datasets>=2.18.0
 celery[redis]>=5.6.3
 giskard>=2.19.1
+pyyaml>=6.0.0
+artkit>=0.1.0

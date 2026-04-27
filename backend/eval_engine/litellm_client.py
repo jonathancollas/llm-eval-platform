@@ -164,7 +164,7 @@ async def complete(
     model: LLMModel,
     prompt: str,
     temperature: float = 0.0,
-    max_tokens: int = 256,
+    max_tokens: int = 2048,
     system_prompt: Optional[str] = None,
     output_schema: Optional[dict] = None,
     safety_constraints: Optional[dict] = None,

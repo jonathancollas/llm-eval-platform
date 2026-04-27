@@ -6,7 +6,7 @@ Query the event log and replay campaign state at any point in time.
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select, desc
 
 from core.database import get_session

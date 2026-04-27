@@ -4,14 +4,29 @@ The master secret_key from settings is used to derive the Fernet key via HKDF-SH
 so that the encryption key is properly domain-separated from the raw secret.
 """
 import base64
+from pathlib import Path
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from fastapi import HTTPException
 from .config import get_settings
 
 # HKDF info label — changing this would invalidate all stored ciphertexts,
 # so treat it as an opaque constant tied to this application.
 _HKDF_INFO = b"llm-eval-platform-fernet-v1"
+
+
+def safe_bench_path(bench_library_path: str, dataset_path: str) -> Path:
+    """Resolve dataset_path relative to bench_library_path and verify it stays inside.
+
+    Raises HTTP 400 if the resolved path escapes the bench_library root (path traversal).
+    Returns the resolved absolute Path on success.
+    """
+    root = Path(bench_library_path).resolve()
+    candidate = (root / dataset_path).resolve()
+    if not str(candidate).startswith(str(root)):
+        raise HTTPException(status_code=400, detail="Invalid dataset path.")
+    return candidate
 
 
 def _get_fernet() -> Fernet:

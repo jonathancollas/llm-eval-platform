@@ -37,9 +37,9 @@ export default function JudgePage() {
 
   useEffect(() => {
     if (!selectedId) return;
-    judgeApi.summary(selectedId).then(setSummary).catch(() => {});
-    judgeApi.agreement(selectedId).then(setAgreement).catch(() => {});
-    judgeApi.bias(selectedId).then(setBias).catch(() => {});
+    judgeApi.summary(selectedId).then(setSummary).catch((err) => console.warn("[fetch error]", err));
+    judgeApi.agreement(selectedId).then(setAgreement).catch((err) => console.warn("[fetch error]", err));
+    judgeApi.bias(selectedId).then(setBias).catch((err) => console.warn("[fetch error]", err));
   }, [selectedId]);
 
   const runEval = async () => {
@@ -49,9 +49,9 @@ export default function JudgePage() {
       const result = await judgeApi.evaluate(selectedId, selectedJudges, criteria, maxItems);
       setEvalResult(result);
       // Refresh metrics
-      judgeApi.summary(selectedId).then(setSummary).catch(() => {});
-      judgeApi.agreement(selectedId).then(setAgreement).catch(() => {});
-      judgeApi.bias(selectedId).then(setBias).catch(() => {});
+      judgeApi.summary(selectedId).then(setSummary).catch((err) => console.warn("[fetch error]", err));
+      judgeApi.agreement(selectedId).then(setAgreement).catch((err) => console.warn("[fetch error]", err));
+      judgeApi.bias(selectedId).then(setBias).catch((err) => console.warn("[fetch error]", err));
     } catch (e: any) {
       setError(e.message ?? String(e));
     } finally { setEvaluating(false); }
@@ -258,8 +258,8 @@ export default function JudgePage() {
                 const el = document.getElementById("oracle-input") as HTMLTextAreaElement;
                 const labels = JSON.parse(el.value);
                 const result = await judgeApi.calibrate(selectedId, labels);
-                alert(JSON.stringify(result.calibration, null, 2));
-              } catch (e: any) { alert("Error: " + e.message); }
+                console.error(JSON.stringify(result.calibration, null, 2));
+              } catch (e: any) { console.error("Error: " + e.message); }
             }} disabled={!selectedId}
               className="bg-slate-900 text-white px-5 py-2 rounded-lg text-sm hover:bg-slate-700 disabled:opacity-40">
               Calibrer les judges

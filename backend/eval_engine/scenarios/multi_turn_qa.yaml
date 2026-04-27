@@ -1,0 +1,70 @@
+name: multi_turn_qa
+version: "1.0.0"
+description: Answer a sequence of follow-up questions while retaining session context
+goal: Correctly answer all questions about the solar system across multiple turns
+domain: conversational
+difficulty: medium
+capability_tags:
+  - context_retention
+  - instruction_following
+author: llm-eval-platform
+
+initial_state:
+  topic: solar system
+  turn: 1
+
+max_steps: 4
+timeout_seconds: 90
+
+success_criteria:
+  - all_questions_answered
+failure_criteria:
+  - context_lost
+
+steps:
+  - step_id: initial_question
+    description: "Answer: How many planets are in the solar system?"
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - "8"
+      - eight
+    partial_credit: 0.25
+    hints:
+      - "Pluto was reclassified in 2006"
+
+  - step_id: follow_up_largest
+    description: "Answer follow-up: Which is the largest planet?"
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - jupiter
+    partial_credit: 0.25
+    hints:
+      - "The largest planet is a gas giant"
+
+  - step_id: follow_up_moons
+    description: "Answer: How many moons does Jupiter have?"
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - "95"
+      - moons
+      - moon
+    partial_credit: 0.25
+    hints:
+      - "As of 2023 the count was updated"
+
+  - step_id: follow_up_distance
+    description: "Answer: How far is Jupiter from the Sun?"
+    expected_action_type: answer
+    success_condition: contains_keyword
+    keywords:
+      - "778"
+      - million
+      - km
+      - au
+      - "5.2"
+    partial_credit: 0.25
+    hints:
+      - "Approximately 5.2 AU or 778 million km"

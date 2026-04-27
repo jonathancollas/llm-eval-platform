@@ -1,7 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { campaignsApi } from "@/lib/api";
-import type { Campaign } from "@/lib/api";
+import { useState } from "react";
+import { useCampaigns, usePolicyFrameworks } from "@/lib/useApi";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { Shield, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
@@ -33,18 +32,15 @@ const CHECK_STATUS = {
 };
 
 export default function PolicyPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [frameworks, setFrameworks] = useState<PolicyFramework[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<number | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<string>("eu_ai_act");
   const [evaluations, setEvaluations] = useState<Record<string, PolicyEvaluation> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    campaignsApi.list().then(cs => setCampaigns(cs.filter(c => c.status === "completed")));
-    fetch(`${API_BASE}/policy/frameworks`).then(r => r.json()).then(d => setFrameworks(d.frameworks ?? [])).catch(() => {});
-  }, []);
+  const { campaigns: allCampaigns } = useCampaigns();
+  const campaigns = allCampaigns.filter(c => c.status === "completed");
+  const { frameworks } = usePolicyFrameworks();
 
   const runEvaluation = async () => {
     if (!selectedCampaign) return;

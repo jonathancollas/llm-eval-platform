@@ -112,11 +112,83 @@ export function useDashboard(campaignId: number | null) {
 
 /** Genome for a campaign */
 export function useGenome(campaignId: number | null) {
-  const { data, error, isLoading } = useSWR<GenomeData>(
+  const { data, error, isLoading, mutate } = useSWR<GenomeData>(
     campaignId ? `/genome/campaigns/${campaignId}` : null,
     fetcher, { dedupingInterval: 10000, revalidateOnFocus: false }
   );
-  return { genome: data ?? null, isLoading, error };
+  return { genome: data ?? null, isLoading, error, refresh: mutate };
+}
+
+/** Genome model fingerprints */
+export function useGenomeModels() {
+  const { data, error, isLoading, mutate } = useSWR<{ fingerprints: any[] }>(
+    "/genome/models", fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
+  );
+  return { fingerprints: data?.fingerprints ?? [], isLoading, error, refresh: mutate };
+}
+
+/** Genome safety heatmap */
+export function useGenomeSafetyHeatmap() {
+  const { data, error, isLoading, mutate } = useSWR<any>(
+    "/genome/safety-heatmap", fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
+  );
+  return { heatmap: data ?? null, isLoading, error, refresh: mutate };
+}
+
+/** Policy regulatory frameworks */
+export function usePolicyFrameworks() {
+  const { data, error, isLoading } = useSWR<{ frameworks: any[] }>(
+    "/policy/frameworks", fetcher, { dedupingInterval: 60000, revalidateOnFocus: false }
+  );
+  return { frameworks: data?.frameworks ?? [], isLoading, error };
+}
+
+/** Evidence — RCT trials */
+export function useEvidenceTrials() {
+  const { data, error, isLoading } = useSWR<{ trials: any[] }>(
+    "/evidence/trials", fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
+  );
+  return { trials: data?.trials ?? [], isLoading, error };
+}
+
+/** Evidence — real world data */
+export function useEvidenceRwd() {
+  const { data, error, isLoading } = useSWR<{ datasets: any[] }>(
+    "/evidence/rwd", fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
+  );
+  return { datasets: data?.datasets ?? [], isLoading, error };
+}
+
+/** Evidence — real world evidence */
+export function useEvidenceRwe() {
+  const { data, error, isLoading } = useSWR<{ evidence: any[] }>(
+    "/evidence/rwe", fetcher, { dedupingInterval: 30000, revalidateOnFocus: false }
+  );
+  return { evidence: data?.evidence ?? [], isLoading, error };
+}
+
+/** Agent trajectories */
+export function useAgentTrajectories() {
+  const { data, error, isLoading, mutate } = useSWR<{ trajectories: any[] }>(
+    "/agents/trajectories", fetcher, { dedupingInterval: 5000, revalidateOnFocus: false }
+  );
+  return { trajectories: data?.trajectories ?? [], isLoading, error, refresh: mutate };
+}
+
+/** Agent evaluation dashboard */
+export function useAgentDashboard() {
+  const { data, error, isLoading } = useSWR<any>(
+    "/agents/dashboard", fetcher, { dedupingInterval: 10000, revalidateOnFocus: false }
+  );
+  return { dashboard: data ?? null, isLoading, error };
+}
+
+/** Multi-agent injection payloads */
+export function useMultiagentPayloads() {
+  const { data, error, isLoading } = useSWR<{ payloads: any[] }>(
+    "/multiagent/payloads", fetcher, { dedupingInterval: 60000, revalidateOnFocus: false }
+  );
+  return { payloads: data?.payloads ?? [], isLoading, error };
 }
 
 /** Failed items for a campaign */

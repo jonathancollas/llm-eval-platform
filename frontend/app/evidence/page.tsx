@@ -1,10 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
-import { Plus, FlaskConical, Database, Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
-
-import { API_BASE as API } from "@/lib/config";
+import { FlaskConical, Database, Lightbulb } from "lucide-react";
+import { useEvidenceTrials, useEvidenceRwd, useEvidenceRwe } from "@/lib/useApi";
 
 type Tab = "trials" | "rwd" | "rwe";
 
@@ -15,22 +14,13 @@ const GRADE_COLORS: Record<string, string> = {
 
 export default function EvidencePage() {
   const [tab, setTab] = useState<Tab>("trials");
-  const [trials, setTrials] = useState<any[]>([]);
-  const [rwdList, setRwdList] = useState<any[]>([]);
-  const [rweList, setRweList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<any>(null);
   const [showDesign, setShowDesign] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`${API}/evidence/trials`).then(r => r.json()),
-      fetch(`${API}/evidence/rwd`).then(r => r.json()),
-      fetch(`${API}/evidence/rwe`).then(r => r.json()),
-    ]).then(([t, d, e]) => {
-      setTrials(t.trials ?? []); setRwdList(d.datasets ?? []); setRweList(e.evidence ?? []);
-    }).finally(() => setLoading(false));
-  }, []);
+  const { trials, isLoading: loadingTrials } = useEvidenceTrials();
+  const { datasets: rwdList, isLoading: loadingRwd } = useEvidenceRwd();
+  const { evidence: rweList, isLoading: loadingRwe } = useEvidenceRwe();
+  const loading = loadingTrials || loadingRwd || loadingRwe;
 
   const TABS = [
     { key: "trials" as Tab, label: "🧪 Trials (RCT)", count: trials.length },

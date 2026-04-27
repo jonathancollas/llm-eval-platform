@@ -5,7 +5,6 @@ Supports LangChain/LangGraph traces, tool-use agents, and custom trajectories.
 import asyncio
 import json
 import logging
-import math
 from datetime import datetime
 from typing import Optional
 
@@ -15,7 +14,7 @@ from sqlmodel import Session, select, desc
 
 from core.database import get_session
 from core.config import get_settings
-from core.models import AgentTrajectory, LLMModel, Campaign
+from core.models import AgentTrajectory, LLMModel
 from core.utils import safe_json_load
 from core.utils import safe_extract_text
 

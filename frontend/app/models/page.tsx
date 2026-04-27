@@ -18,10 +18,10 @@ import {
   Download, HardDrive, Lock, Unlock,
 } from "lucide-react";
 
-const PROVIDERS: ModelProvider[] = ["openai","anthropic","mistral","groq","ollama","custom"];
+const PROVIDERS: ModelProvider[] = ["openai","anthropic","mistral","groq","ollama","vllm","custom"];
 const PROVIDER_LABELS: Record<string,string> = {
   openai:"OpenAI",anthropic:"Anthropic",mistral:"Mistral",
-  groq:"Groq",ollama:"Ollama (local)",custom:"Custom / OpenRouter",
+  groq:"Groq",ollama:"Ollama (local)",vllm:"vLLM (local)",custom:"Custom / OpenRouter",
 };
 const CARD_H = 80; // collapsed height px
 
@@ -50,6 +50,7 @@ function applyFilters(models: LLMModel[], f: Filters, q: string): LLMModel[] {
 // ── Sub-components (memoized) ─────────────────────────────────────────────────
 const AccessTypeBadge = memo(function AccessTypeBadge({ model }: { model: LLMModel }) {
   if (model.provider === "ollama") return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-purple-100 text-purple-700 border border-purple-200"><HardDrive size={8}/>LOCAL</span>;
+  if (model.provider === "vllm") return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-indigo-100 text-indigo-700 border border-indigo-200"><HardDrive size={8}/>LOCAL</span>;
   if ((model as any).is_open_weight) return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"><Unlock size={8}/>OPEN WEIGHT</span>;
   return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-500 border border-slate-200"><Lock size={8}/>API ONLY</span>;
 });
@@ -64,7 +65,7 @@ const OllamaPullButton = memo(function OllamaPullButton({ modelId }: { modelId: 
       if(!res.ok) throw new Error(`Ollama ${res.status}`);
       const reader = res.body?.getReader(); if(!reader) throw new Error("No body");
       const dec = new TextDecoder();
-      for(;;){const{done,value}=await reader.read();if(done)break;for(const l of dec.decode(value).split("\n").filter(Boolean)){try{const o=JSON.parse(l);if(o.status)setProg(o.status);if(o.completed&&o.total)setProg(`${Math.round(o.completed/o.total*100)}%`);}catch{}}}
+      for(;;){const{done,value}=await reader.read();if(done)break;for(const l of dec.decode(value).split("\n").filter(Boolean)){try{const o=JSON.parse(l);if(o.status)setProg(o.status);if(o.completed&&o.total)setProg(`${Math.round(o.completed/o.total*100)}%`);}catch (err) { console.warn("[error]", err); }}}
       setSt("done"); setProg("✓");
     } catch(e:any){setSt("error");setProg(String(e).slice(0,60));}
   },[modelId]);
@@ -172,7 +173,7 @@ export default function ModelsPage(){
   useEffect(()=>{
     if(loading)return;
     const ctrl=new AbortController();
-    const t=setTimeout(()=>ollamaApi.check(ctrl.signal).then(setOllamaStatus).catch(()=>{}),300);
+    const t=setTimeout(()=>ollamaApi.check(ctrl.signal).then(setOllamaStatus).catch((err) => console.warn("[fetch error]", err)),300);
     return()=>{clearTimeout(t);ctrl.abort();};
   },[loading]);
 
@@ -192,13 +193,13 @@ export default function ModelsPage(){
   },[]);
   const handleDelete=useCallback(async(id:number)=>{
     if(!confirm("Delete this model?"))return;
-    await modelsApi.delete(id).catch(e=>alert(String(e)));
+    await modelsApi.delete(id).catch(e=>console.error(String(e)));
     refreshModels();
   },[refreshModels]);
   const handleImportOllama=useCallback(async()=>{
     setImportingOllama(true);
-    try{const r=await ollamaApi.import();if(r.added>0)refreshModels();alert(r.available?`${r.added} model(s) imported`:"Ollama unavailable");}
-    catch(e:any){alert(String(e));}
+    try{const r=await ollamaApi.import();if(r.added>0)refreshModels();console.error(r.available?`${r.added} model(s) imported`:"Ollama unavailable");}
+    catch(e:any){console.error(String(e));}
     finally{setImportingOllama(false);}
   },[refreshModels]);
   const setFilter=useCallback(<K extends keyof Filters>(k:K,v:Filters[K])=>setFilters(f=>({...f,[k]:v})),[]);
@@ -212,7 +213,7 @@ export default function ModelsPage(){
       await modelsApi.create({name:form.name,provider:form.provider,model_id:form.model_id,endpoint:form.endpoint||undefined,api_key:form.api_key||undefined,context_length:form.context_length,cost_input_per_1k:form.cost_input_per_1k,cost_output_per_1k:form.cost_output_per_1k,notes:form.notes});
       setForm({name:"",provider:"custom",model_id:"",endpoint:"",api_key:"",context_length:4096,cost_input_per_1k:0,cost_output_per_1k:0,notes:""});
       setShowForm(false);refreshModels();
-    }catch(err:any){if(String(err).includes("409"))setDupWarning(`Already registered: ${form.model_id}`);else alert(String(err));}
+    }catch(err:any){if(String(err).includes("409"))setDupWarning(`Already registered: ${form.model_id}`);else console.error(String(err));}
     finally{setCreating(false);}
   },[form,models,refreshModels]);
 

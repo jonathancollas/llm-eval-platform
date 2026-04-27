@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
 
+    # ── vLLM (local OpenAI-compatible high-throughput server) ───────────────────
+    vllm_base_url: str = "http://localhost:8000"
+
     # ── Rebuff runtime injection detection ──────────────────────────────────────
     rebuff_enabled: bool = False
     rebuff_api_token: str = ""

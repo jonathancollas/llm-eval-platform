@@ -20,7 +20,6 @@ References:
   - van der Weij et al. (2025) — strategic deception in evaluation contexts
   - INESIA PDF — deliberative alignment training reduces but doesn't eliminate
 """
-from __future__ import annotations
 
 import asyncio
 import json

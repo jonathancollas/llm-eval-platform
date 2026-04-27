@@ -70,7 +70,7 @@ class InferenceAdapter(ABC):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         """Generate a completion. Returns AdapterResult with text + metadata."""
         ...
@@ -84,6 +84,7 @@ class InferenceAdapter(ABC):
             )
             return result.error is None
         except Exception:
+            logger.debug("[adapter] health_check failed for %r", self, exc_info=True)
             return False
 
     def __repr__(self) -> str:
@@ -106,7 +107,7 @@ class LiteLLMAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         from litellm import acompletion
 
@@ -166,7 +167,7 @@ class AnthropicAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import anthropic
         from core.config import get_settings
@@ -223,7 +224,7 @@ class OllamaAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import httpx
 
@@ -269,6 +270,7 @@ class OllamaAdapter(InferenceAdapter):
                 r = await client.get(f"{self.base_url}/api/tags")
                 return r.status_code == 200
         except Exception:
+            logger.debug("[adapter] Ollama health_check failed for %r", self, exc_info=True)
             return False
 
     async def list_models(self) -> list[str]:
@@ -281,6 +283,89 @@ class OllamaAdapter(InferenceAdapter):
                     return [m["name"] for m in r.json().get("models", [])]
         except Exception as e:
             logger.debug(f"Ollama list_models failed: {e}")
+        return []
+
+
+# ── vLLM adapter (local OpenAI-compatible server) ────────────────────────────
+
+class VLLMAdapter(InferenceAdapter):
+    """
+    vLLM local inference adapter.
+    vLLM exposes an OpenAI-compatible REST API at /v1/chat/completions.
+    Best for high-throughput, concurrent evaluations on a local GPU.
+
+    Run with: vllm serve <model_id> --port 8000
+    """
+
+    def __init__(self, model_id: str, base_url: str = "http://localhost:8000", **kwargs):
+        super().__init__(model_id, **kwargs)
+        self.base_url = base_url.rstrip("/")
+
+    async def complete(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        temperature: float = 0.0,
+        max_tokens: int = 512,
+    ) -> AdapterResult:
+        from litellm import acompletion
+
+        await self._screen_prompt(prompt, system_prompt)
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        t0 = time.time()
+        try:
+            resp = await acompletion(
+                model=f"openai/{self.model_id}",
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                api_base=f"{self.base_url}/v1",
+                api_key="vllm",  # vLLM ignores the key but LiteLLM requires a non-empty value
+            )
+            latency = int((time.time() - t0) * 1000)
+            choice = resp.choices[0]
+            usage = resp.usage or {}
+
+            return AdapterResult(
+                text=(choice.message.content or "").strip(),
+                latency_ms=latency,
+                input_tokens=getattr(usage, "prompt_tokens", 0),
+                output_tokens=getattr(usage, "completion_tokens", 0),
+                model_used=resp.model or self.model_id,
+                provider="vllm",
+                finish_reason=choice.finish_reason or "stop",
+            )
+        except Exception as e:
+            return AdapterResult(
+                text="",
+                latency_ms=int((time.time() - t0) * 1000),
+                provider="vllm",
+                error=str(e)[:300],
+            )
+
+    async def health_check(self) -> bool:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get(f"{self.base_url}/health")
+                return r.status_code == 200
+        except Exception:
+            return False
+
+    async def list_models(self) -> list[str]:
+        """Returns model IDs served by this vLLM instance."""
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(f"{self.base_url}/v1/models")
+                if r.status_code == 200:
+                    return [m["id"] for m in r.json().get("data", [])]
+        except Exception as e:
+            logger.debug(f"vLLM list_models failed: {e}")
         return []
 
 
@@ -301,7 +386,7 @@ class HuggingFaceAdapter(InferenceAdapter):
         prompt: str,
         system_prompt: str = "",
         temperature: float = 0.0,
-        max_tokens: int = 512,
+        max_tokens: int = 2048,
     ) -> AdapterResult:
         import httpx
 
@@ -322,8 +407,9 @@ def get_adapter(model) -> InferenceAdapter:
 
     Priority logic:
     1. Ollama provider → OllamaAdapter
-    2. Anthropic provider → AnthropicAdapter (direct, better billing)
-    3. Everything else → LiteLLMAdapter (OpenRouter, OpenAI, Groq, Mistral, custom)
+    2. vLLM provider → VLLMAdapter
+    3. Anthropic provider → AnthropicAdapter (direct, better billing)
+    4. Everything else → LiteLLMAdapter (OpenRouter, OpenAI, Groq, Mistral, custom)
     """
     from core.config import get_settings
     settings = get_settings()
@@ -336,6 +422,12 @@ def get_adapter(model) -> InferenceAdapter:
         return OllamaAdapter(
             model_id=model_id,
             base_url=settings.ollama_base_url or "http://localhost:11434",
+        )
+
+    if provider == "vllm":
+        return VLLMAdapter(
+            model_id=model_id,
+            base_url=endpoint or settings.vllm_base_url or "http://localhost:8000",
         )
 
     if provider == "anthropic":
@@ -372,6 +464,17 @@ async def adapter_health_dashboard() -> list[dict]:
         "provider": "Ollama (local)",
         "status": "online" if ollama_ok else "offline",
         "models": models,
+        "cost": "free",
+    })
+
+    # vLLM
+    vllm = VLLMAdapter("test", base_url=settings.vllm_base_url or "http://localhost:8000")
+    vllm_ok = await vllm.health_check()
+    vllm_models = await vllm.list_models() if vllm_ok else []
+    results.append({
+        "provider": "vLLM (local)",
+        "status": "online" if vllm_ok else "offline",
+        "models": vllm_models,
         "cost": "free",
     })
 

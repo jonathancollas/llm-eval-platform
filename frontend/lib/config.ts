@@ -21,4 +21,7 @@ export const APP_VERSION = "v0.6.0";
 export const OLLAMA_BASE_URL =
   process.env.NEXT_PUBLIC_OLLAMA_URL ?? "http://localhost:11434";
 
+export const VLLM_BASE_URL =
+  process.env.NEXT_PUBLIC_VLLM_URL ?? "http://localhost:8000";
+
 export const SYNC_TTL_MS = 15 * 60 * 1000; // 15 min

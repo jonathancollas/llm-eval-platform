@@ -12,6 +12,7 @@ import random
 from pathlib import Path
 
 from core.models import LLMModel, Benchmark
+from core.utils import resolve_safe_path
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,14 @@ class BaseBenchmarkRunner(ABC):
         """Load items from dataset_path JSON. Cached per file path."""
         if not self.benchmark.dataset_path:
             return []
-        full_path = self.bench_library_path / self.benchmark.dataset_path
+        try:
+            full_path = resolve_safe_path(self.bench_library_path, self.benchmark.dataset_path)
+        except ValueError:
+            logger.warning(
+                f"Dataset path '{self.benchmark.dataset_path}' resolves outside the allowed directory "
+                f"(benchmark: {self.benchmark.name}). Skipping dataset load."
+            )
+            return []
         if not full_path.exists():
             logger.warning(
                 f"Dataset file not found: {full_path} "
@@ -142,7 +150,7 @@ class BaseBenchmarkRunner(ABC):
         rng = random.Random(seed + 1)
         few_shot_examples = rng.sample(few_shot_pool, min(few_shot_count, len(few_shot_pool)))
 
-        max_tokens = self.config.get("max_tokens", 256)
+        max_tokens = self.config.get("max_tokens", 2048)
         item_results: list[ItemResult] = []
 
         for idx, item in enumerate(items):

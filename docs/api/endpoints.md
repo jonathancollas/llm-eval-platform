@@ -1,6 +1,6 @@
 # API Endpoints
 
-161 endpoints across 21 routers. All routes are prefixed with `/api`.
+167 endpoints across 22 routers. All routes are prefixed with `/api`.
 
 
 ## Agents
@@ -298,6 +298,20 @@ Results — powers all dashboards: heatmap, win rate, live feed, failed items, i
 | `GET` | `/results/campaign/{campaign_id}/contamination` | Analyze benchmark results for signs of test data contamination. |
 | `GET` | `/results/run/{run_id}/confidence` | Bootstrap confidence interval and reliability grade for an EvalRun. |
 | `GET` | `/results/compare` | Compare two campaigns side-by-side. |
+
+
+## Reward Hacking & Deception Detection
+
+Reward hacking and deception detection — M5 / P1. Detects shortcut behaviours, distribution shift, answer-pattern gaming, elicitation gaps, and anomalous performance. Flags high-risk runs for human review.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/reward-hacking/analyze/run/{run_id}` | Full reward-hacking analysis for one EvalRun (PR1 heuristics + PR2 deception + PR3 anomaly scoring + alerts). |
+| `GET` | `/reward-hacking/analyze/campaign/{campaign_id}` | Campaign-level reward-hacking analysis with peer comparison and aggregated alerts. |
+| `GET` | `/reward-hacking/alerts` | List reward-hacking alerts for a campaign, filterable by minimum severity. |
+| `GET` | `/reward-hacking/alerts/run/{run_id}` | Reward-hacking alerts for a single EvalRun. |
+| `POST` | `/reward-hacking/heuristics/scores` | Standalone PR1 statistical heuristics on raw score arrays (no DB lookup). |
+| `POST` | `/reward-hacking/deception/elicitation-gap` | Standalone PR2 elicitation gap + context shift analysis (no DB lookup). |
 
 
 ## Science

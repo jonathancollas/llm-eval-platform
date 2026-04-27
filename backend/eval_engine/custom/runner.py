@@ -7,7 +7,7 @@ Supported item formats:
   3. Classification:   { prompt, expected: "LABEL", category? }
 """
 import re
-from eval_engine.base import BaseBenchmarkRunner, ItemResult
+from eval_engine.base import BaseBenchmarkRunner
 
 
 class CustomRunner(BaseBenchmarkRunner):

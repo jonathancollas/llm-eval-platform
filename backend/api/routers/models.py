@@ -1,11 +1,12 @@
 """
 Model Registry — CRUD + connection testing.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, UTC
 import json
 from urllib.parse import urlparse
 
@@ -15,6 +16,7 @@ from core.security import encrypt_api_key, decrypt_api_key
 from core.utils import safe_json_load
 
 router = APIRouter(prefix="/models", tags=["models"])
+logger = logging.getLogger(__name__)
 
 
 def _validate_endpoint(url: Optional[str]) -> Optional[str]:
@@ -285,7 +287,7 @@ def update_model(model_id: int, payload: ModelUpdate, session: Session = Depends
         else:
             setattr(model, field, value)
 
-    model.updated_at = datetime.utcnow()
+    model.updated_at = datetime.now(UTC)
     session.add(model)
     session.commit()
     session.refresh(model)
@@ -348,7 +350,7 @@ async def model_explorer(session: Session = Depends(get_session)):
                 for m in r.json().get("models", []):
                     ollama_installed.add(m["name"].split(":")[0])
     except Exception:
-        pass
+        logger.debug("[models] failed to fetch Ollama installed models", exc_info=True)
 
     result = []
     for m in db_models:

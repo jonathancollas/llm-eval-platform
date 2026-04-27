@@ -22,6 +22,8 @@ def _load_campaigns_router():
     fake_job_queue = types.ModuleType("core.job_queue")
     fake_job_queue.submit_campaign = lambda *_args, **_kwargs: "fake-task"
     fake_job_queue.cancel_campaign = lambda *_args, **_kwargs: True
+    fake_job_queue.is_running = lambda *_args, **_kwargs: False
+    fake_job_queue.get_queue_status = lambda *_args, **_kwargs: {"mode": "celery"}
     sys.modules["core.job_queue"] = fake_job_queue
 
     spec = importlib.util.spec_from_file_location("campaigns_router_module", CAMPAIGNS_PATH)

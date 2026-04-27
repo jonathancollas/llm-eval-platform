@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { benchmarksApi } from "@/lib/api";
-import type { Benchmark, BenchmarkType } from "@/lib/api";
+import type { Benchmark } from "@/lib/api";
 import { useBenchmarks } from "@/lib/useApi";
 import { useSync } from "@/lib/useSync";
 import { PageHeader } from "@/components/PageHeader";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
 import { Spinner } from "@/components/Spinner";
 import { BenchmarkCatalogModal } from "@/components/BenchmarkCatalogModal";
+import { BenchmarkWizard } from "@/components/BenchmarkWizard";
 import { SecurityBenchmarkWizard } from "@/components/SecurityBenchmarkWizard";
 import { benchmarkTypeColor } from "@/lib/utils";
 import { Upload, Lock, AlertTriangle, Plus, ChevronDown, ChevronUp, Sparkles,
@@ -216,7 +217,7 @@ function BenchmarkCard({
       setLineage(lineageRes.ok ? await lineageRes.json() : null);
       setCitations(citationRes.ok ? await citationRes.json() : null);
       setOpen(true);
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const handleFork = async (e: React.MouseEvent) => {
@@ -391,13 +392,9 @@ export default function BenchmarksPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [exploringId, setExploringId] = useState<number | null>(null);
-  const [showCustomForm, setShowCustomForm] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [uploadId, setUploadId] = useState<number | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [customForm, setCustomForm] = useState({
-    name: "", description: "", type: "custom" as BenchmarkType, metric: "accuracy"
-  });
   const { benchmarksAdded: newBenchmarks } = useSync();
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -406,6 +403,26 @@ export default function BenchmarksPage() {
   // Tag management state
   const [editingTagsId, setEditingTagsId] = useState<number | null>(null);
   const [newTagInput, setNewTagInput] = useState("");
+  // Giskard full scan state
+  const [giskardScanBenchId, setGiskardScanBenchId] = useState<number | null>(null);
+  const [giskardScanModelId, setGiskardScanModelId] = useState<number | "">("");
+  const [giskardScanRunning, setGiskardScanRunning] = useState(false);
+  const [giskardScanResult, setGiskardScanResult] = useState<any | null>(null);
+  const [giskardScanError, setGiskardScanError] = useState<string | null>(null);
+  const [models, setModels] = useState<any[]>([]);
+  useEffect(() => {
+    fetch(`${API_BASE}/models?limit=100`).then(r => r.ok ? r.json() : null).then(d => d && setModels(d.items ?? [])).catch((err) => console.warn("[fetch error]", err));
+  }, []);
+
+  // #263 Coverage gap analysis
+  const [gaps, setGaps] = useState<any[]>([]);
+  const [showGaps, setShowGaps] = useState(false);
+  useEffect(() => {
+    fetch(`${API_BASE}/catalog/benchmarks/tasks/gaps`)
+      .then(r => r.json())
+      .then(d => setGaps(d.gaps ?? []))
+      .catch(() => {});
+  }, []);
 
   const handleFlipSource = async (b: Benchmark) => {
     const newSource = b.source === "inesia" ? "public" : "inesia";
@@ -416,7 +433,7 @@ export default function BenchmarksPage() {
         body: JSON.stringify({ source: newSource }),
       });
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const handleAddTag = async (b: Benchmark) => {
@@ -430,7 +447,7 @@ export default function BenchmarksPage() {
       });
       setNewTagInput("");
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const handleRemoveTag = async (b: Benchmark, tag: string) => {
@@ -441,7 +458,7 @@ export default function BenchmarksPage() {
         body: JSON.stringify({ tags: b.tags.filter(t => t !== tag) }),
       });
       load();
-    } catch {}
+    } catch (err) { console.warn("[error]", err); }
   };
 
   const { benchmarks: swrBenches, isLoading: swrBenchLoading, refresh: refreshBenches } = useBenchmarks();
@@ -451,23 +468,11 @@ export default function BenchmarksPage() {
   const filtered = benches.filter(b => matchFilter(b, filter));
   const countFor = (f: FilterKey) => benches.filter(b => matchFilter(b, f)).length;
 
-  const handleCreateCustom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreating(true);
-    try {
-      const b = await benchmarksApi.create({ ...customForm, tags: [customForm.type] });
-      setUploadId(b.id);
-      setShowCustomForm(false);
-      load();
-    } catch (err) { alert(String(err)); } finally { setCreating(false); }
-  };
-
   const handleUpload = async (benchId: number, file: File) => {
     try {
       await benchmarksApi.uploadDataset(benchId, file);
-      setUploadId(null);
       load();
-    } catch (err) { alert(String(err)); }
+    } catch (err) { console.error(String(err)); }
   };
 
   const handleImportNew = async () => {
@@ -483,51 +488,25 @@ export default function BenchmarksPage() {
     } finally { setImporting(false); }
   };
 
-  // HuggingFace explorer
-  const [showHfImport, setShowHfImport] = useState(false);
-  const [hfQuery, setHfQuery]           = useState("");
-  const [hfResults, setHfResults]       = useState<any[]>([]);
-  const [hfSearching, setHfSearching]   = useState(false);
-  const [hfSelected, setHfSelected]     = useState<any | null>(null);
-  const [hfForm, setHfForm]             = useState({ repo_id: "", split: "test", subset: "", max_items: 500 });
-  const [hfLoading, setHfLoading]       = useState(false);
-
-  const searchHF = async (q: string) => {
-    if (!q.trim()) { setHfResults([]); return; }
-    setHfSearching(true);
+  const runGiskardScan = async (benchId: number) => {
+    if (!giskardScanModelId) return;
+    setGiskardScanRunning(true);
+    setGiskardScanResult(null);
+    setGiskardScanError(null);
     try {
-      const res = await fetch(`https://huggingface.co/api/datasets?search=${encodeURIComponent(q)}&limit=12&sort=downloads&direction=-1`);
-      const data = await res.json();
-      setHfResults(Array.isArray(data) ? data : []);
-    } catch { setHfResults([]); }
-    setHfSearching(false);
-  };
-
-  useEffect(() => {
-    const t = setTimeout(() => searchHF(hfQuery), 400);
-    return () => clearTimeout(t);
-  }, [hfQuery]);
-
-  const handleHfImport = async () => {
-    if (!hfForm.repo_id.trim()) return;
-    setHfLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/benchmarks/import-huggingface`, {
+      const res = await fetch(`${API_BASE}/benchmarks/giskard/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...hfForm, subset: hfForm.subset || undefined }),
+        body: JSON.stringify({ model_id: giskardScanModelId, max_samples: 20 }),
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
       const data = await res.json();
-      alert(`✅ ${data.items_imported} items imported from ${data.source}\nBenchmark: ${data.benchmark_name}`);
-      setShowHfImport(false);
-      setHfForm({ repo_id: "", split: "test", subset: "", max_items: 500 });
-      setHfSelected(null);
-      setHfResults([]);
-      setHfQuery("");
-      load();
-    } catch (e: any) { alert(`Error: ${e.message}`); }
-    finally { setHfLoading(false); }
+      if (!res.ok) throw new Error(data.detail ?? `HTTP ${res.status}`);
+      setGiskardScanResult(data);
+    } catch (e: any) {
+      setGiskardScanError(e.message);
+    } finally {
+      setGiskardScanRunning(false);
+    }
   };
 
   return (
@@ -544,17 +523,17 @@ export default function BenchmarksPage() {
                 {importing ? "Import…" : `${newBenchmarks} nouveau${newBenchmarks > 1 ? "x" : ""}`}
               </button>
             )}
+            <button onClick={() => setShowGaps(prev => !prev)}
+              className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+              🗺 Gap Analysis
+            </button>
             <button onClick={() => setShowCatalog(true)}
               className="flex items-center gap-2 border border-slate-200 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
               🔍 Catalogue
             </button>
-            <button onClick={() => setShowHfImport(!showHfImport)}
-              className="flex items-center gap-2 border border-yellow-300 px-4 py-2 rounded-lg text-sm hover:bg-yellow-50 text-yellow-700 transition-colors">
-              🤗 HuggingFace
-            </button>
-            <button onClick={() => setShowCustomForm(!showCustomForm)}
+            <button onClick={() => setShowWizard(true)}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors">
-              <Plus size={14} /> Import Custom
+              <Plus size={14} /> Nouveau benchmark
             </button>
             <button onClick={() => setShowSecurityWizard(true)}
               className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700 transition-colors">
@@ -564,176 +543,39 @@ export default function BenchmarksPage() {
         }
       />
 
+      {/* #263 Coverage Gap Banner */}
+      {showGaps && gaps.length > 0 && (
+        <div className="mx-4 sm:mx-8 mt-4 bg-white border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🗺</span>
+              <span className="font-medium text-sm text-slate-900">Coverage Gap Analysis</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded">#263</span>
+            </div>
+            <button onClick={() => setShowGaps(false)} className="text-xs text-slate-400 hover:text-slate-600">✕ Close</button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+            {gaps.slice(0, 15).map((g: any) => (
+              <div key={g.domain} className={`rounded-lg p-2.5 border text-xs ${
+                g.coverage_level === "good"    ? "bg-green-50 border-green-200 text-green-800" :
+                g.coverage_level === "partial" ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+                                                 "bg-red-50 border-red-200 text-red-800"
+              }`}>
+                <div className="font-semibold capitalize">{g.domain}</div>
+                <div className="opacity-70">{g.benchmark_count} benchmark{g.benchmark_count !== 1 ? "s" : ""}</div>
+                <div className="mt-1 h-1 rounded-full bg-black/10 overflow-hidden">
+                  <div className="h-full rounded-full bg-current"
+                    style={{ width: `${Math.min(100, (g.benchmark_count / 10) * 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {importMsg && (
         <div className="mx-4 sm:mx-8 mt-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
           ✅ {importMsg}
-        </div>
-      )}
-
-      {/* HuggingFace Explorer */}
-      {showHfImport && (
-        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-yellow-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4 flex items-center gap-2">🤗 HuggingFace Dataset Explorer</h3>
-
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={hfQuery}
-              onChange={e => setHfQuery(e.target.value)}
-              placeholder="Search datasets… (e.g. mmlu, truthfulqa, gsm8k)"
-              className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            {hfSearching && <Spinner size={13} className="absolute right-3 top-1/2 -translate-y-1/2" />}
-          </div>
-
-          {/* Results grid */}
-          {hfResults.length > 0 && (
-            <div className="grid grid-cols-2 gap-2 mb-4 max-h-64 overflow-y-auto">
-              {hfResults.map((ds: any) => (
-                <button
-                  key={ds.id}
-                  onClick={() => { setHfSelected(ds); setHfForm(f => ({ ...f, repo_id: ds.id })); }}
-                  className={`text-left p-3 rounded-lg border transition-colors text-xs ${
-                    hfSelected?.id === ds.id
-                      ? "border-yellow-400 bg-yellow-50"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="font-medium text-slate-900 truncate">{ds.id}</div>
-                  <div className="text-slate-400 mt-0.5 flex items-center gap-2">
-                    {ds.downloads != null && <span>⬇ {(ds.downloads / 1000).toFixed(0)}k</span>}
-                    {ds.likes != null && <span>♥ {ds.likes}</span>}
-                    {ds.gated && <span className="text-amber-600 font-medium">GATED</span>}
-                  </div>
-                  {ds.tags?.slice(0, 3).map((t: string) => (
-                    <span key={t} className="inline-block mt-1 mr-1 px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px]">{t}</span>
-                  ))}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Import config — shown once dataset selected */}
-          {hfSelected && (
-            <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50 mb-4">
-              <div className="text-sm font-semibold text-slate-800 mb-3">
-                Import: <span className="font-mono text-yellow-700">{hfSelected.id}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Split</label>
-                  <select value={hfForm.split} onChange={e => setHfForm(f => ({ ...f, split: e.target.value }))}
-                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white">
-                    <option value="test">test</option>
-                    <option value="train">train</option>
-                    <option value="validation">validation</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Subset (optional)</label>
-                  <input value={hfForm.subset} onChange={e => setHfForm(f => ({ ...f, subset: e.target.value }))}
-                    placeholder="abstract_algebra…"
-                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 mb-1 block">Max items</label>
-                  <input type="number" value={hfForm.max_items} onChange={e => setHfForm(f => ({ ...f, max_items: +e.target.value }))}
-                    min={10} max={5000}
-                    className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
-                </div>
-              </div>
-              <div className="flex items-center gap-3 mt-3">
-                <button onClick={handleHfImport} disabled={hfLoading}
-                  className="flex items-center gap-2 bg-yellow-500 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-yellow-600 disabled:opacity-40">
-                  {hfLoading ? <Spinner size={13} /> : "🤗"}
-                  {hfLoading ? "Importing…" : "Import dataset"}
-                </button>
-                <button onClick={() => { setHfSelected(null); setHfForm(f => ({ ...f, repo_id: "" })); }}
-                  className="text-sm text-slate-500 hover:text-slate-700">
-                  Deselect
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Manual entry fallback */}
-          {!hfSelected && (
-            <div className="text-xs text-slate-400 flex items-center gap-2 mt-2">
-              Or enter manually:
-              <input value={hfForm.repo_id} onChange={e => setHfForm(f => ({ ...f, repo_id: e.target.value }))}
-                placeholder="owner/dataset-name"
-                className="border border-slate-200 rounded px-2 py-1 text-xs w-48" />
-              {hfForm.repo_id && (
-                <button onClick={handleHfImport} disabled={hfLoading}
-                  className="text-xs bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 disabled:opacity-40">
-                  {hfLoading ? "…" : "Import"}
-                </button>
-              )}
-            </div>
-          )}
-
-          <button onClick={() => { setShowHfImport(false); setHfResults([]); setHfSelected(null); setHfQuery(""); }}
-            className="mt-4 text-xs text-slate-400 hover:text-slate-600">
-            ✕ Fermer
-          </button>
-        </div>
-      )}
-
-      {showCustomForm && (
-        <div className="mx-4 sm:mx-8 mt-6 bg-white border border-slate-200 rounded-xl p-6">
-          <h3 className="font-medium text-slate-900 mb-4">New custom benchmark</h3>
-          <form onSubmit={handleCreateCustom} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Nom</label>
-              <input required value={customForm.name}
-                onChange={e => setCustomForm(f => ({ ...f, name: e.target.value }))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Type</label>
-              <select value={customForm.type}
-                onChange={e => setCustomForm(f => ({ ...f, type: e.target.value as BenchmarkType }))}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900">
-                <option value="custom">Custom</option>
-                <option value="academic">Academic</option>
-                <option value="safety">Safety</option>
-                <option value="coding">Coding</option>
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Description</label>
-              <textarea value={customForm.description}
-                onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))}
-                rows={2}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Metric</label>
-              <input value={customForm.metric}
-                onChange={e => setCustomForm(f => ({ ...f, metric: e.target.value }))}
-                placeholder="accuracy"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
-            </div>
-            <div className="col-span-2 flex gap-3 pt-1">
-              <button type="submit" disabled={creating}
-                className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50">
-                {creating ? "Creating…" : "Create"}
-              </button>
-              <button type="button" onClick={() => setShowCustomForm(false)} className="px-4 py-2 text-sm text-slate-600">Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {uploadId && (
-        <div className="mx-4 sm:mx-8 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
-          <Upload size={16} className="text-blue-600 shrink-0" />
-          <p className="text-sm text-blue-700">Benchmark created! Upload your JSON dataset:</p>
-          <input type="file" accept=".json"
-            onChange={e => e.target.files?.[0] && handleUpload(uploadId, e.target.files[0])}
-            className="text-sm" />
-          <button onClick={() => setUploadId(null)} className="ml-auto text-xs text-blue-500">fermer</button>
         </div>
       )}
 
@@ -869,6 +711,92 @@ export default function BenchmarksPage() {
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
                         <Eye size={12} /> Explorer le dataset
                       </button>
+                      {/* Giskard full scan — shown only for giskard benchmarks */}
+                      {b.name.toLowerCase().includes("giskard") && (
+                        <div className="w-full mt-2 border border-green-200 rounded-xl bg-green-50 p-3 space-y-2" onClick={e => e.stopPropagation()}>
+                          <p className="text-xs font-semibold text-green-800 flex items-center gap-1.5">
+                            <Shield size={12} /> Giskard Full Vulnerability Scan
+                          </p>
+                          <p className="text-xs text-green-700">
+                            Run the Giskard LLM scanner against a model to get a structured vulnerability report.
+                          </p>
+                          <div className="flex gap-2 flex-wrap items-center">
+                            <select
+                              value={giskardScanModelId}
+                              onChange={e => { setGiskardScanModelId(Number(e.target.value) || ""); setGiskardScanBenchId(b.id); setGiskardScanResult(null); setGiskardScanError(null); }}
+                              className="text-xs border border-green-300 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none"
+                            >
+                              <option value="">Select model…</option>
+                              {models.map((m: any) => (
+                                <option key={m.id} value={m.id}>{m.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => runGiskardScan(b.id)}
+                              disabled={giskardScanRunning || !giskardScanModelId}
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-40 transition-colors"
+                            >
+                              {giskardScanRunning && giskardScanBenchId === b.id ? <Spinner size={11} /> : <Shield size={11} />}
+                              {giskardScanRunning && giskardScanBenchId === b.id ? "Scanning…" : "Run Giskard scan"}
+                            </button>
+                          </div>
+                          {giskardScanError && giskardScanBenchId === b.id && (
+                            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{giskardScanError}</p>
+                          )}
+                          {giskardScanResult && giskardScanBenchId === b.id && (
+                            <div className="bg-white border border-green-200 rounded-lg p-3 text-xs space-y-2">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="font-semibold text-slate-800">{giskardScanResult.model_name}</span>
+                                <span className={`px-2 py-0.5 rounded font-bold ${
+                                  giskardScanResult.safety_score >= 0.8 ? "bg-green-100 text-green-700"
+                                  : giskardScanResult.safety_score >= 0.5 ? "bg-yellow-100 text-yellow-700"
+                                  : "bg-red-100 text-red-700"
+                                }`}>
+                                  Safety: {Math.round((giskardScanResult.safety_score ?? 0) * 100)}%
+                                </span>
+                                <span className="text-slate-400">{giskardScanResult.num_items} items</span>
+                                {giskardScanResult.metrics?.giskard_available !== undefined && (
+                                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                                    giskardScanResult.metrics.giskard_available
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-yellow-100 text-yellow-700"
+                                  }`}>
+                                    Giskard SDK: {giskardScanResult.metrics.giskard_available ? "installed" : "fallback"}
+                                  </span>
+                                )}
+                              </div>
+                              {giskardScanResult.metrics?.vulnerability_scores && Object.keys(giskardScanResult.metrics.vulnerability_scores).length > 0 && (
+                                <div>
+                                  <p className="text-slate-500 font-semibold mb-1">Vulnerability breakdown:</p>
+                                  <div className="space-y-1">
+                                    {Object.entries(giskardScanResult.metrics.vulnerability_scores as Record<string, number>).map(([vuln, score]) => (
+                                      <div key={vuln} className="flex items-center gap-2">
+                                        <span className="text-slate-600 flex-1 truncate">{vuln}</span>
+                                        <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full ${score >= 0.8 ? "bg-green-500" : score >= 0.5 ? "bg-yellow-500" : "bg-red-500"}`}
+                                            style={{ width: `${Math.round(score * 100)}%` }}
+                                          />
+                                        </div>
+                                        <span className={`font-mono font-bold w-9 text-right ${score >= 0.8 ? "text-green-700" : score >= 0.5 ? "text-yellow-700" : "text-red-700"}`}>
+                                          {Math.round(score * 100)}%
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {giskardScanResult.metrics?.alerts?.length > 0 && (
+                                <div className="bg-red-50 border border-red-200 rounded p-2 space-y-0.5">
+                                  {(giskardScanResult.metrics.alerts as string[]).map((alert: string, ai: number) => (
+                                    <p key={ai} className="text-red-700">⚠ {alert}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {!b.is_builtin && (
                         <>
                           <label className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
@@ -893,6 +821,12 @@ export default function BenchmarksPage() {
 
       {showCatalog && <BenchmarkCatalogModal onClose={() => { setShowCatalog(false); load(); }} />}
       {exploringId !== null && <ItemExplorer benchmarkId={exploringId} onClose={() => setExploringId(null)} />}
+      {showWizard && (
+        <BenchmarkWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => { setShowWizard(false); load(); }}
+        />
+      )}
       {showSecurityWizard && (
         <SecurityBenchmarkWizard
           onClose={() => setShowSecurityWizard(false)}

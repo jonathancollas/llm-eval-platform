@@ -7,7 +7,6 @@ Scientific grounding:
   - Bootstrap confidence intervals (Efron & Tibshirani, 1993)
   - Wilson score interval for binomial proportions (Wilson, 1927)
 """
-from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass

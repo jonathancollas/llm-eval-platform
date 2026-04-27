@@ -1,9 +1,9 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Spinner } from "@/components/Spinner";
 import { ExternalLink, ChevronDown, ChevronUp, FlaskConical, Brain, Shield, AlertTriangle } from "lucide-react";
-import { useModels } from "@/lib/useApi";
+import { useModels, useBenchmarks, useCampaigns } from "@/lib/useApi";
 import { API_BASE } from "@/lib/config";
 
 // ── Science Engine Panel ──────────────────────────────────────────────────────
@@ -14,18 +14,13 @@ function ScienceEnginePanel() {
   const [benchmarkId, setBenchmarkId] = useState<number | "">("");
   const [campaignId, setCampaignId] = useState<number | "">("");
   const [autonomyLevel, setAutonomyLevel] = useState("L2");
-  const [benchmarks, setBenchmarks] = useState<any[]>([]);
-  const [campaigns, setCampaigns] = useState<any[]>([]);
   const [domains, setDomains] = useState<Record<string, number>>({});
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { models } = useModels();
-
-  useEffect(() => {
-    fetch(`${API_BASE}/benchmarks/`).then(r => r.json()).then(d => setBenchmarks(Array.isArray(d) ? d : [])).catch(() => {});
-    fetch(`${API_BASE}/campaigns/`).then(r => r.json()).then(d => setCampaigns(Array.isArray(d) ? d : [])).catch(() => {});
-  }, []);
+  const { benchmarks } = useBenchmarks();
+  const { campaigns } = useCampaigns();
 
   const run = async (endpoint: string, body: object, method = "POST") => {
     setLoading(true); setResult(null); setError(null);
@@ -236,7 +231,7 @@ function HeuristicGraph() {
     fetch(`${API_BASE}/genome/heuristics`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { setData(d); setOpen(true); })
-      .catch(() => {});
+      .catch((err) => console.warn("[fetch error]", err));
   };
 
   return (

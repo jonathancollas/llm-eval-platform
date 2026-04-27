@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SyncBanner } from "@/components/SyncBanner";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { CommandPalette } from "@/components/CommandPalette";
 
 export const metadata: Metadata = {
   title: "EVAL RESEARCH OS (made with love by INESIA)",
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="bg-slate-50 text-slate-900 antialiased theme-light">
         <ThemeProvider>
+          <CommandPalette />
           <div className="flex h-screen overflow-hidden pt-14 md:pt-0">
             <Sidebar />
             <main className="flex-1 overflow-auto flex flex-col">

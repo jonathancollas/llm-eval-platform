@@ -68,13 +68,36 @@ else:
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
     _run_alembic_migrations()
+    _migrate_add_columns()
     _reset_stuck_campaigns()
     _update_has_dataset()
     _seed_builtin_benchmarks()
+    _seed_capability_taxonomy()
 
 
 def _run_alembic_migrations() -> None:
     """Run Alembic schema migrations."""
+    try:
+        from alembic import command
+        from alembic.config import Config
+    except Exception as e:
+        logger.warning(f"Alembic unavailable, skipping migrations: {e}")
+        return
+
+    base_dir = Path(__file__).resolve().parent.parent
+    alembic_ini = base_dir / "alembic.ini"
+    script_location = base_dir / "alembic"
+    if not alembic_ini.exists() or not script_location.exists():
+        logger.info("Alembic config not found, skipping migrations.")
+        return
+
+    cfg = Config(str(alembic_ini))
+    cfg.set_main_option("script_location", str(script_location))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url)
+    command.upgrade(cfg, "head")
+    logger.info("Alembic migrations completed.")
+
+
 def _migrate_add_columns() -> None:
     """Add new columns to existing tables (idempotent). SQLite only — PostgreSQL uses create_all."""
     if not _is_sqlite:
@@ -108,24 +131,17 @@ def _migrate_add_columns() -> None:
     db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")
     if not db_path or db_path == ":memory:":
         return
-    try:
-        from alembic import command
-        from alembic.config import Config
-    except Exception as e:
-        logger.warning(f"Alembic unavailable, skipping migrations: {e}")
-        return
 
-    base_dir = Path(__file__).resolve().parent.parent
-    alembic_ini = base_dir / "alembic.ini"
-    script_location = base_dir / "alembic"
-    if not alembic_ini.exists() or not script_location.exists():
-        logger.info("Alembic config not found, skipping migrations.")
-        return
-
-    cfg = Config(str(alembic_ini))
-    cfg.set_main_option("script_location", str(script_location))
-    cfg.set_main_option("sqlalchemy.url", settings.database_url)
-    command.upgrade(cfg, "head")
+    with sqlite3.connect(db_path) as conn:
+        for table, column, col_type, default in new_columns:
+            try:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type} DEFAULT {default}"
+                )
+                logger.info(f"Added column {table}.{column}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists — idempotent
+        conn.commit()
 
 
 def _reset_stuck_campaigns() -> None:
@@ -134,7 +150,7 @@ def _reset_stuck_campaigns() -> None:
     Uses heartbeat timestamp to distinguish crashed vs legitimately running campaigns.
     Stale = no heartbeat for >2 minutes = process crashed.
     """
-    from datetime import timedelta
+    from datetime import datetime, timedelta, UTC
     from core.models import Campaign, JobStatus
     STALE_THRESHOLD = timedelta(seconds=120)
 
@@ -144,7 +160,7 @@ def _reset_stuck_campaigns() -> None:
         ).all()
         if not stuck:
             return
-        now = __import__("datetime").datetime.utcnow()
+        now = datetime.now(UTC)
         reset_count = 0
         for c in stuck:
             heartbeat = getattr(c, "last_heartbeat_at", None)
@@ -270,3 +286,108 @@ def _seed_builtin_benchmarks() -> None:
                     b.has_dataset = (Path(settings.bench_library_path) / b.dataset_path).exists()
                 session.add(b)
         session.commit()
+
+
+def _seed_capability_taxonomy() -> None:
+    """Populate capability_domains, capability_sub_capabilities, and
+    benchmark_capability_mappings from the canonical CAPABILITY_ONTOLOGY dict.
+
+    This function is idempotent — safe to call on every startup.
+    It uses slug-based upsert logic so re-runs never create duplicates.
+    """
+    from core.models import (
+        Benchmark,
+        BenchmarkCapabilityMapping,
+        CapabilityDomainRecord,
+        CapabilitySubCapabilityRecord,
+    )
+    from eval_engine.capability_taxonomy import CAPABILITY_ONTOLOGY
+
+    with Session(engine) as session:
+        # Build slug → id maps for fast lookup
+        domain_map: dict[str, int] = {}
+        sub_cap_map: dict[tuple[int, str], int] = {}  # (domain_id, slug) → id
+
+        # ── 1. Seed domains ──────────────────────────────────────────────────
+        for sort_idx, (domain_slug, domain_data) in enumerate(CAPABILITY_ONTOLOGY.items()):
+            existing = session.exec(
+                select(CapabilityDomainRecord).where(CapabilityDomainRecord.slug == domain_slug)
+            ).first()
+            if existing:
+                domain_map[domain_slug] = existing.id  # type: ignore[assignment]
+            else:
+                rec = CapabilityDomainRecord(
+                    slug=domain_slug,
+                    display_name=domain_slug.replace("_", " ").title(),
+                    description=domain_data.get("description", ""),
+                    sort_order=sort_idx,
+                )
+                session.add(rec)
+                session.flush()
+                domain_map[domain_slug] = rec.id  # type: ignore[assignment]
+                logger.info(f"[taxonomy] Seeded domain: {domain_slug}")
+
+        # ── 2. Seed sub-capabilities ─────────────────────────────────────────
+        for domain_slug, domain_data in CAPABILITY_ONTOLOGY.items():
+            domain_id = domain_map[domain_slug]
+            for sub_slug, sub_data in domain_data.get("sub_capabilities", {}).items():
+                key = (domain_id, sub_slug)
+                existing = session.exec(
+                    select(CapabilitySubCapabilityRecord).where(
+                        CapabilitySubCapabilityRecord.domain_id == domain_id,
+                        CapabilitySubCapabilityRecord.slug == sub_slug,
+                    )
+                ).first()
+                if existing:
+                    sub_cap_map[key] = existing.id  # type: ignore[assignment]
+                else:
+                    rec = CapabilitySubCapabilityRecord(
+                        domain_id=domain_id,
+                        slug=sub_slug,
+                        display_name=sub_slug.replace("_", " ").title(),
+                        description=sub_data.get("description", ""),
+                        difficulty=sub_data.get("difficulty", "medium"),
+                        risk_level=sub_data.get("risk_level", "low"),
+                    )
+                    session.add(rec)
+                    session.flush()
+                    sub_cap_map[key] = rec.id  # type: ignore[assignment]
+                    logger.info(f"[taxonomy] Seeded sub-capability: {domain_slug}/{sub_slug}")
+
+        # ── 3. Auto-map existing benchmarks to sub-capabilities ──────────────
+        from eval_engine.capability_taxonomy import CapabilityTaxonomyEngine
+        engine_tax = CapabilityTaxonomyEngine()
+        benchmarks = session.exec(select(Benchmark)).all()
+
+        for bench in benchmarks:
+            inferred = engine_tax.infer_capabilities_from_benchmark(bench.name)
+            for domain_slug, _cap, sub_slug in inferred:
+                domain_id = domain_map.get(domain_slug)
+                if domain_id is None:
+                    continue
+                sub_cap_id = sub_cap_map.get((domain_id, sub_slug))
+                if sub_cap_id is None:
+                    continue
+                # Upsert: skip if mapping already exists
+                existing_map = session.exec(
+                    select(BenchmarkCapabilityMapping).where(
+                        BenchmarkCapabilityMapping.benchmark_id == bench.id,
+                        BenchmarkCapabilityMapping.sub_capability_id == sub_cap_id,
+                    )
+                ).first()
+                if not existing_map:
+                    session.add(BenchmarkCapabilityMapping(
+                        benchmark_id=bench.id,
+                        sub_capability_id=sub_cap_id,
+                        mapping_source="auto",
+                    ))
+                    logger.debug(
+                        f"[taxonomy] Mapped benchmark '{bench.name}' → {domain_slug}/{sub_slug}"
+                    )
+
+        session.commit()
+        logger.info(
+            f"[taxonomy] Taxonomy seed complete: {len(domain_map)} domains, "
+            f"{len(sub_cap_map)} sub-capabilities."
+        )
+
