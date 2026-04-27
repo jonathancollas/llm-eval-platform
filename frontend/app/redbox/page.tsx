@@ -254,7 +254,7 @@ function AttackCampaign({ models }: { models: any[] }) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-lg">{result.risk_level} RISK</span>
                   <span className="text-2xl">{
-                    { CRITICAL: "☠️", HIGH: "🔴", MODERATE: "🟠", LOW: "🟢" }[result.risk_level] || "⚪"
+                    ({ CRITICAL: "☠️", HIGH: "🔴", MODERATE: "🟠", LOW: "🟢" } as Record<string, string>)[result.risk_level] || "⚪"
                   }</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center mb-3">
