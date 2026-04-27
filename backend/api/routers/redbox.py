@@ -7,7 +7,7 @@ import importlib
 import json
 import logging
 import time
-from typing import Optional, Literal
+from typing import Any, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -48,6 +48,16 @@ class RunRequest(BaseModel):
 class ReplayRequest(BaseModel):
     model_id: int
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+
+
+def _completion_text(result: Any) -> str:
+    """Extract model text from the shared completion wrapper used by REDBOX."""
+    if isinstance(result, str):
+        return result
+    text = getattr(result, "text", None)
+    if isinstance(text, str):
+        return text
+    return str(result)
 
 
 # ── Mutation Templates (rule-based fallback) ──────────────────────────────────
@@ -1410,7 +1420,7 @@ async def run_attack_campaign(
                         ),
                         timeout=45,
                     )
-                    resp_text = resp if isinstance(resp, str) else str(resp)
+                    resp_text = _completion_text(resp)
                     turn_responses.append(resp_text)
                     final_response = resp_text
                 response = final_response
@@ -1425,7 +1435,7 @@ async def run_attack_campaign(
                     ),
                     timeout=45,
                 )
-                response = resp if isinstance(resp, str) else str(resp)
+                response = _completion_text(resp)
                 turn_responses = [response]
 
             latency_ms = int((time.monotonic() - t0) * 1000)
@@ -1436,18 +1446,18 @@ async def run_attack_campaign(
                 # Persist as exploit
                 try:
                     exploit = RedboxExploit(
-                        model_id=model.id,
-                        model_name=model.name,
+                        model_id=payload.model_id,
+                        seed_prompt=attack.prompt[:500],
                         mutation_type=attack.attack_type,
                         adversarial_prompt=attack.prompt[:2000],
                         model_response=response[:2000],
                         breached=True,
                         severity=severity,
                         difficulty=attack.difficulty,
+                        expected_failure=attack.expected_failure,
                         failure_detected=breach_type,
                         latency_ms=latency_ms,
-                        engine=attack.framework_origin,
-                        technique=attack.technique,
+                        tags=json.dumps([attack.framework_origin, attack.technique]),
                     )
                     session.add(exploit)
                 except Exception as _silent_exc:
