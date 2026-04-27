@@ -54,7 +54,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from core.database import get_session
-from core.models import Tenant
+from core.models import Tenant, User
 
 logger = logging.getLogger(__name__)
 
