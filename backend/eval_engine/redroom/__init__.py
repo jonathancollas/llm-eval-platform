@@ -57,6 +57,7 @@ from eval_engine.redroom.integrations.pyrit_runner import (
     PyRITRunner,
     PyRITSubprocessError,
 )
+from eval_engine.redroom.risk_artifact import generate_html_report
 from eval_engine.redroom.runner import (
     RunInputs,
     RunOutput,
@@ -130,4 +131,6 @@ __all__ = [
     "lookup_system_by_id",
     "register_system",
     "run_compositional_attack",
+    # risk artifact (E4)
+    "generate_html_report",
 ]
