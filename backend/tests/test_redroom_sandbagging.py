@@ -344,6 +344,14 @@ class TestThrottling:
 
 
 class TestRunnerIntegration:
+    @pytest.fixture(autouse=True)
+    def _set_charter_env(self, monkeypatch):
+        monkeypatch.setenv("REDROOM_ENABLED", "true")
+        monkeypatch.setenv("REDROOM_MAX_AGGRESSIVENESS", "3")
+        monkeypatch.setenv(
+            "REDROOM_ALLOWED_TARGETS", "self,open_weight,public_api"
+        )
+
     def test_run_probe_sandbagging_emits_traces(self):
         eng = create_engine(
             "sqlite:///:memory:", connect_args={"check_same_thread": False}

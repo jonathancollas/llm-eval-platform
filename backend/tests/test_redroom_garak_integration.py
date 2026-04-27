@@ -339,6 +339,14 @@ class TestSubprocessSandbox:
 
 
 class TestRunnerIntegration:
+    @pytest.fixture(autouse=True)
+    def _set_charter_env(self, monkeypatch):
+        monkeypatch.setenv("REDROOM_ENABLED", "true")
+        monkeypatch.setenv("REDROOM_MAX_AGGRESSIVENESS", "3")
+        monkeypatch.setenv(
+            "REDROOM_ALLOWED_TARGETS", "self,open_weight,public_api"
+        )
+
     def test_run_probe_garak_emits_full_trace_chain(self, session, echo_target):
         out = asyncio.run(
             run_probe(

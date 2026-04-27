@@ -591,7 +591,14 @@ class TestCoevolutionProbe:
 
 
 class TestRunnerIntegration:
-    def test_run_probe_coevolution_l4_emits_traces(self):
+    def test_run_probe_coevolution_l4_emits_traces(self, monkeypatch):
+        # Explicitly raise the ceiling for this test — other test modules
+        # may have lowered it via their own os.environ setup at import time.
+        monkeypatch.setenv("REDROOM_ENABLED", "true")
+        monkeypatch.setenv("REDROOM_MAX_AGGRESSIVENESS", "5")
+        monkeypatch.setenv(
+            "REDROOM_ALLOWED_TARGETS", "self,open_weight,public_api"
+        )
         eng = create_engine(
             "sqlite:///:memory:", connect_args={"check_same_thread": False}
         )
