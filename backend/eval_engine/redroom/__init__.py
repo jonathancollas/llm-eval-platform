@@ -44,6 +44,12 @@ from eval_engine.redroom.integrations.garak_runner import (
     GarakSubprocessError,
     GarakRunner,
 )
+from eval_engine.redroom.integrations.pyrit_runner import (
+    PYRIT_ALLOWLIST,
+    PyRITAllowlistError,
+    PyRITSubprocessError,
+    PyRITRunner,
+)
 
 __all__ = [
     # charter
@@ -76,4 +82,8 @@ __all__ = [
     "GarakAllowlistError",
     "GarakSubprocessError",
     "GarakRunner",
+    "PYRIT_ALLOWLIST",
+    "PyRITAllowlistError",
+    "PyRITSubprocessError",
+    "PyRITRunner",
 ]

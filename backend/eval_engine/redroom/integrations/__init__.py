@@ -22,11 +22,25 @@ from eval_engine.redroom.integrations.garak_runner import (
     GarakRunner,
     run_garak_subprocess,
 )
+from eval_engine.redroom.integrations.pyrit_runner import (
+    PYRIT_ALLOWLIST,
+    PyRITAllowlistError,
+    PyRITSubprocessError,
+    PyRITRunner,
+    run_pyrit_subprocess,
+)
 
 __all__ = [
+    # Garak
     "GARAK_ALLOWLIST",
     "GarakAllowlistError",
     "GarakSubprocessError",
     "GarakRunner",
     "run_garak_subprocess",
+    # PyRIT
+    "PYRIT_ALLOWLIST",
+    "PyRITAllowlistError",
+    "PyRITSubprocessError",
+    "PyRITRunner",
+    "run_pyrit_subprocess",
 ]
