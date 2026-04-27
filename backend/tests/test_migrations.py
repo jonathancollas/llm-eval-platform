@@ -68,6 +68,40 @@ def test_run_alembic_migrations_no_config(tmp_path, monkeypatch):
     core_database._run_alembic_migrations()
 
 
+def test_alembic_20260419_is_idempotent_against_create_all(tmp_path, monkeypatch):
+    """20260419_0001 must be safe even when SQLModel.create_all already populated
+    campaigns.tenant_id / owner_id and the benchmark_packs table — which is the
+    runtime ordering used by ``init_db``.
+
+    Regression: previously this migration unconditionally ran ``ALTER TABLE
+    campaigns ADD COLUMN tenant_id``, which crashed every CI run.
+    """
+    pytest.importorskip("alembic")
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "alembic_idempotent.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    SQLModel.metadata.create_all(engine)
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    alembic_ini = os.path.join(base_dir, "alembic.ini")
+    if not os.path.exists(alembic_ini):
+        pytest.skip("alembic config missing")
+
+    cfg = Config(alembic_ini)
+    cfg.set_main_option("script_location", os.path.join(base_dir, "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+    command.upgrade(cfg, "head")
+    # Second run must also succeed.
+    command.upgrade(cfg, "head")
+
+    with sqlite3.connect(db_path) as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(campaigns)").fetchall()}
+    assert "tenant_id" in cols
+    assert "owner_id" in cols
+
+
 def test_migration_changes_can_be_rolled_back(tmp_path):
     db_path = tmp_path / "migration_rollback.db"
     with sqlite3.connect(db_path) as conn:
