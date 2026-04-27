@@ -5,6 +5,10 @@ runs adversarial workloads; charter.enforce() is the single gate.
 
 trace_store.py provides the immutable, HMAC-signed record of every event.
 Every adversarial code path MUST write to it via write_trace().
+
+runner.py provides run_probe() — the single sanctioned entry point for
+the native engine. It wires charter.enforce() + write_trace() + a probe
+together so callers cannot accidentally skip authorization or auditing.
 """
 from eval_engine.redroom.charter import (
     Aggressiveness,
@@ -28,6 +32,12 @@ from eval_engine.redroom.trace_store import (
     verify_chain,
     compute_replay_hash,
 )
+from eval_engine.redroom.runner import (
+    RunInputs,
+    RunOutput,
+    run_probe,
+    build_default_registry,
+)
 
 __all__ = [
     # charter
@@ -50,4 +60,9 @@ __all__ = [
     "verify_row",
     "verify_chain",
     "compute_replay_hash",
+    # runner
+    "RunInputs",
+    "RunOutput",
+    "run_probe",
+    "build_default_registry",
 ]
