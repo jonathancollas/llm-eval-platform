@@ -15,7 +15,6 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import pytest
 from alembic import command
 from alembic.config import Config
 
@@ -45,6 +44,7 @@ def _bootstrap_to_pre_redroom(db_path: Path) -> Config:
     test the redroom migration in isolation.
     """
     from sqlmodel import SQLModel, create_engine
+
     # Side-effect import: registers all SQLModels with metadata.
     import core.models  # noqa: F401
 

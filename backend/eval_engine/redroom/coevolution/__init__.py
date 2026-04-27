@@ -22,6 +22,9 @@ from eval_engine.redroom.coevolution.engine import (
     CoevolutionRound,
     run_coevolution,
 )
+from eval_engine.redroom.coevolution.persistent_memory import (
+    PersistentStrategyMemory,
+)
 from eval_engine.redroom.coevolution.strategy_memory import (
     Strategy,
     StrategyMemory,
@@ -30,6 +33,7 @@ from eval_engine.redroom.coevolution.strategy_memory import (
 __all__ = [
     "Strategy",
     "StrategyMemory",
+    "PersistentStrategyMemory",
     "CoevolutionConfig",
     "CoevolutionResult",
     "CoevolutionRound",
