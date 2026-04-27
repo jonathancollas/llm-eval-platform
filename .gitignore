@@ -9,6 +9,11 @@ node_modules/
 backend/data/
 data/
 
+# Python virtual environments — never commit
+.venv/
+venv/
+env/
+
 # Secrets — never commit
 .env
 .env.*
