@@ -15,7 +15,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -289,16 +289,16 @@ def create_task(
     return _entry_to_read(entry)
 
 
-@router.delete("/{canonical_id}", status_code=204)
+@router.delete("/{canonical_id}", status_code=204, response_class=Response)
 def delete_task(
     canonical_id: str,
     session: Session = Depends(get_session),
-) -> None:
+):
     """Remove a task from the registry (non-destructive — does not delete eval runs)."""
     entry = session.get(TaskRegistryEntry, canonical_id)
     if not entry:
         raise HTTPException(status_code=404, detail=f"Task '{canonical_id}' not found.")
     session.delete(entry)
     session.commit()
-    # Remove from in-memory registry so it won't be re-seeded
     task_registry._tasks.pop(canonical_id, None)
+    return Response(status_code=204)
