@@ -187,8 +187,12 @@ def _canonical_payload(row: RedRoomTrace) -> bytes:
     for field in _SIGNED_FIELDS:
         value = getattr(row, field)
         if isinstance(value, datetime):
-            # Always serialize as UTC ISO 8601 with seconds precision —
-            # avoids drift from .microsecond differences across DB drivers.
+            # Naive datetimes (e.g. after a SQLite round-trip) are assumed
+            # to be UTC — that's how we always write them. Re-attach the
+            # tzinfo before normalizing so the canonical form is identical
+            # before and after a DB commit/refresh.
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=UTC)
             value = value.astimezone(UTC).isoformat(timespec="microseconds")
         items.append((field, value))
     return json.dumps(items, sort_keys=False, separators=(",", ":"), default=str).encode(
