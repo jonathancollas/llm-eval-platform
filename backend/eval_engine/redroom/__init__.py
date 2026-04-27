@@ -28,6 +28,7 @@ from eval_engine.redroom.coevolution import (
     CoevolutionConfig,
     CoevolutionResult,
     CoevolutionRound,
+    PersistentStrategyMemory,
     Strategy,
     StrategyMemory,
     calibrate_judge,
@@ -108,6 +109,7 @@ __all__ = [
     # coevolution (D5)
     "Strategy",
     "StrategyMemory",
+    "PersistentStrategyMemory",
     "CoevolutionConfig",
     "CoevolutionResult",
     "CoevolutionRound",
