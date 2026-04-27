@@ -38,6 +38,7 @@ from api.routers import failure_patterns as failure_patterns_router
 from api.routers import reward_hacking as reward_hacking_router
 from api.routers import search as search_router
 from api.routers import navigation as navigation_router
+from api.routers import tasks as tasks_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -248,7 +249,8 @@ for router in [models.router, benchmarks.router, campaigns.router, results.route
                statistics_router.router, plugins_router.router, scenarios_router.router,
                capability_router.router, vibe_router.router, forecasting_router.router,
                failure_patterns_router.router, reward_hacking_router.router,
-               search_router.router, navigation_router.router]:
+               search_router.router, navigation_router.router,
+               tasks_router.router]:
     app.include_router(router, prefix="/api")
 
 
