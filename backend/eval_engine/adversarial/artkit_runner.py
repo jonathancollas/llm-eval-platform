@@ -28,7 +28,7 @@ from importlib.util import find_spec
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from api.routers.redbox import ForgeVariant
+    pass
 
 # ── ARTKIT pipeline class → mutation type mapping ─────────────────────────────
 ARTKIT_PIPELINE_REGISTRY: dict[str, dict] = {

@@ -27,14 +27,11 @@ A scenario is scored as:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from eval_engine.nrbce.tasks import (
     NRBCETask,
     OUTPUT_SAFE_CORRECT,
-    OUTPUT_DUAL_USE_ACCEPTABLE,
     OUTPUT_UNSAFE,
-    OUTPUT_INCORRECT_REFUSAL,
 )
 from eval_engine.nrbce.adapter import NRBCEScore
 

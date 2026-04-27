@@ -23,7 +23,7 @@ Capabilities:
 import math
 import logging
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)

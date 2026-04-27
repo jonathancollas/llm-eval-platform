@@ -3,7 +3,7 @@ import hashlib
 import json
 import platform
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, UTC
 
 

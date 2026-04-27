@@ -32,7 +32,6 @@ Event taxonomy (append-only):
 import asyncio
 import json
 import logging
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from enum import Enum
@@ -537,7 +536,7 @@ async def _live_telemetry_subscriber(event: EvalEvent) -> None:
                 campaign.current_item_label = p.get("current_item_label")
 
             elif event.event_type in (EventType.CAMPAIGN_COMPLETED, EventType.CAMPAIGN_FAILED):
-                from datetime import datetime as _dt, UTC
+                from datetime import datetime as _dt
                 campaign.completed_at = _dt.utcnow()
 
             session.add(campaign)

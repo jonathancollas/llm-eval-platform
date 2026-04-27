@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-import inspect
 
 @dataclass
 class ValidationResult:

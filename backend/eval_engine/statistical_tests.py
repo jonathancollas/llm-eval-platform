@@ -4,7 +4,6 @@ McNemar, permutation, Bonferroni, BH-FDR, Cohen's d, power analysis.
 """
 import math
 import random
-from dataclasses import dataclass
 
 
 def _mean(lst: list) -> float:

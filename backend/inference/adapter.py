@@ -19,8 +19,8 @@ import asyncio
 import time
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 from core.lakera_guard import screen_prompt_with_lakera
 
@@ -388,7 +388,6 @@ class HuggingFaceAdapter(InferenceAdapter):
         temperature: float = 0.0,
         max_tokens: int = 2048,
     ) -> AdapterResult:
-        import httpx
 
         # Use LiteLLM for HF models — it handles the API format
         from inference.adapter import LiteLLMAdapter

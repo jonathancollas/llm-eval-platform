@@ -44,7 +44,6 @@ from eval_engine.base import BaseBenchmarkRunner, ItemResult
 from eval_engine.cybersecurity.cyber_task import (
     score_flag,
     score_subtask_completion,
-    CATEGORY_OFFENSE,
 )
 
 

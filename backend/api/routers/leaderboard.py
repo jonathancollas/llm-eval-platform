@@ -8,7 +8,6 @@ import time
 from datetime import datetime, UTC
 from typing import Optional, NamedTuple
 
-import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select

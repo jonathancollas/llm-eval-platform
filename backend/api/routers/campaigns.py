@@ -3,7 +3,6 @@ Campaigns — CRUD + run/cancel + live tracking.
 """
 import hashlib
 import json
-import platform
 import sys
 
 from typing import Literal, Optional
@@ -489,7 +488,7 @@ async def run_campaign(
 ):
     """Start or re-run a campaign."""
     import logging
-    from datetime import datetime as _dt, UTC
+    from datetime import datetime as _dt
     _logger = logging.getLogger(__name__)
 
     campaign = session.exec(

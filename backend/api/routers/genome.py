@@ -390,7 +390,7 @@ def compare_campaigns(
     REGRESSION-2: Compare two campaigns and identify probable causes.
     Returns score diff + causal attribution.
     """
-    from core.models import EvalRun, Benchmark
+    from core.models import EvalRun
 
     def _campaign_summary(campaign_id: int):
         c = session.get(Campaign, campaign_id)

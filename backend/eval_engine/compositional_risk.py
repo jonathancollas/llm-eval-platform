@@ -25,7 +25,6 @@ Composition formula:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 import math
 
 

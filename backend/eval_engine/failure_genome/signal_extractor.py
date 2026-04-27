@@ -4,8 +4,7 @@ Extracts low-level signals from each eval item to feed the failure classifiers.
 Signals are deterministic, fast, and cheap (no LLM calls).
 """
 import re
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 

@@ -3,7 +3,6 @@ Results endpoints — powers the dashboards.
 All aggregation is done in Python (SQLite is our only DB).
 Engine-driven refactor (#88): logic in eval_engine/, routes orchestrate only.
 """
-import json
 import csv
 import io
 import threading
