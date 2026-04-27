@@ -35,7 +35,6 @@ import shutil
 import subprocess  # noqa: S404 — sandboxed via no-shell + arg validation
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +166,8 @@ def run_garak_subprocess(
     target_model_id: str,
     target_provider: str = "openai",
     timeout_seconds: int = 120,
-    garak_executable: Optional[str] = None,
-    extra_args: Optional[tuple[str, ...]] = None,
+    garak_executable: str | None = None,
+    extra_args: tuple[str, ...] | None = None,
 ) -> dict:
     """Invoke ``garak`` as a sandboxed subprocess.
 
@@ -269,7 +268,7 @@ def run_garak_subprocess(
         }
 
 
-def _find_jsonl_report(workdir: Path) -> Optional[Path]:
+def _find_jsonl_report(workdir: Path) -> Path | None:
     """Locate Garak's JSONL report inside the sandbox dir."""
     candidates = sorted(workdir.glob("**/report*.jsonl"))
     return candidates[0] if candidates else None
@@ -312,7 +311,7 @@ class GarakRunner:
 
     def __init__(
         self,
-        corpus: Optional[dict[str, tuple[str, ...]]] = None,
+        corpus: dict[str, tuple[str, ...]] | None = None,
     ):
         self._corpus = corpus or GARAK_STATIC_CORPUS
 

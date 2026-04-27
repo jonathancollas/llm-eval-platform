@@ -24,7 +24,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import random
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 from eval_engine.redroom.coevolution.strategy_memory import (
     Strategy,

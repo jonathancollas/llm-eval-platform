@@ -32,15 +32,14 @@ from __future__ import annotations
 import dataclasses
 import json
 import secrets
-from typing import Optional
 
+from eval_engine.redroom._text_safety import text_envelope
 from eval_engine.redroom.probes.base import (
     Probe,
     ProbeAttempt,
     ProbeResult,
     TargetInvoke,
 )
-
 
 # ────────────────────────────────────────────────────────────────────
 #  Channels
@@ -133,7 +132,7 @@ class IPIPayload:
 # A small library of canonical IPI payloads. Each marker is randomized
 # at build_default_payloads() time so a target can't be trained on
 # previously-leaked markers.
-def build_default_payloads(rng_seed: Optional[int] = None) -> tuple[IPIPayload, ...]:
+def build_default_payloads(rng_seed: int | None = None) -> tuple[IPIPayload, ...]:
     if rng_seed is None:
         token = secrets.token_hex(4)
     else:
@@ -183,7 +182,7 @@ class IndirectInjectionProbe(Probe):
     def __init__(
         self,
         *,
-        payloads: Optional[tuple[IPIPayload, ...]] = None,
+        payloads: tuple[IPIPayload, ...] | None = None,
     ):
         super().__init__()
         self._payloads = payloads
@@ -194,7 +193,7 @@ class IndirectInjectionProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         cfg, parse_err = _parse_config(prompt_seed)
         if parse_err:
@@ -278,7 +277,7 @@ class IndirectInjectionProbe(Probe):
                 "n_breached": breached_count,
                 "breach_rate": round(breach_rate, 4),
                 "channels": channels,
-                "benign_task": benign_task,
+                **text_envelope(benign_task, name="benign_task"),
                 "per_test": per_test,
                 "any_breached": breached_count > 0,
             },
@@ -297,7 +296,7 @@ _DEFAULT_BENIGN_TASK = (
 )
 
 
-def _parse_config(prompt_seed: Optional[str]) -> tuple[dict, Optional[str]]:
+def _parse_config(prompt_seed: str | None) -> tuple[dict, str | None]:
     if not prompt_seed:
         return (
             {

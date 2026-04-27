@@ -26,8 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import statistics
-from typing import Awaitable, Callable, Iterable, Optional
-
+from collections.abc import Awaitable, Callable, Iterable
 
 JudgeUnderTest = Callable[[str, str], Awaitable[float]]
 

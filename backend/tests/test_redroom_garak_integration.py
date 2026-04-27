@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
 import sys
 
 import pytest
@@ -43,7 +42,6 @@ from eval_engine.redroom.integrations.garak_runner import (  # noqa: E402
 )
 from eval_engine.redroom.probes.garak_probe import GarakProbe  # noqa: E402
 from eval_engine.redroom.trace_store import RedRoomTrace  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════
 #  Fixtures

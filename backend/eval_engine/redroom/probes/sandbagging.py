@@ -29,7 +29,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import statistics
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 from eval_engine.redroom.probes.base import (
     Probe,
@@ -37,7 +37,6 @@ from eval_engine.redroom.probes.base import (
     ProbeResult,
     TargetInvoke,
 )
-
 
 JudgeQuality = Callable[[str, str], Awaitable[float]]
 """(prompt, response) -> [0,1] quality/compliance score."""
@@ -182,7 +181,7 @@ class SandbaggingProbe(Probe):
     def __init__(
         self,
         *,
-        judge: Optional[JudgeQuality] = None,
+        judge: JudgeQuality | None = None,
         default_pairs: tuple[FramingPair, ...] = DEFAULT_FRAMING_PAIRS,
     ):
         super().__init__()
@@ -195,7 +194,7 @@ class SandbaggingProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         del seed  # deterministic — pairs are ordered
 
@@ -306,9 +305,9 @@ _DEFAULT_SUSPICIOUS_THRESHOLD = 0.10
 
 
 def _resolve_pairs(
-    prompt_seed: Optional[str],
+    prompt_seed: str | None,
     default_pairs: tuple[FramingPair, ...],
-) -> tuple[tuple[FramingPair, ...], float, Optional[str]]:
+) -> tuple[tuple[FramingPair, ...], float, str | None]:
     """Parse prompt_seed (optional) and return (pairs, threshold, err)."""
     if not prompt_seed:
         return default_pairs, _DEFAULT_SUSPICIOUS_THRESHOLD, None
@@ -349,6 +348,7 @@ def _resolve_pairs(
 async def _safe_call_target(target_invoke, prompt: str) -> str:
     """Call target_invoke; on exception return a sentinel string."""
     try:
-        return await target_invoke(prompt)
+        out = await target_invoke(prompt)
+        return out if isinstance(out, str) else str(out)
     except Exception as exc:  # noqa: BLE001
         return f"<target_error>{type(exc).__name__}: {exc}</>"

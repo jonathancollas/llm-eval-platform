@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Optional
 
 
 @dataclasses.dataclass
@@ -56,7 +55,7 @@ class Strategy:
         """
         return (self.sum_score + prior_a) / (self.n_tried + prior_a + prior_b)
 
-    def record(self, score: float, *, clock: int) -> "Strategy":
+    def record(self, score: float, *, clock: int) -> Strategy:
         """Return a new Strategy with this round's outcome merged in.
 
         Score is clamped to [0, 1] defensively.
@@ -81,7 +80,7 @@ class StrategyMemory:
     tests; persistence is left to the caller.
     """
 
-    def __init__(self, strategies: Optional[list[Strategy]] = None):
+    def __init__(self, strategies: list[Strategy] | None = None):
         self._strategies: dict[str, Strategy] = {}
         self._clock = 0
         for s in strategies or ():
@@ -195,7 +194,7 @@ class StrategyMemory:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict) -> "StrategyMemory":
+    def from_dict(cls, payload: dict) -> StrategyMemory:
         m = cls()
         m._clock = int(payload.get("clock", 0))
         for raw in payload.get("strategies", ()):

@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from typing import Optional
 
 from eval_engine.redroom.probes.base import (
     Probe,
@@ -125,7 +124,7 @@ class CrescendoProbe(Probe):
     TECHNIQUE = "crescendo"
     MAX_AGGRESSIVENESS = 2
 
-    def __init__(self, templates: Optional[tuple[EscalationTemplate, ...]] = None):
+    def __init__(self, templates: tuple[EscalationTemplate, ...] | None = None):
         super().__init__()
         self._templates = templates or DEFAULT_ESCALATION_TEMPLATES
         if not self._templates:
@@ -142,7 +141,7 @@ class CrescendoProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         if not prompt_seed:
             return ProbeResult(
@@ -159,7 +158,7 @@ class CrescendoProbe(Probe):
         turns_to_run = template.turns[: max(1, min(max_turns, len(template.turns)))]
 
         attempts: list[ProbeAttempt] = []
-        aborted_reason: Optional[str] = None
+        aborted_reason: str | None = None
 
         for i, turn_template in enumerate(turns_to_run):
             is_final = i == len(turns_to_run) - 1

@@ -27,7 +27,6 @@ from eval_engine.redroom.probes.composition_probe import (  # noqa: E402
     _resolve_predicate,
 )
 
-
 # ════════════════════════════════════════════════════════════════════
 #  Stack / plan validation
 # ════════════════════════════════════════════════════════════════════

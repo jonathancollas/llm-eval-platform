@@ -1,0 +1,52 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    ".venv",
+    "venv",
+    "env",
+    "**/migrations/**",
+    "**/alembic/versions/**",
+    "frontend/**",
+]
+
+[tool.ruff.lint]
+# Start narrow; expand over time. The redroom package is held to a stricter
+# bar than the rest of the codebase via the per-file overrides below.
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort (import order)
+    "B",    # bugbear common bugs
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",   # line length — formatter is the source of truth
+    "B008",   # FastAPI Depends() in defaults is idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can be a bit looser. Production redroom code is the strictest.
+# F841 (unused local) is common in trace-store tests where we write rows
+# for their side effect on the chain.
+"backend/tests/**" = ["B", "F841"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "api", "eval_engine", "inference"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = false
+no_implicit_optional = true
+check_untyped_defs = false
+
+# Strict mypy is gated to the redroom package only — adding it
+# repository-wide is a larger cleanup, tracked separately.
+[[tool.mypy.overrides]]
+module = "eval_engine.redroom.*"
+disallow_untyped_defs = false
+warn_return_any = true
+warn_unused_ignores = true

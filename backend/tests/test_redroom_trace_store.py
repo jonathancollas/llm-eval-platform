@@ -25,16 +25,14 @@ os.environ.setdefault("REDROOM_TRACE_SECRET", "x" * 32 + "_test_secret")
 
 from eval_engine.redroom.trace_store import (  # noqa: E402
     ChainIntegrityError,
-    RedRoomTrace,
     TraceKind,
     TraceVerdict,
+    _compute_signature,
     compute_replay_hash,
     verify_chain,
     verify_row,
     write_trace,
-    _compute_signature,
 )
-
 
 # ════════════════════════════════════════════════════════════════════════
 #  Fixtures

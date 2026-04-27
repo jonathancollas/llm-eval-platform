@@ -27,14 +27,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Test secret must exist before importing trace_store
 os.environ.setdefault("REDROOM_TRACE_SECRET", "x" * 32 + "_native_test")
 
+from fastapi import HTTPException  # noqa: E402
+
 from eval_engine.redroom.charter import (  # noqa: E402
     Aggressiveness,
     CharterPolicy,
 )
 from eval_engine.redroom.probes.aiid_replay import (  # noqa: E402
+    BUILTIN_CATALOGUE,
     AIIDIncident,
     AIIDReplayProbe,
-    BUILTIN_CATALOGUE,
 )
 from eval_engine.redroom.probes.crescendo import CrescendoProbe  # noqa: E402
 from eval_engine.redroom.probes.many_shot import ManyShotProbe  # noqa: E402
@@ -47,8 +49,6 @@ from eval_engine.redroom.trace_store import (  # noqa: E402
     RedRoomTrace,
     TraceKind,
 )
-from fastapi import HTTPException  # noqa: E402
-
 
 # ════════════════════════════════════════════════════════════════════════
 #  Fixtures

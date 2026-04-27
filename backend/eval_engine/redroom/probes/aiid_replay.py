@@ -20,7 +20,6 @@ Aggressiveness level: L1 (inert probes).
 from __future__ import annotations
 
 import dataclasses
-from typing import Optional
 
 from eval_engine.redroom.probes.base import (
     Probe,
@@ -95,7 +94,7 @@ class AIIDReplayProbe(Probe):
     TECHNIQUE = "aiid_replay"
     MAX_AGGRESSIVENESS = 1
 
-    def __init__(self, catalogue: Optional[tuple[AIIDIncident, ...]] = None):
+    def __init__(self, catalogue: tuple[AIIDIncident, ...] | None = None):
         super().__init__()
         self._catalogue: dict[str, AIIDIncident] = {
             inc.id: inc for inc in (catalogue or BUILTIN_CATALOGUE)
@@ -107,7 +106,7 @@ class AIIDReplayProbe(Probe):
         target_invoke: TargetInvoke,
         seed: int,
         max_turns: int,
-        prompt_seed: Optional[str] = None,
+        prompt_seed: str | None = None,
     ) -> ProbeResult:
         # The probe is single-turn by construction; max_turns is irrelevant
         # but we don't error so the runner contract stays uniform.
