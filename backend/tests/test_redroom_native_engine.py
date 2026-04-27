@@ -472,7 +472,9 @@ class TestRunner:
 class TestDefaultRegistry:
     def test_registry_contains_all_three_probes(self):
         reg = build_default_registry()
-        assert set(reg.keys()) == {"aiid_replay", "many_shot", "crescendo"}
+        # Native probes must always be present. Additional probes
+        # (garak in D3, pyrit in D4, ...) are added by later phases.
+        assert {"aiid_replay", "many_shot", "crescendo"}.issubset(reg.keys())
 
     def test_registry_probes_have_proper_techniques(self):
         reg = build_default_registry()

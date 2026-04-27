@@ -46,6 +46,7 @@ from eval_engine.redroom.charter import (
 from eval_engine.redroom.probes.aiid_replay import AIIDReplayProbe
 from eval_engine.redroom.probes.base import Probe, ProbeResult, TargetInvoke
 from eval_engine.redroom.probes.crescendo import CrescendoProbe
+from eval_engine.redroom.probes.garak_probe import GarakProbe
 from eval_engine.redroom.probes.many_shot import ManyShotProbe
 from eval_engine.redroom.trace_store import (
     TraceKind,
@@ -72,6 +73,7 @@ def build_default_registry() -> dict[str, Probe]:
         "aiid_replay": AIIDReplayProbe(),
         "many_shot": ManyShotProbe(),
         "crescendo": CrescendoProbe(),
+        "garak": GarakProbe(),
     }
 
 

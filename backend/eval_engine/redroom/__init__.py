@@ -38,6 +38,12 @@ from eval_engine.redroom.runner import (
     run_probe,
     build_default_registry,
 )
+from eval_engine.redroom.integrations.garak_runner import (
+    GARAK_ALLOWLIST,
+    GarakAllowlistError,
+    GarakSubprocessError,
+    GarakRunner,
+)
 
 __all__ = [
     # charter
@@ -65,4 +71,9 @@ __all__ = [
     "RunOutput",
     "run_probe",
     "build_default_registry",
+    # integrations
+    "GARAK_ALLOWLIST",
+    "GarakAllowlistError",
+    "GarakSubprocessError",
+    "GarakRunner",
 ]
