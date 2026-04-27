@@ -39,7 +39,10 @@ from eval_engine.redroom.composition import (
     AttackPlan,
     AttackStep,
     CompositionResult,
+    RedRoomSystem,
     StepOutcome,
+    lookup_system_by_id,
+    register_system,
     run_compositional_attack,
 )
 from eval_engine.redroom.integrations.garak_runner import (
@@ -117,11 +120,14 @@ __all__ = [
     "CalibrationItem",
     "CalibrationReport",
     "calibrate_judge",
-    # composition (D7)
+    # composition (D7) + system registry (E2)
     "AgentStack",
     "AttackPlan",
     "AttackStep",
     "CompositionResult",
+    "RedRoomSystem",
     "StepOutcome",
+    "lookup_system_by_id",
+    "register_system",
     "run_compositional_attack",
 ]
