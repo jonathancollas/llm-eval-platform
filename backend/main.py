@@ -39,6 +39,7 @@ from api.routers import reward_hacking as reward_hacking_router
 from api.routers import search as search_router
 from api.routers import navigation as navigation_router
 from api.routers import tasks as tasks_router
+from api.routers import redroom_v2 as redroom_v2_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -257,7 +258,8 @@ for router in [models.router, benchmarks.router, campaigns.router, results.route
                capability_router.router, vibe_router.router, forecasting_router.router,
                failure_patterns_router.router, reward_hacking_router.router,
                search_router.router, navigation_router.router,
-               tasks_router.router]:
+               tasks_router.router,
+               redroom_v2_router.router]:
     app.include_router(router, prefix="/api")
 
 
