@@ -182,6 +182,22 @@ function NavContent({ onLinkClick }: { onLinkClick?: () => void }) {
             isRedbox ? "bg-red-900 text-red-300" : "bg-red-100 text-red-500 group-hover:bg-red-900 group-hover:text-red-300"
           )}>RESTRICTED</span>
         </Link>
+        <Link
+          href="/redbox/v2"
+          onClick={onLinkClick}
+          className={cn(
+            "group flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[12px] transition-all font-medium mt-0.5 ml-3",
+            pathname === "/redbox/v2"
+              ? "bg-rose-600 text-white shadow"
+              : "text-rose-700 hover:bg-rose-50"
+          )}
+        >
+          <span className="opacity-70">↳</span>
+          <span>Red Room v2</span>
+          <span className="ml-auto text-[8px] px-1 py-0.5 rounded tracking-widest font-bold bg-rose-100 text-rose-700">
+            BETA
+          </span>
+        </Link>
       </div>
 
       {/* ── BIBLIOTHÈQUE ── */}
