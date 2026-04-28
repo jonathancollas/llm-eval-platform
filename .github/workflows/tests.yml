@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install backend dependencies (for mypy imports)
+        run: pip install -r backend/requirements.txt
       - name: Install ruff + mypy
         run: pip install ruff==0.15.12 mypy==1.20.2
       - name: Ruff check (redroom package — strict)
