@@ -36,13 +36,71 @@ import hmac
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from sqlalchemy import text as sa_text
 from sqlmodel import Field, Session, SQLModel, select
 
 logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────
+#  Per-tenant chain serialization (P0-2 fix)
+# ────────────────────────────────────────────────────────────────────
+
+
+# In-process lock per tenant. Defends against the read-prev / write-row
+# race within one Python process — independent of the DB driver. For
+# multi-process deployments (gunicorn workers), see the PostgreSQL
+# advisory-lock acquired below inside ``write_trace``.
+_TENANT_LOCK_REGISTRY: dict[int, threading.Lock] = {}
+_TENANT_LOCK_REGISTRY_GUARD = threading.Lock()
+
+
+def _tenant_lock(tenant_id: int) -> threading.Lock:
+    """Return (creating if needed) the in-process lock for ``tenant_id``."""
+    # Fast path — already present.
+    lock = _TENANT_LOCK_REGISTRY.get(tenant_id)
+    if lock is not None:
+        return lock
+    # Slow path — instantiate under the registry guard.
+    with _TENANT_LOCK_REGISTRY_GUARD:
+        lock = _TENANT_LOCK_REGISTRY.get(tenant_id)
+        if lock is None:
+            lock = threading.Lock()
+            _TENANT_LOCK_REGISTRY[tenant_id] = lock
+        return lock
+
+
+# Stable namespace used to scope our pg_advisory_xact_lock keys away
+# from any other code in the same DB that may also use advisory locks.
+# The high 32 bits identify the namespace ("REDROOM\0" = 0x52454452
+# truncated into 32 bits via fnv1a-style fold), the low 32 bits carry
+# the tenant id. PostgreSQL advisory locks accept either one bigint
+# key or two int keys; we use the two-int form for clarity.
+_REDROOM_ADVISORY_NAMESPACE = 0x5244524D  # "RDRM"
+
+
+def _acquire_pg_advisory_xact_lock(session: Session, tenant_id: int) -> None:
+    """If the session is bound to PostgreSQL, take an xact-scoped lock.
+
+    The lock key is namespaced so we don't collide with other advisory
+    locks the deployment may use. Released automatically at the end of
+    the surrounding transaction (commit or rollback). On non-PG dialects
+    this is a no-op — the per-tenant Python lock above is sufficient
+    inside one process, which is the case for our SQLite test runs.
+    """
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+    session.exec(  # type: ignore[call-overload]
+        sa_text(
+            "SELECT pg_advisory_xact_lock(:ns, :tenant)"
+        ).bindparams(ns=_REDROOM_ADVISORY_NAMESPACE, tenant=int(tenant_id))
+    )
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -264,53 +322,64 @@ def write_trace(
     Raises if the chain is currently broken (see verify_chain). This
     forces operators to investigate corruption before writing more rows
     on top of an already-tampered chain.
+
+    Concurrency: serialized per-tenant. The in-process lock guarantees
+    no two writers in the same Python process race on the read-prev /
+    write-row sequence. On PostgreSQL we additionally take a tenant-
+    scoped pg_advisory_xact_lock so concurrent gunicorn workers serialize
+    too. (P0-2 fix.)
     """
-    # 1. Find the latest row in this tenant — that's our chain link.
-    prev = session.exec(
-        select(RedRoomTrace)
-        .where(RedRoomTrace.tenant_id == tenant_id)
-        .order_by(RedRoomTrace.id.desc())  # type: ignore[union-attr]
-        .limit(1)
-    ).first()
+    with _tenant_lock(tenant_id):
+        # Cross-process serialization on PostgreSQL — released automatically
+        # when the surrounding transaction commits or rolls back.
+        _acquire_pg_advisory_xact_lock(session, tenant_id)
 
-    # 2. If there's a prev row, validate its signature before chaining onto it.
-    # We refuse to extend a corrupted chain — operators must investigate first.
-    if prev is not None:
-        expected = _compute_signature(prev)
-        if not hmac.compare_digest(expected, prev.row_signature):
-            raise RuntimeError(
-                f"Refusing to write trace: chain is broken at row id={prev.id}. "
-                f"Run verify_chain() and investigate before continuing."
-            )
+        # 1. Find the latest row in this tenant — that's our chain link.
+        prev = session.exec(
+            select(RedRoomTrace)
+            .where(RedRoomTrace.tenant_id == tenant_id)
+            .order_by(RedRoomTrace.id.desc())  # type: ignore[union-attr]
+            .limit(1)
+        ).first()
 
-    # 3. Construct the new row.
-    payload_json = json.dumps(payload or {}, sort_keys=True, separators=(",", ":"))
-    row = RedRoomTrace(
-        tenant_id=tenant_id,
-        session_id=session_id,
-        target_model_id=target_model_id,
-        target_class=target_class,
-        aggressiveness=aggressiveness,
-        kind=kind.value,
-        verdict=verdict.value if verdict is not None else None,
-        engine=engine,
-        payload_json=payload_json,
-        replay_hash=replay_hash,
-        created_by_user_id=created_by_user_id,
-        prev_signature=prev.row_signature if prev is not None else None,
-        # row_signature: filled below
-        row_signature="",  # placeholder so dataclass validates
-        # NOT signed (see RedRoomTrace docstring): adding system_id to
-        # the canonical payload would invalidate every pre-E2 row.
-        system_id=system_id,
-    )
-    # Compute the signature now that all signed fields are populated except
-    # row_signature itself (which is the output — excluded from canonicalization).
-    row.row_signature = _compute_signature(row)
+        # 2. If there's a prev row, validate its signature before chaining onto it.
+        # We refuse to extend a corrupted chain — operators must investigate first.
+        if prev is not None:
+            expected = _compute_signature(prev)
+            if not hmac.compare_digest(expected, prev.row_signature):
+                raise RuntimeError(
+                    f"Refusing to write trace: chain is broken at row id={prev.id}. "
+                    f"Run verify_chain() and investigate before continuing."
+                )
 
-    session.add(row)
-    session.flush()
-    return row
+        # 3. Construct the new row.
+        payload_json = json.dumps(payload or {}, sort_keys=True, separators=(",", ":"))
+        row = RedRoomTrace(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            target_model_id=target_model_id,
+            target_class=target_class,
+            aggressiveness=aggressiveness,
+            kind=kind.value,
+            verdict=verdict.value if verdict is not None else None,
+            engine=engine,
+            payload_json=payload_json,
+            replay_hash=replay_hash,
+            created_by_user_id=created_by_user_id,
+            prev_signature=prev.row_signature if prev is not None else None,
+            # row_signature: filled below
+            row_signature="",  # placeholder so dataclass validates
+            # NOT signed (see RedRoomTrace docstring): adding system_id to
+            # the canonical payload would invalidate every pre-E2 row.
+            system_id=system_id,
+        )
+        # Compute the signature now that all signed fields are populated except
+        # row_signature itself (which is the output — excluded from canonicalization).
+        row.row_signature = _compute_signature(row)
+
+        session.add(row)
+        session.flush()
+        return row
 
 
 # ────────────────────────────────────────────────────────────────────

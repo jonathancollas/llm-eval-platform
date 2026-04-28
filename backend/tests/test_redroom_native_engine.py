@@ -505,3 +505,202 @@ class TestDefaultRegistry:
         assert reg["aiid_replay"].MAX_AGGRESSIVENESS == 1
         assert reg["many_shot"].MAX_AGGRESSIVENESS == 2
         assert reg["crescendo"].MAX_AGGRESSIVENESS == 2
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  P0-3 — runner commits on every return path (timeout + generic exception)
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestRunnerCommitDiscipline:
+    """The runner MUST commit before returning, regardless of which branch.
+
+    The historical bug (audit P0-3): the timeout branch wrote a trace
+    but did not commit, so when the FastAPI dependency context closed
+    the session, the trace was rolled back and the audit lost the run.
+    These tests open a SECOND session to read the committed state —
+    only what survived a real ``commit()`` shows up there.
+    """
+
+    @pytest.fixture
+    def shared_db_url(self, tmp_path):
+        from sqlalchemy.pool import StaticPool  # noqa: F401 — kept for parity
+        db_file = tmp_path / "runner_commit.db"
+        boot = create_engine(f"sqlite:///{db_file}")
+        SQLModel.metadata.create_all(boot)
+        boot.dispose()
+        return f"sqlite:///{db_file}"
+
+    def test_timeout_trace_persists_across_session_close(self, shared_db_url):
+        async def slow(_p):
+            await asyncio.sleep(2)
+            return "late"
+
+        write_eng = create_engine(shared_db_url)
+        try:
+            with Session(write_eng) as write_session:
+                out = asyncio.run(
+                    run_probe(
+                        _make_run_inputs(
+                            slow,
+                            technique="aiid_replay",
+                            timeout_seconds=0.1,
+                        ),
+                        session=write_session,
+                        policy=_enabled_policy(),
+                    )
+                )
+            assert out.result is None
+        finally:
+            write_eng.dispose()
+
+        # Open a SECOND engine + session — sees only what was committed.
+        read_eng = create_engine(shared_db_url)
+        try:
+            with Session(read_eng) as read_session:
+                rows = list(
+                    read_session.exec(
+                        select(RedRoomTrace).order_by(RedRoomTrace.id)
+                    )
+                )
+        finally:
+            read_eng.dispose()
+
+        assert len(rows) == 2, (
+            "expected AUTHORIZE + timeout PROBE traces to survive the "
+            "writer's session close, got "
+            f"{[r.kind for r in rows]}"
+        )
+        assert rows[0].kind == TraceKind.AUTHORIZE.value
+        assert rows[1].kind == TraceKind.PROBE.value
+        assert "timeout" in rows[1].payload_json
+
+    def test_runtime_error_records_trace_and_reraises(self, shared_db_url):
+        """Non-timeout exceptions: trace an INCONCLUSIVE row, commit, re-raise."""
+
+        class _BoomProbe:
+            TECHNIQUE = "boom"
+            MAX_AGGRESSIVENESS = 2
+
+            async def run(self, **_kw):
+                raise RuntimeError("simulated probe internals failure")
+
+        write_eng = create_engine(shared_db_url)
+        try:
+            with Session(write_eng) as write_session:
+                with pytest.raises(RuntimeError, match="simulated probe"):
+                    asyncio.run(
+                        run_probe(
+                            _make_run_inputs(
+                                None,  # type: ignore[arg-type] — probe ignores
+                                technique="boom",
+                                aggressiveness=2,
+                            ),
+                            session=write_session,
+                            policy=_enabled_policy(),
+                            registry={"boom": _BoomProbe()},  # type: ignore[dict-item]
+                        )
+                    )
+        finally:
+            write_eng.dispose()
+
+        # The audit MUST contain both the AUTHORIZE row and the
+        # INCONCLUSIVE runtime_error row, even after the exception
+        # propagated out of the runner.
+        read_eng = create_engine(shared_db_url)
+        try:
+            with Session(read_eng) as read_session:
+                rows = list(
+                    read_session.exec(
+                        select(RedRoomTrace).order_by(RedRoomTrace.id)
+                    )
+                )
+        finally:
+            read_eng.dispose()
+
+        kinds = [r.kind for r in rows]
+        assert kinds == [
+            TraceKind.AUTHORIZE.value,
+            TraceKind.PROBE.value,
+        ], f"expected AUTHORIZE + INCONCLUSIVE PROBE, got {kinds}"
+        payload = rows[1].payload_json
+        assert "runtime_error:RuntimeError" in payload
+        assert rows[1].verdict == "inconclusive"
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  P0-9 — invariant: charter.enforce() runs strictly before any write_trace
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestEnforceBeforeWriteInvariant:
+    """Asserts the temporal invariant audited as P0-9.
+
+    A future refactor that wrote an optimistic AUTHORIZE row before
+    calling ``enforce()`` would silently regress; this property test
+    captures the order via spies on both functions.
+    """
+
+    def test_first_write_trace_call_follows_enforce(self, session, monkeypatch):
+        from eval_engine.redroom import charter as charter_mod
+        from eval_engine.redroom import runner as runner_mod
+        from eval_engine.redroom import trace_store as trace_store_mod
+
+        calls: list[str] = []
+        real_enforce = charter_mod.enforce
+        real_write = trace_store_mod.write_trace
+
+        def _spy_enforce(*a, **kw):
+            calls.append("enforce")
+            return real_enforce(*a, **kw)
+
+        def _spy_write(*a, **kw):
+            calls.append("write_trace")
+            return real_write(*a, **kw)
+
+        # Patch in both the source modules and the runner's import-binding.
+        monkeypatch.setattr(charter_mod, "enforce", _spy_enforce)
+        monkeypatch.setattr(runner_mod, "enforce", _spy_enforce)
+        monkeypatch.setattr(trace_store_mod, "write_trace", _spy_write)
+        monkeypatch.setattr(runner_mod, "write_trace", _spy_write)
+
+        target, _ = _make_target()
+        asyncio.run(
+            run_probe(
+                _make_run_inputs(target),
+                session=session,
+                policy=_enabled_policy(),
+            )
+        )
+
+        assert calls, "expected at least one spied call"
+        assert calls[0] == "enforce", (
+            f"first call MUST be charter.enforce; sequence head was "
+            f"{calls[:5]}"
+        )
+        # And every write_trace must come AFTER the enforce call.
+        first_write = calls.index("write_trace")
+        first_enforce = calls.index("enforce")
+        assert first_enforce < first_write, (
+            f"enforce at idx {first_enforce} must precede write_trace at "
+            f"idx {first_write}"
+        )
+
+    def test_charter_refusal_writes_zero_traces(self, session):
+        """Refused requests still emit zero traces — see audit §P1-1."""
+        target, _ = _make_target()
+        policy = _enabled_policy(max_aggressiveness=Aggressiveness.INERT_PROBES)
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(
+                run_probe(
+                    _make_run_inputs(target, technique="many_shot", aggressiveness=2),
+                    session=session,
+                    policy=policy,
+                )
+            )
+        assert exc.value.status_code == 403
+        rows = list(session.exec(select(RedRoomTrace)))
+        assert rows == [], (
+            "charter-refused runs MUST not pollute the chain — pre-enforce "
+            "writes would mean the chain records non-authorized intent"
+        )

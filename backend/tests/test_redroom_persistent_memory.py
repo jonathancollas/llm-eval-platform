@@ -317,3 +317,125 @@ class TestEngineWithPersistentMemory:
         assert out.success is True
         used = out.rounds[0].strategy_name
         assert m.get(used).n_tried >= 1
+
+
+# ════════════════════════════════════════════════════════════════════
+#  P0-4 — record() must be atomic under concurrency
+# ════════════════════════════════════════════════════════════════════
+
+
+import threading                                   # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
+
+
+class TestConcurrentRecord:
+    """``record()`` must not lose updates when two coevolution runs hit
+    the same tenant simultaneously.
+
+    Historical bug (audit P0-4): the implementation read ``n_tried`` into
+    Python, incremented, and wrote back. Two workers seeing the same
+    pre-value both wrote the same post-value, losing one round's
+    contribution. The fix issues a SQL ``UPDATE ... SET n_tried = n_tried + 1``
+    that the database evaluates atomically per row.
+    """
+
+    @pytest.fixture
+    def shared_db_url(self, tmp_path):
+        import core.models  # noqa: F401 — registers metadata
+
+        db_file = tmp_path / "memory_concurrent.db"
+        boot = create_engine(f"sqlite:///{db_file}")
+        SQLModel.metadata.create_all(boot)
+        boot.dispose()
+        return f"sqlite:///{db_file}"
+
+    def test_concurrent_records_same_strategy_no_lost_updates(self, shared_db_url):
+        """50 threads each call record() once — final n_tried must be 50."""
+        # Seed once.
+        seed_eng = create_engine(shared_db_url)
+        try:
+            with Session(seed_eng) as s:
+                PersistentStrategyMemory(s, tenant_id=7).seed(
+                    [Strategy(name="x", template="t")]
+                )
+        finally:
+            seed_eng.dispose()
+
+        n_writers = 50
+        barrier = threading.Barrier(n_writers)
+
+        def _writer(i: int) -> None:
+            barrier.wait()
+            engine = create_engine(shared_db_url)
+            try:
+                with Session(engine) as s:
+                    PersistentStrategyMemory(s, tenant_id=7).record(
+                        "x", 0.5, last_trace_id=i
+                    )
+            finally:
+                engine.dispose()
+
+        with ThreadPoolExecutor(max_workers=n_writers) as ex:
+            futures = [ex.submit(_writer, i) for i in range(n_writers)]
+            for f in futures:
+                f.result(timeout=30)
+
+        # Verify the row holds exactly the expected aggregate.
+        verify_eng = create_engine(shared_db_url)
+        try:
+            with Session(verify_eng) as s:
+                row = PersistentStrategyMemory(s, tenant_id=7).get("x")
+                assert row.n_tried == n_writers, (
+                    f"lost updates detected: n_tried={row.n_tried} "
+                    f"(expected {n_writers})"
+                )
+                # sum_score = n_writers * 0.5 — each record contributes 0.5.
+                assert abs(row.sum_score - (n_writers * 0.5)) < 1e-6, (
+                    f"sum_score drifted: {row.sum_score}"
+                )
+        finally:
+            verify_eng.dispose()
+
+    def test_concurrent_records_different_tenants_independent(self, shared_db_url):
+        """Two tenants recording in parallel must not contaminate each other."""
+        for tenant_id in (10, 20):
+            seed_eng = create_engine(shared_db_url)
+            try:
+                with Session(seed_eng) as s:
+                    PersistentStrategyMemory(s, tenant_id=tenant_id).seed(
+                        [Strategy(name="strat", template="t")]
+                    )
+            finally:
+                seed_eng.dispose()
+
+        n_per = 20
+        barrier = threading.Barrier(n_per * 2)
+
+        def _writer(tenant_id: int, i: int) -> None:
+            barrier.wait()
+            engine = create_engine(shared_db_url)
+            try:
+                with Session(engine) as s:
+                    PersistentStrategyMemory(s, tenant_id=tenant_id).record(
+                        "strat", 1.0, last_trace_id=i
+                    )
+            finally:
+                engine.dispose()
+
+        with ThreadPoolExecutor(max_workers=n_per * 2) as ex:
+            futures = []
+            for i in range(n_per):
+                futures.append(ex.submit(_writer, 10, i))
+                futures.append(ex.submit(_writer, 20, i))
+            for f in futures:
+                f.result(timeout=30)
+
+        verify_eng = create_engine(shared_db_url)
+        try:
+            with Session(verify_eng) as s:
+                a = PersistentStrategyMemory(s, tenant_id=10).get("strat")
+                b = PersistentStrategyMemory(s, tenant_id=20).get("strat")
+                assert a.n_tried == n_per
+                assert b.n_tried == n_per
+        finally:
+            verify_eng.dispose()

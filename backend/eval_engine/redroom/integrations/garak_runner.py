@@ -36,6 +36,8 @@ import subprocess  # noqa: S404 — sandboxed via no-shell + arg validation
 import tempfile
 from pathlib import Path
 
+from eval_engine.redroom._authorized_scope import requires_authorized_scope
+
 logger = logging.getLogger(__name__)
 
 
@@ -160,6 +162,7 @@ def _validate_probe_name(name: str) -> None:
         )
 
 
+@requires_authorized_scope
 def run_garak_subprocess(
     probe_name: str,
     *,
@@ -315,6 +318,7 @@ class GarakRunner:
     ):
         self._corpus = corpus or GARAK_STATIC_CORPUS
 
+    @requires_authorized_scope
     async def run_static(
         self,
         probe_name: str,

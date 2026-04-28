@@ -36,6 +36,8 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 
+from eval_engine.redroom._authorized_scope import requires_authorized_scope
+
 logger = logging.getLogger(__name__)
 
 
@@ -202,6 +204,7 @@ def _interpolate(
 # ────────────────────────────────────────────────────────────────────
 
 
+@requires_authorized_scope
 async def run_compositional_attack(
     stack: AgentStack,
     plan: AttackPlan,

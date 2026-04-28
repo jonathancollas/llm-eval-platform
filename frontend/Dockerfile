@@ -7,7 +7,7 @@ RUN npm ci
 
 # Build
 COPY . .
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api
+ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -17,4 +17,4 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 EXPOSE 3000
-CMD ["node", ".next/standalone/server.js"]
+CMD ["sh", "-c", "PORT=${PORT:-3000} node .next/standalone/server.js"]

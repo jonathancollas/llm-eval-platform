@@ -31,3 +31,38 @@ def clean_test_http_db():
         except OSError:
             pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _redroom_authorized_scope_for_tests(request):
+    """Open AuthorizedScope for tests in test_redroom_*.
+
+    Adversarial engine functions (run_pair, run_coevolution,
+    run_compositional_attack, run_garak_subprocess, …) refuse to run
+    outside an :class:`AuthorizedScope`. The runner opens that scope
+    after charter.enforce(). Tests that call those functions directly
+    need to be inside a scope; this fixture opens one for the entire
+    test_redroom_* suite so individual tests don't have to.
+
+    Tests that explicitly want to assert the unauthorized branch
+    decorate themselves with ``@pytest.mark.no_authorized_scope``.
+    """
+    from eval_engine.redroom._authorized_scope import AuthorizedScope
+
+    is_redroom = "test_redroom_" in str(request.fspath)
+    opt_out = request.node.get_closest_marker("no_authorized_scope") is not None
+
+    if is_redroom and not opt_out:
+        with AuthorizedScope():
+            yield
+    else:
+        yield
+
+
+def pytest_configure(config):
+    """Register custom markers used by the redroom test suite."""
+    config.addinivalue_line(
+        "markers",
+        "no_authorized_scope: skip the autouse AuthorizedScope fixture "
+        "(test exercises the unauthorized branch directly)",
+    )

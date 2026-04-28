@@ -26,6 +26,7 @@ import logging
 import random
 from collections.abc import Awaitable, Callable
 
+from eval_engine.redroom._authorized_scope import requires_authorized_scope
 from eval_engine.redroom.coevolution.strategy_memory import (
     Strategy,
     StrategyMemory,
@@ -153,6 +154,7 @@ def _format_attacker_brief(
 # ────────────────────────────────────────────────────────────────────
 
 
+@requires_authorized_scope
 async def run_coevolution(
     *,
     target: TargetCallable,

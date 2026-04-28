@@ -303,3 +303,118 @@ class TestMissingSecret:
         monkeypatch.delenv("SECRET_KEY", raising=False)
         with pytest.raises(RuntimeError, match="requires a secret"):
             _write(session)
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  Concurrency — P0-2: write_trace must serialize per tenant
+# ════════════════════════════════════════════════════════════════════════
+
+
+import tempfile                                    # noqa: E402
+import threading                                   # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
+from pathlib import Path                           # noqa: E402
+
+
+class TestConcurrentWrites:
+    """Multi-thread writes to the same tenant must yield a valid linear chain.
+
+    The historical bug (audit P0-2): two writers see the same ``prev`` row,
+    both create row N+1 with the same ``prev_signature``, and the chain
+    forks. ``verify_chain`` then trips and writes are blocked.
+
+    The fix is per-tenant serialization at write time: a process-local
+    ``threading.Lock`` keyed by tenant_id, plus ``pg_advisory_xact_lock``
+    on PostgreSQL for cross-worker safety.
+
+    Tests use a file-backed SQLite database with one engine (and thus
+    one connection pool) per worker thread — that's how production
+    deployments look (each worker holds its own connection), and it
+    surfaces the race that an in-memory shared-connection setup hides.
+    """
+
+    @pytest.fixture
+    def shared_db_url(self, tmp_path: Path) -> str:
+        """File-based SQLite shared across worker threads via separate engines."""
+        db_file = tmp_path / "redroom_concurrent.db"
+        # Bootstrap the schema using a one-off engine.
+        boot_engine = create_engine(f"sqlite:///{db_file}")
+        SQLModel.metadata.create_all(boot_engine)
+        boot_engine.dispose()
+        return f"sqlite:///{db_file}"
+
+    def test_concurrent_writes_same_tenant_yield_linear_chain(self, shared_db_url):
+        """20 threads each write one row; the chain stays linear and valid."""
+        n_writers = 20
+        barrier = threading.Barrier(n_writers)
+
+        def _writer(i: int):
+            # Synchronise on the barrier so all writers contend at once —
+            # without this, the work serialises naturally and the race
+            # window stays closed.
+            barrier.wait()
+            engine = create_engine(shared_db_url)
+            try:
+                with Session(engine) as s:
+                    _write(
+                        s,
+                        tenant_id=42,
+                        session_id=f"sess-{i}",
+                        payload={"i": i},
+                    )
+            finally:
+                engine.dispose()
+
+        with ThreadPoolExecutor(max_workers=n_writers) as ex:
+            futures = [ex.submit(_writer, i) for i in range(n_writers)]
+            for f in futures:
+                # Re-raise any exception from the worker.
+                f.result(timeout=30)
+
+        # Verify the resulting chain is intact.
+        verify_engine = create_engine(shared_db_url)
+        try:
+            with Session(verify_engine) as s:
+                n = verify_chain(s, tenant_id=42)
+                assert n == n_writers, (
+                    f"expected {n_writers} rows in a linear chain, got {n}"
+                )
+        finally:
+            verify_engine.dispose()
+
+    def test_concurrent_writes_different_tenants_remain_independent(
+        self, shared_db_url
+    ):
+        """Two tenants writing in parallel keep their chains independent."""
+        n_per_tenant = 10
+        barrier = threading.Barrier(n_per_tenant * 2)
+
+        def _writer(tenant_id: int, i: int):
+            barrier.wait()
+            engine = create_engine(shared_db_url)
+            try:
+                with Session(engine) as s:
+                    _write(
+                        s,
+                        tenant_id=tenant_id,
+                        session_id=f"t{tenant_id}-{i}",
+                        payload={"i": i},
+                    )
+            finally:
+                engine.dispose()
+
+        with ThreadPoolExecutor(max_workers=n_per_tenant * 2) as ex:
+            futures = []
+            for i in range(n_per_tenant):
+                futures.append(ex.submit(_writer, 1, i))
+                futures.append(ex.submit(_writer, 2, i))
+            for f in futures:
+                f.result(timeout=30)
+
+        verify_engine = create_engine(shared_db_url)
+        try:
+            with Session(verify_engine) as s:
+                assert verify_chain(s, tenant_id=1) == n_per_tenant
+                assert verify_chain(s, tenant_id=2) == n_per_tenant
+        finally:
+            verify_engine.dispose()

@@ -8,7 +8,7 @@
  */
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+  process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 /** Optional API key sent as X-API-Key — set NEXT_PUBLIC_API_KEY in your environment. */
 export const API_KEY =

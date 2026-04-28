@@ -231,33 +231,87 @@ async def run_probe(
             duration = time.monotonic() - started
             # Record the abort as a single PROBE trace with timeout reason.
             # We don't have actual prompts/responses to record — that's
-            # expected for a timed-out run.
-            write_trace(
-                session,
-                tenant_id=inputs.tenant_id,
-                session_id=inputs.session_id,
-                kind=TraceKind.PROBE,
-                target_class=inputs.target_class,
-                aggressiveness=inputs.aggressiveness,
-                replay_hash=replay_hash,
-                target_model_id=inputs.target_model_id,
-                verdict=TraceVerdict.INCONCLUSIVE,
-                engine="native",
-                payload={
-                    "session_uuid": session_uuid,
-                    "technique": inputs.technique,
-                    "aborted_reason": "timeout",
-                    "timeout_seconds": effective_timeout,
-                    "duration_seconds": duration,
-                },
-                created_by_user_id=inputs.created_by_user_id,
-            )
+            # expected for a timed-out run. The trace + the AUTHORIZE row
+            # are committed before we return so the audit survives the
+            # caller's session boundary (P0-3).
+            try:
+                write_trace(
+                    session,
+                    tenant_id=inputs.tenant_id,
+                    session_id=inputs.session_id,
+                    kind=TraceKind.PROBE,
+                    target_class=inputs.target_class,
+                    aggressiveness=inputs.aggressiveness,
+                    replay_hash=replay_hash,
+                    target_model_id=inputs.target_model_id,
+                    verdict=TraceVerdict.INCONCLUSIVE,
+                    engine="native",
+                    payload={
+                        "session_uuid": session_uuid,
+                        "technique": inputs.technique,
+                        "aborted_reason": "timeout",
+                        "timeout_seconds": effective_timeout,
+                        "duration_seconds": duration,
+                    },
+                    created_by_user_id=inputs.created_by_user_id,
+                )
+            except Exception:  # noqa: BLE001
+                # If we cannot even record the timeout (chain broken,
+                # DB down…), log and still try to commit the AUTHORIZE
+                # so it isn't lost too.
+                logger.exception(
+                    "redroom.runner: failed to write timeout trace for "
+                    "session %s", session_uuid
+                )
+            session.commit()
             return RunOutput(
                 decision=decision,
                 result=None,
                 duration_seconds=duration,
                 session_uuid=session_uuid,
             )
+        except Exception as exc:  # noqa: BLE001
+            # Generic failure path (P1-10): probe.run raised something
+            # other than TimeoutError — bug in the probe, transport
+            # failure inside target_invoke, write_trace chain-broken, …
+            # Record an INCONCLUSIVE trace so the audit reflects the
+            # attempt, commit, then re-raise so the HTTP layer can
+            # surface a 5xx and the caller knows the run aborted.
+            duration = time.monotonic() - started
+            try:
+                write_trace(
+                    session,
+                    tenant_id=inputs.tenant_id,
+                    session_id=inputs.session_id,
+                    kind=TraceKind.PROBE,
+                    target_class=inputs.target_class,
+                    aggressiveness=inputs.aggressiveness,
+                    replay_hash=replay_hash,
+                    target_model_id=inputs.target_model_id,
+                    verdict=TraceVerdict.INCONCLUSIVE,
+                    engine="native",
+                    payload={
+                        "session_uuid": session_uuid,
+                        "technique": inputs.technique,
+                        "aborted_reason": f"runtime_error:{type(exc).__name__}",
+                        "duration_seconds": duration,
+                    },
+                    created_by_user_id=inputs.created_by_user_id,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "redroom.runner: failed to write runtime_error trace "
+                    "for session %s", session_uuid
+                )
+            try:
+                session.commit()
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "redroom.runner: failed to commit on runtime_error "
+                    "for session %s", session_uuid
+                )
+                session.rollback()
+            raise
 
         duration = time.monotonic() - started
 

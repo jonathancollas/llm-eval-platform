@@ -6,27 +6,69 @@ loses everything across restarts and can't be shared between workers.
 This class is API-compatible (same ``select`` / ``record`` / ``top_n``)
 but reads from / writes to ``redroom_strategy_memory`` per tenant.
 
-Concurrency: each method takes one open ``Session`` and commits at the
-end. SQLAlchemy session-level isolation is enough because:
-  - ``record()`` does a SELECT-then-UPDATE on a single row, idempotent
-    if retried.
+Concurrency (P0-4 fix):
+  - ``record()`` issues a single atomic ``UPDATE`` that increments
+    ``n_tried`` and ``sum_score`` in SQL. Read-modify-write loops in
+    Python (the historical bug) lost concurrent updates whenever two
+    coevolution runs hit the same tenant; a SQL increment closes that
+    window because the database serializes the row update.
+  - ``last_used`` is computed inside a per-tenant ``threading.Lock``
+    (mirroring the trace_store pattern) so concurrent records produce
+    monotonically-increasing clock values rather than colliding on
+    ``MAX+1`` reads. On PostgreSQL we additionally take a tenant-scoped
+    advisory lock so ``record()`` is also serialized across worker
+    processes.
   - ``select()`` is a pure read; concurrent selects can return different
     rows but that's by design (ε-greedy).
   - The ``(tenant_id, name)`` UNIQUE constraint prevents racy ``seed()``
     inserts.
-
-For workers that need stronger guarantees (e.g. exactly-once update),
-wrap calls in their own DB transaction.
 """
 from __future__ import annotations
 
 import random
+import threading
 from datetime import UTC, datetime
 
+from sqlalchemy import text as sa_text, update as sa_update
 from sqlmodel import Session, select
 
 from eval_engine.redroom.coevolution._db_models import RedRoomStrategyMemoryRow
 from eval_engine.redroom.coevolution.strategy_memory import Strategy
+
+# Per-tenant in-process lock (defense in depth for the clock subquery).
+_STRATEGY_LOCK_REGISTRY: dict[int, threading.Lock] = {}
+_STRATEGY_LOCK_REGISTRY_GUARD = threading.Lock()
+
+
+def _strategy_tenant_lock(tenant_id: int) -> threading.Lock:
+    """Return (creating if needed) the in-process lock for ``tenant_id``."""
+    lock = _STRATEGY_LOCK_REGISTRY.get(tenant_id)
+    if lock is not None:
+        return lock
+    with _STRATEGY_LOCK_REGISTRY_GUARD:
+        lock = _STRATEGY_LOCK_REGISTRY.get(tenant_id)
+        if lock is None:
+            lock = threading.Lock()
+            _STRATEGY_LOCK_REGISTRY[tenant_id] = lock
+        return lock
+
+
+# Distinct namespace from trace_store (avoid advisory-lock collisions).
+_REDROOM_STRATEGY_ADVISORY_NAMESPACE = 0x53545254  # "STRT"
+
+
+def _acquire_pg_advisory_xact_lock(session: Session, tenant_id: int) -> None:
+    """If the session is bound to PostgreSQL, take an xact-scoped lock."""
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+    session.exec(  # type: ignore[call-overload]
+        sa_text(
+            "SELECT pg_advisory_xact_lock(:ns, :tenant)"
+        ).bindparams(
+            ns=_REDROOM_STRATEGY_ADVISORY_NAMESPACE, tenant=int(tenant_id)
+        )
+    )
 
 
 class PersistentStrategyMemory:
@@ -141,22 +183,55 @@ class PersistentStrategyMemory:
     ) -> None:
         """Atomically merge one round's outcome into the named strategy.
 
-        Increments the per-tenant clock so the new ``last_used`` is
-        strictly greater than any prior row's.
+        Implementation (P0-4): the increment is issued as a single SQL
+        ``UPDATE`` with ``n_tried = n_tried + 1, sum_score = sum_score + :s``
+        so the database — not Python — does the read-modify-write. The
+        per-tenant clock is computed under an in-process lock (and a
+        PostgreSQL advisory lock when applicable) so concurrent records
+        produce a strictly increasing ``last_used`` rather than colliding
+        on the ``MAX+1`` subquery.
         """
         s = max(0.0, min(1.0, float(score)))
-        row = self._row_by_name(name)
-        if row is None:
-            raise KeyError(name)
-        new_clock = self._next_clock()
-        row.n_tried = row.n_tried + 1
-        row.sum_score = row.sum_score + s
-        row.last_used = new_clock
-        row.updated_at = datetime.now(UTC)
-        if last_trace_id is not None:
-            row.last_trace_id = int(last_trace_id)
-        self._session.add(row)
-        self._session.commit()
+
+        with _strategy_tenant_lock(self._tenant_id):
+            _acquire_pg_advisory_xact_lock(self._session, self._tenant_id)
+
+            # 1. Verify the named row exists (raises KeyError if not).
+            row = self._row_by_name(name)
+            if row is None:
+                raise KeyError(name)
+
+            # 2. Compute the next clock under the lock — guarantees
+            # monotonic advancement even under parallel records.
+            new_clock = self._next_clock()
+
+            # 3. Atomic UPDATE — increments are evaluated server-side,
+            # so two concurrent records on the same row produce two
+            # distinct increments rather than racing on a Python +=.
+            stmt = (
+                sa_update(RedRoomStrategyMemoryRow)
+                .where(
+                    RedRoomStrategyMemoryRow.tenant_id == self._tenant_id,
+                    RedRoomStrategyMemoryRow.name == name,
+                )
+                .values(
+                    n_tried=RedRoomStrategyMemoryRow.n_tried + 1,
+                    sum_score=RedRoomStrategyMemoryRow.sum_score + s,
+                    last_used=new_clock,
+                    updated_at=datetime.now(UTC),
+                    **(
+                        {"last_trace_id": int(last_trace_id)}
+                        if last_trace_id is not None
+                        else {}
+                    ),
+                )
+            )
+            self._session.exec(stmt)  # type: ignore[call-overload]
+            self._session.commit()
+            # Drop the cached identity-mapped row so subsequent reads
+            # observe the freshly-incremented values rather than the
+            # in-memory snapshot from before the UPDATE.
+            self._session.expire_all()
 
     # ── Inspection ──────────────────────────────────────────────────
 

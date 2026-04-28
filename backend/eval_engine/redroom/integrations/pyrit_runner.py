@@ -36,6 +36,7 @@ import subprocess  # noqa: S404 — sandboxed via no-shell + arg validation
 import tempfile
 from collections.abc import Awaitable, Callable
 
+from eval_engine.redroom._authorized_scope import requires_authorized_scope
 from eval_engine.redroom._text_safety import text_envelope
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def _scrubbed_env() -> dict[str, str]:
     return {k: os.environ[k] for k in _SCRUBBED_ENV_KEEP if k in os.environ}
 
 
+@requires_authorized_scope
 def run_pyrit_subprocess(
     technique: str,
     *,
@@ -196,6 +198,7 @@ _PAIR_ATTACKER_PROMPT_TEMPLATE = (
 )
 
 
+@requires_authorized_scope
 async def run_pair(
     *,
     target: TargetCallable,
@@ -310,6 +313,7 @@ _TAP_BRANCH_PROMPT_TEMPLATE = (
 )
 
 
+@requires_authorized_scope
 async def run_tap(
     *,
     target: TargetCallable,
@@ -517,6 +521,7 @@ class PyRITRunner:
     technique, then formats the algorithm output as ProbeAttempts.
     """
 
+    @requires_authorized_scope
     async def run(
         self,
         *,
