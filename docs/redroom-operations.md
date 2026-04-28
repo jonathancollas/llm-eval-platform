@@ -64,6 +64,23 @@ REDROOM_MAX_DURATION_SECONDS=1800
 REDROOM_MAX_CONCURRENT_PER_TENANT=2
 ```
 
+### D8 — IPI subprocess framing (E3)
+
+By default, indirect-injection channel strings are built in-process. For
+**process-isolated** framing (same strings, short-lived worker subprocess
+with scrubbed env and temp cwd — mirrors Garak/PyRIT discipline), set:
+
+```bash
+REDROOM_IPI_SANDBOX=true
+# Optional wall-clock cap for the worker (default 30s, max 120s)
+REDROOM_IPI_SANDBOX_TIMEOUT=30
+```
+
+This does **not** replace container-level isolation; it adds defense in
+depth so channel logic runs outside the API process. For full OS-level
+sandboxing (cgroups, no network), use your platform’s job runner or wrap
+workers in Docker/Bubblewrap as a deployment policy.
+
 Operators who want a softer rollout can require explicit user consent
 above a chosen aggressiveness level via `REDROOM_REQUIRE_CONSENT_ABOVE`,
 or require two admin signers for high-aggressiveness runs via
@@ -198,18 +215,18 @@ the artifact's existence is itself audit-evident.
 | Probe times out, summary trace says "inconclusive" | Target slow / network. Increase `timeout_seconds`. |
 | `chain is broken at row id=X` raised       | Refusing to extend a tampered chain. Investigate.   |
 | `Refusing to operate without integrity`    | `REDROOM_TRACE_SECRET` < 16 chars or unset.         |
+| IPI probe aborts `ipi_sandbox`             | Worker failed — check stderr in logs; try `PYTHONPATH`; increase timeout. |
 
 ## What's still in flight
 
 Tracked separately as Phase E follow-ups:
 
-- **D8 sandbox** (`E3`): the `IndirectInjectionProbe` currently uses
-  pure-string framings (no real subprocess sandbox). Production
-  deployment should use cgroups/Bubblewrap/Docker isolation. **Manual
-  review of the sandbox required before push.**
-- **Frontend UI** (`E6`): no `/redroom` page yet; the v2 HTTP API is
-  callable but unsurfaced. The legacy `/redbox` page will be replaced
-  progressively.
+- **D8 deeper isolation**: optional `REDROOM_IPI_SANDBOX=true` subprocess
+  framing is available (E3). Operators who need **container / no-network**
+  guarantees should still deploy under Docker, gVisor, or equivalent — not
+  covered by the Python worker alone.
+- **Frontend**: `/redbox/v2` surfaces the v2 API; `/redbox` legacy remains until
+  a full cutover is scheduled.
 - **Wiring real model adapters** (`E5+`): the v2 HTTP router currently
   uses a deterministic stub for target invocations. Real LLM adapter
   wiring is a separate PR.

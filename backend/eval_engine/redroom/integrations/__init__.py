@@ -14,6 +14,7 @@ runner emits the traces.
 Phase D mapping:
   D3 -> garak_runner.py
   D4 -> pyrit_runner.py
+  E3 -> ipi_sandbox.py (D8 channel framing subprocess)
 """
 from eval_engine.redroom.integrations.garak_runner import (
     GARAK_ALLOWLIST,
@@ -21,6 +22,10 @@ from eval_engine.redroom.integrations.garak_runner import (
     GarakRunner,
     GarakSubprocessError,
     run_garak_subprocess,
+)
+from eval_engine.redroom.integrations.ipi_sandbox import (
+    IpiSandboxError,
+    wrap_channel_subprocess,
 )
 from eval_engine.redroom.integrations.pyrit_runner import (
     PYRIT_ALLOWLIST,
@@ -43,4 +48,7 @@ __all__ = [
     "PyRITSubprocessError",
     "PyRITRunner",
     "run_pyrit_subprocess",
+    # D8 / E3
+    "IpiSandboxError",
+    "wrap_channel_subprocess",
 ]

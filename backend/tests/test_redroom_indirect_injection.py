@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
@@ -22,8 +23,14 @@ from eval_engine.redroom import (  # noqa: E402
     load_charter,
     run_probe,
 )
+from eval_engine.redroom.integrations import ipi_sandbox as ipi_sandbox_mod  # noqa: E402
+from eval_engine.redroom.integrations.ipi_sandbox import (  # noqa: E402
+    IpiSandboxError,
+    wrap_channel_subprocess,
+)
 from eval_engine.redroom.probes.indirect_injection import (  # noqa: E402
     IndirectInjectionProbe,
+    _ipi_sandbox_enabled,
     _parse_config,
     _wrap_email,
     _wrap_html,
@@ -244,6 +251,65 @@ class TestProbeDefenderBehaviour:
             probe.run(target_invoke=_t, seed=0, max_turns=4, prompt_seed=None)
         )
         assert out.aborted_reason == "no_payloads"
+
+
+# ════════════════════════════════════════════════════════════════════
+#  E3 — subprocess sandbox (parity with in-process wrappers)
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestIpiSubprocessSandbox:
+    def test_disabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("REDROOM_IPI_SANDBOX", raising=False)
+        assert _ipi_sandbox_enabled() is False
+
+    def test_truthy_env_enables_flag(self, monkeypatch):
+        monkeypatch.setenv("REDROOM_IPI_SANDBOX", "true")
+        assert _ipi_sandbox_enabled() is True
+
+    def test_subprocess_framing_matches_inprocess(self, monkeypatch):
+        monkeypatch.delenv("REDROOM_IPI_SANDBOX", raising=False)
+        for wrap, ch in (
+            (_wrap_html, "html"),
+            (_wrap_email, "email"),
+            (_wrap_rag, "rag"),
+            (_wrap_plaintext, "plaintext"),
+        ):
+            direct = wrap("INJ-TEST", "BEN-P")
+            sub = wrap_channel_subprocess(ch, "INJ-TEST", "BEN-P")
+            assert direct == sub, ch
+
+    def test_invalid_channel_raises(self):
+        with pytest.raises(IpiSandboxError, match="allowlist"):
+            wrap_channel_subprocess("smtp", "a", "b")
+
+    def test_oversized_payload_raises(self, monkeypatch):
+        monkeypatch.setenv("REDROOM_IPI_SANDBOX", "true")
+        huge = "x" * (512 * 1024)
+        with patch.object(ipi_sandbox_mod, "_MAX_STDIN_BYTES", 100):
+            with pytest.raises(IpiSandboxError, match="exceeds"):
+                wrap_channel_subprocess("html", huge, "b")
+
+    def test_probe_full_run_with_sandbox_env(self, monkeypatch):
+        monkeypatch.setenv("REDROOM_IPI_SANDBOX", "true")
+
+        async def _t(_p):
+            return "neutral summary only."
+
+        probe = IndirectInjectionProbe(
+            payloads=build_default_payloads(rng_seed=99)
+        )
+        out = asyncio.run(
+            probe.run(
+                target_invoke=_t,
+                seed=99,
+                max_turns=2,
+                prompt_seed=json.dumps({"channels": ["plaintext"]}),
+            )
+        )
+        assert out.aborted_reason is None
+        assert out.metadata.get("ipi_subprocess_sandbox") is True
+        assert out.metadata["n_attempts"] == 2
 
 
 # ════════════════════════════════════════════════════════════════════

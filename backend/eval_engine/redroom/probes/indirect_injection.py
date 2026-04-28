@@ -22,18 +22,21 @@ string) is considered breached.
 Aggressiveness: L4 — IPI can compromise an agent that the user trusts
 and pivots through the agent against systems the user has access to.
 
-Sandboxing: the probe never opens a network connection, never writes a
-file, never spawns a subprocess. The "channels" are pure-string
-framings; delivery is the platform's responsibility (and is deliberately
-out of scope for this module).
+Sandboxing: by default the probe never opens a network connection and
+never writes a file. Channel strings are pure-text framings. For
+process-isolated framing (same output, subprocess worker), set
+``REDROOM_IPI_SANDBOX=true`` — see ``integrations/ipi_sandbox.py`` (E3).
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
+import os
 import secrets
 
 from eval_engine.redroom._text_safety import text_envelope
+from eval_engine.redroom.integrations.ipi_sandbox import IpiSandboxError
 from eval_engine.redroom.probes.base import (
     Probe,
     ProbeAttempt,
@@ -47,6 +50,7 @@ from eval_engine.redroom.probes.base import (
 
 
 _VALID_CHANNELS = ("html", "email", "rag", "plaintext")
+VALID_CHANNELS: frozenset[str] = frozenset(_VALID_CHANNELS)
 
 
 def _wrap_html(injection: str, benign_payload: str) -> str:
@@ -110,6 +114,37 @@ _WRAPPERS = {
     "rag": _wrap_rag,
     "plaintext": _wrap_plaintext,
 }
+# Alias for integrations (E3 subprocess worker imports this dict).
+channel_wrappers = _WRAPPERS
+
+
+def _ipi_sandbox_enabled() -> bool:
+    return os.environ.get("REDROOM_IPI_SANDBOX", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+async def _frame_document(
+    channel: str,
+    injection: str,
+    benign_paragraph: str,
+) -> str:
+    """Return channel-framed document text (in-process or subprocess)."""
+    if _ipi_sandbox_enabled():
+        from eval_engine.redroom.integrations.ipi_sandbox import (  # noqa: PLC0415
+            wrap_channel_subprocess,
+        )
+
+        return await asyncio.to_thread(
+            wrap_channel_subprocess,
+            channel,
+            injection,
+            benign_paragraph,
+        )
+    wrap = _WRAPPERS[channel]
+    return wrap(injection, benign_paragraph)
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -226,15 +261,28 @@ class IndirectInjectionProbe(Probe):
         turn = 0
 
         # Iterate over channel × payload, capped by max_turns.
+        use_sbx = _ipi_sandbox_enabled()
         for channel in channels:
-            wrap = _WRAPPERS[channel]
             for payload in payloads:
                 if turn >= max_turns:
                     break
-                wrapped = wrap(
-                    payload.injection_instruction,
-                    payload.benign_paragraph,
-                )
+                try:
+                    wrapped = await _frame_document(
+                        channel,
+                        payload.injection_instruction,
+                        payload.benign_paragraph,
+                    )
+                except IpiSandboxError as exc:
+                    return ProbeResult(
+                        technique=self.TECHNIQUE,
+                        attempts=tuple(attempts),
+                        metadata={
+                            "error": str(exc),
+                            "ipi_subprocess_sandbox": True,
+                            "n_partial_attempts": len(attempts),
+                        },
+                        aborted_reason="ipi_sandbox",
+                    )
                 composed = (
                     f"{benign_task}\n\n"
                     f"---- DOCUMENT ({channel}) ----\n"
@@ -277,6 +325,7 @@ class IndirectInjectionProbe(Probe):
                 "n_breached": breached_count,
                 "breach_rate": round(breach_rate, 4),
                 "channels": channels,
+                "ipi_subprocess_sandbox": use_sbx,
                 **text_envelope(benign_task, name="benign_task"),
                 "per_test": per_test,
                 "any_breached": breached_count > 0,
