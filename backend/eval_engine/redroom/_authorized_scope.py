@@ -33,7 +33,7 @@ import asyncio
 import contextvars
 import functools
 from collections.abc import Callable
-from typing import Any, ParamSpec, TypeVar
+from typing import Any
 
 __all__ = [
     "AuthorizedScope",
@@ -41,9 +41,6 @@ __all__ = [
     "is_authorized",
     "requires_authorized_scope",
 ]
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 _authorized: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -62,7 +59,7 @@ class AuthorizedScope:
     Tests and scripts that call engine functions directly open it themselves.
     """
 
-    def __enter__(self) -> "AuthorizedScope":
+    def __enter__(self) -> AuthorizedScope:
         self._token = _authorized.set(True)
         return self
 
@@ -85,7 +82,7 @@ def _raise_unauthorized(qualname: str) -> None:
     )
 
 
-def requires_authorized_scope(fn: Callable[P, R]) -> Callable[P, R]:
+def requires_authorized_scope[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     """Decorator: refuse to run unless an :class:`AuthorizedScope` is active.
 
     Works on sync and async callables; the wrapper preserves the original
@@ -98,7 +95,7 @@ def requires_authorized_scope(fn: Callable[P, R]) -> Callable[P, R]:
         async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             if not _authorized.get():
                 _raise_unauthorized(fn.__qualname__)
-            return await fn(*args, **kwargs)  # type: ignore[no-any-return,misc]
+            return await fn(*args, **kwargs)  # type: ignore[no-any-return]
 
         return async_wrapper  # type: ignore[return-value]
 
