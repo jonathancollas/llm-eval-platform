@@ -8,7 +8,7 @@
 # MERCURY RETROGRADE
 **Research Operating System for Frontier AI Evaluation**  
 
-[Architecture](docs/architecture.md) · [Red Room runbook](docs/redroom-operations.md) · [License](License)
+[Architecture](docs/architecture.md) · [Manifesto](Manifesto.md) · [Red Room runbook](docs/redroom-operations.md) · [License](License)
 
 </div>
 
