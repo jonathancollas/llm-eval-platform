@@ -16,6 +16,11 @@ will not appear in any audit. This is enforced by code organization:
 nothing outside this module imports the probe classes directly except
 the test suite.
 
+After the AUTHORIZE trace is written, :class:`~eval_engine.redroom._authorized_scope.AuthorizedScope`
+is entered for the duration of the probe and follow-up PROBE/RESPONSE trace
+emission. Code that needs to know it is on a charter-sanctioned path can
+call :func:`~eval_engine.redroom._authorized_scope.is_authorized`.
+
 External integrations (Garak D3, PyRIT D4) MUST follow the same
 discipline: charter authorize → trace start → invoke external tool with
 timeout → trace each emitted probe → trace finding.
@@ -35,6 +40,7 @@ import uuid
 
 from sqlmodel import Session
 
+from eval_engine.redroom._authorized_scope import AuthorizedScope
 from eval_engine.redroom.charter import (
     AttackRequest,
     CharterDecision,
@@ -210,21 +216,99 @@ async def run_probe(
     effective_timeout = min(inputs.timeout_seconds, float(p.max_duration_seconds))
     started = time.monotonic()
 
-    try:
-        result = await asyncio.wait_for(
-            probe.run(
-                target_invoke=inputs.target_invoke,
-                seed=inputs.seed,
-                max_turns=inputs.max_turns,
-                prompt_seed=inputs.prompt_seed,
-            ),
-            timeout=effective_timeout,
-        )
-    except TimeoutError:
+    with AuthorizedScope():
+        try:
+            result = await asyncio.wait_for(
+                probe.run(
+                    target_invoke=inputs.target_invoke,
+                    seed=inputs.seed,
+                    max_turns=inputs.max_turns,
+                    prompt_seed=inputs.prompt_seed,
+                ),
+                timeout=effective_timeout,
+            )
+        except TimeoutError:
+            duration = time.monotonic() - started
+            # Record the abort as a single PROBE trace with timeout reason.
+            # We don't have actual prompts/responses to record — that's
+            # expected for a timed-out run.
+            write_trace(
+                session,
+                tenant_id=inputs.tenant_id,
+                session_id=inputs.session_id,
+                kind=TraceKind.PROBE,
+                target_class=inputs.target_class,
+                aggressiveness=inputs.aggressiveness,
+                replay_hash=replay_hash,
+                target_model_id=inputs.target_model_id,
+                verdict=TraceVerdict.INCONCLUSIVE,
+                engine="native",
+                payload={
+                    "session_uuid": session_uuid,
+                    "technique": inputs.technique,
+                    "aborted_reason": "timeout",
+                    "timeout_seconds": effective_timeout,
+                    "duration_seconds": duration,
+                },
+                created_by_user_id=inputs.created_by_user_id,
+            )
+            return RunOutput(
+                decision=decision,
+                result=None,
+                duration_seconds=duration,
+                session_uuid=session_uuid,
+            )
+
         duration = time.monotonic() - started
-        # Record the abort as a single PROBE trace with timeout reason.
-        # We don't have actual prompts/responses to record — that's
-        # expected for a timed-out run.
+
+        # ── 4. PROBE / RESPONSE traces for each attempt ────────────────
+        for attempt in result.attempts:
+            write_trace(
+                session,
+                tenant_id=inputs.tenant_id,
+                session_id=inputs.session_id,
+                kind=TraceKind.PROBE,
+                target_class=inputs.target_class,
+                aggressiveness=inputs.aggressiveness,
+                replay_hash=replay_hash,
+                target_model_id=inputs.target_model_id,
+                verdict=None,
+                engine="native",
+                payload={
+                    "session_uuid": session_uuid,
+                    "technique": inputs.technique,
+                    "turn": attempt.turn,
+                    # Hash the prompt rather than store it raw — full prompts
+                    # are recoverable from the (technique, seed, prompt_seed)
+                    # tuple via replay, and storing them inflates the audit
+                    # log. Operators who need the full prompt can replay.
+                    "prompt_hash": _h(attempt.prompt),
+                    "prompt_len": len(attempt.prompt),
+                },
+                created_by_user_id=inputs.created_by_user_id,
+            )
+            write_trace(
+                session,
+                tenant_id=inputs.tenant_id,
+                session_id=inputs.session_id,
+                kind=TraceKind.RESPONSE,
+                target_class=inputs.target_class,
+                aggressiveness=inputs.aggressiveness,
+                replay_hash=replay_hash,
+                target_model_id=inputs.target_model_id,
+                verdict=None,
+                engine="native",
+                payload={
+                    "session_uuid": session_uuid,
+                    "technique": inputs.technique,
+                    "turn": attempt.turn,
+                    "response_hash": _h(attempt.response),
+                    "response_len": len(attempt.response),
+                },
+                created_by_user_id=inputs.created_by_user_id,
+            )
+
+        # ── 5. Final summary trace ─────────────────────────────────────
         write_trace(
             session,
             tenant_id=inputs.tenant_id,
@@ -234,108 +318,31 @@ async def run_probe(
             aggressiveness=inputs.aggressiveness,
             replay_hash=replay_hash,
             target_model_id=inputs.target_model_id,
-            verdict=TraceVerdict.INCONCLUSIVE,
+            verdict=(
+                TraceVerdict.INCONCLUSIVE
+                if result.aborted_reason
+                else TraceVerdict.NEUTRAL
+            ),
             engine="native",
             payload={
                 "session_uuid": session_uuid,
                 "technique": inputs.technique,
-                "aborted_reason": "timeout",
-                "timeout_seconds": effective_timeout,
+                "summary": True,
+                "turns_executed": len(result.attempts),
                 "duration_seconds": duration,
+                "metadata": result.metadata,
+                "aborted_reason": result.aborted_reason,
             },
             created_by_user_id=inputs.created_by_user_id,
         )
+        session.commit()
+
         return RunOutput(
             decision=decision,
-            result=None,
+            result=result,
             duration_seconds=duration,
             session_uuid=session_uuid,
         )
-
-    duration = time.monotonic() - started
-
-    # ── 4. PROBE / RESPONSE traces for each attempt ────────────────
-    for attempt in result.attempts:
-        write_trace(
-            session,
-            tenant_id=inputs.tenant_id,
-            session_id=inputs.session_id,
-            kind=TraceKind.PROBE,
-            target_class=inputs.target_class,
-            aggressiveness=inputs.aggressiveness,
-            replay_hash=replay_hash,
-            target_model_id=inputs.target_model_id,
-            verdict=None,
-            engine="native",
-            payload={
-                "session_uuid": session_uuid,
-                "technique": inputs.technique,
-                "turn": attempt.turn,
-                # Hash the prompt rather than store it raw — full prompts
-                # are recoverable from the (technique, seed, prompt_seed)
-                # tuple via replay, and storing them inflates the audit
-                # log. Operators who need the full prompt can replay.
-                "prompt_hash": _h(attempt.prompt),
-                "prompt_len": len(attempt.prompt),
-            },
-            created_by_user_id=inputs.created_by_user_id,
-        )
-        write_trace(
-            session,
-            tenant_id=inputs.tenant_id,
-            session_id=inputs.session_id,
-            kind=TraceKind.RESPONSE,
-            target_class=inputs.target_class,
-            aggressiveness=inputs.aggressiveness,
-            replay_hash=replay_hash,
-            target_model_id=inputs.target_model_id,
-            verdict=None,
-            engine="native",
-            payload={
-                "session_uuid": session_uuid,
-                "technique": inputs.technique,
-                "turn": attempt.turn,
-                "response_hash": _h(attempt.response),
-                "response_len": len(attempt.response),
-            },
-            created_by_user_id=inputs.created_by_user_id,
-        )
-
-    # ── 5. Final summary trace ─────────────────────────────────────
-    write_trace(
-        session,
-        tenant_id=inputs.tenant_id,
-        session_id=inputs.session_id,
-        kind=TraceKind.PROBE,
-        target_class=inputs.target_class,
-        aggressiveness=inputs.aggressiveness,
-        replay_hash=replay_hash,
-        target_model_id=inputs.target_model_id,
-        verdict=(
-            TraceVerdict.INCONCLUSIVE
-            if result.aborted_reason
-            else TraceVerdict.NEUTRAL
-        ),
-        engine="native",
-        payload={
-            "session_uuid": session_uuid,
-            "technique": inputs.technique,
-            "summary": True,
-            "turns_executed": len(result.attempts),
-            "duration_seconds": duration,
-            "metadata": result.metadata,
-            "aborted_reason": result.aborted_reason,
-        },
-        created_by_user_id=inputs.created_by_user_id,
-    )
-    session.commit()
-
-    return RunOutput(
-        decision=decision,
-        result=result,
-        duration_seconds=duration,
-        session_uuid=session_uuid,
-    )
 
 
 # ────────────────────────────────────────────────────────────────────

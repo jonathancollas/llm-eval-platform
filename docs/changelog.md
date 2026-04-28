@@ -25,6 +25,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - E7: operations runbook at [docs/redroom-operations.md](redroom-operations.md)
 - E3: optional subprocess-isolated IPI channel framing (`REDROOM_IPI_SANDBOX`,
   `eval_engine.redroom.integrations.ipi_sandbox`)
+- `AuthorizedScope` / `is_authorized()` — runner enters charter-sanctioned
+  context after the AUTHORIZE trace for probe + trace emission
 
 ### Phase D — Red Room (April 2026)
 - D0: charter — single security gate (`REDROOM_*` env vars)

@@ -23,6 +23,10 @@ generated. Every row carries an HMAC `row_signature` and a
 chain. `verify_chain()` walks the chain and reports `BROKEN` on the
 first signature mismatch.
 
+After the `AUTHORIZE` trace, `run_probe()` opens `AuthorizedScope` until
+the probe finishes and per-turn traces are written. Integrations can call
+`is_authorized()` to assert they are not running outside this path.
+
 ## Aggressiveness model
 
 | Level | What runs at this level                                         |

@@ -9,7 +9,13 @@ Every adversarial code path MUST write to it via write_trace().
 runner.py provides run_probe() — the single sanctioned entry point for
 the native engine. It wires charter.enforce() + write_trace() + a probe
 together so callers cannot accidentally skip authorization or auditing.
+After authorization, it opens :class:`AuthorizedScope` for the probe run.
 """
+from eval_engine.redroom._authorized_scope import (
+    AuthorizedScope,
+    RedRoomScopeError,
+    is_authorized,
+)
 from eval_engine.redroom.charter import (
     Aggressiveness,
     AttackRequest,
@@ -76,6 +82,10 @@ from eval_engine.redroom.trace_store import (
 )
 
 __all__ = [
+    # runtime scope (audit / integration gating)
+    "AuthorizedScope",
+    "RedRoomScopeError",
+    "is_authorized",
     # charter
     "Aggressiveness",
     "AttackRequest",

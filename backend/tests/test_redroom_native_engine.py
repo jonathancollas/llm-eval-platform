@@ -29,6 +29,7 @@ os.environ.setdefault("REDROOM_TRACE_SECRET", "x" * 32 + "_native_test")
 
 from fastapi import HTTPException  # noqa: E402
 
+from eval_engine.redroom._authorized_scope import is_authorized  # noqa: E402
 from eval_engine.redroom.charter import (  # noqa: E402
     Aggressiveness,
     CharterPolicy,
@@ -340,6 +341,23 @@ def _make_run_inputs(target, **overrides):
 
 
 class TestRunner:
+    def test_run_probe_sets_authorized_scope_during_target(self, session):
+        """Charter-sanctioned path must mark contextvars so integrations can gate."""
+        scope_flags: list[bool] = []
+
+        async def instrumented_target(prompt: str) -> str:
+            scope_flags.append(is_authorized())
+            return "ok"
+
+        asyncio.run(
+            run_probe(
+                _make_run_inputs(instrumented_target),
+                session=session,
+                policy=_enabled_policy(),
+            )
+        )
+        assert scope_flags == [True]
+
     def test_happy_path_emits_full_trace_chain(self, session):
         target, log = _make_target()
         out = asyncio.run(
