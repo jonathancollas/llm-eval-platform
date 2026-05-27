@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
@@ -195,6 +196,51 @@ class TestChain:
         # Next write must refuse rather than chain on top of a broken row
         with pytest.raises(RuntimeError, match="chain is broken"):
             _write(session)
+
+    def test_concurrent_writes_keep_chain_valid(self, tmp_path):
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'trace-chain.db'}",
+            connect_args={"check_same_thread": False},
+        )
+        SQLModel.metadata.create_all(engine)
+        n_workers = 12
+        barrier = threading.Barrier(n_workers)
+        errors: list[BaseException] = []
+
+        def worker(index: int) -> None:
+            try:
+                with Session(engine) as worker_session:
+                    barrier.wait()
+                    write_trace(
+                        worker_session,
+                        tenant_id=1,
+                        session_id=f"sess-concurrent-{index}",
+                        kind=TraceKind.PROBE,
+                        target_class="self",
+                        aggressiveness=2,
+                        replay_hash=compute_replay_hash("crescendo", f"prompt-{index}", 42),
+                        target_model_id=42,
+                        verdict=TraceVerdict.NEUTRAL,
+                        engine="native",
+                        payload={"worker": index},
+                        created_by_user_id=99,
+                    )
+                    worker_session.commit()
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=worker, args=(index,))
+            for index in range(n_workers)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert errors == []
+        with Session(engine) as read_session:
+            assert verify_chain(read_session, tenant_id=1) == n_workers
 
 
 # ════════════════════════════════════════════════════════════════════════

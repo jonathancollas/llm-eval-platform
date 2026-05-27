@@ -36,13 +36,20 @@ import hmac
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from sqlalchemy import event, text
 from sqlmodel import Field, Session, SQLModel, select
 
 logger = logging.getLogger(__name__)
+
+_PROCESS_LOCKS_GUARD = threading.Lock()
+_PROCESS_TENANT_LOCKS: dict[int, threading.RLock] = {}
+_TRACE_LOCKS_INFO_KEY = "_redroom_trace_chain_locks"
+_TRACE_LOCKS_EVENT_KEY = "_redroom_trace_chain_locks_event_registered"
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -211,6 +218,63 @@ def _compute_signature(row: RedRoomTrace) -> str:
     return hmac.new(_get_secret(), _canonical_payload(row), hashlib.sha256).hexdigest()
 
 
+def _tenant_chain_lock_key(tenant_id: int) -> int:
+    """Stable signed bigint key for PostgreSQL advisory locks."""
+    digest = hashlib.blake2b(
+        f"redroom-trace-chain:{tenant_id}".encode("utf-8"),
+        digest_size=8,
+    ).digest()
+    key = int.from_bytes(digest, byteorder="big", signed=False)
+    if key >= 2**63:
+        key -= 2**64
+    return key
+
+
+def _get_process_tenant_lock(tenant_id: int) -> threading.RLock:
+    with _PROCESS_LOCKS_GUARD:
+        lock = _PROCESS_TENANT_LOCKS.get(tenant_id)
+        if lock is None:
+            lock = threading.RLock()
+            _PROCESS_TENANT_LOCKS[tenant_id] = lock
+        return lock
+
+
+def _release_process_tenant_locks(session: Session, transaction) -> None:
+    """Release process-local tenant locks when the outer transaction ends."""
+    if getattr(transaction, "parent", None) is not None:
+        return
+
+    held = session.info.pop(_TRACE_LOCKS_INFO_KEY, {})
+    for lock in reversed(list(held.values())):
+        lock.release()
+
+
+def _acquire_tenant_chain_lock(session: Session, tenant_id: int) -> None:
+    """Serialize appends to a tenant's chain for the current transaction.
+
+    PostgreSQL's advisory transaction lock protects multi-process production
+    deployments. The process-local lock keeps SQLite/dev and same-process
+    writers serialized until commit or rollback, so a second writer cannot
+    read a stale chain tip while the first writer's row is still uncommitted.
+    """
+    held = session.info.setdefault(_TRACE_LOCKS_INFO_KEY, {})
+    if tenant_id not in held:
+        lock = _get_process_tenant_lock(tenant_id)
+        lock.acquire()
+        held[tenant_id] = lock
+
+    if not session.info.get(_TRACE_LOCKS_EVENT_KEY):
+        event.listen(session, "after_transaction_end", _release_process_tenant_locks)
+        session.info[_TRACE_LOCKS_EVENT_KEY] = True
+
+    bind = session.get_bind()
+    if bind.dialect.name == "postgresql":
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _tenant_chain_lock_key(tenant_id)},
+        )
+
+
 def compute_replay_hash(
     technique: str,
     prompt: str,
@@ -265,7 +329,10 @@ def write_trace(
     forces operators to investigate corruption before writing more rows
     on top of an already-tampered chain.
     """
-    # 1. Find the latest row in this tenant — that's our chain link.
+    # 1. Serialize this tenant's append path before reading the chain tip.
+    _acquire_tenant_chain_lock(session, tenant_id)
+
+    # 2. Find the latest row in this tenant — that's our chain link.
     prev = session.exec(
         select(RedRoomTrace)
         .where(RedRoomTrace.tenant_id == tenant_id)
@@ -273,7 +340,7 @@ def write_trace(
         .limit(1)
     ).first()
 
-    # 2. If there's a prev row, validate its signature before chaining onto it.
+    # 3. If there's a prev row, validate its signature before chaining onto it.
     # We refuse to extend a corrupted chain — operators must investigate first.
     if prev is not None:
         expected = _compute_signature(prev)
@@ -283,7 +350,7 @@ def write_trace(
                 f"Run verify_chain() and investigate before continuing."
             )
 
-    # 3. Construct the new row.
+    # 4. Construct the new row.
     payload_json = json.dumps(payload or {}, sort_keys=True, separators=(",", ":"))
     row = RedRoomTrace(
         tenant_id=tenant_id,
