@@ -20,6 +20,7 @@ import os
 import sys
 
 import pytest
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -441,6 +442,42 @@ class TestRunner:
         assert out.result is None  # timed out before producing a result
         rows = session.exec(select(RedRoomTrace).order_by(RedRoomTrace.id)).all()
         # AUTHORIZE + timeout PROBE
+        assert len(rows) == 2
+        assert rows[0].kind == TraceKind.AUTHORIZE.value
+        assert rows[1].kind == TraceKind.PROBE.value
+        assert "timeout" in rows[1].payload_json
+
+    def test_timeout_trace_is_committed_for_new_sessions(self):
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        SQLModel.metadata.create_all(engine)
+
+        async def slow_target(prompt: str) -> str:
+            await asyncio.sleep(2)
+            return "too late"
+
+        with Session(engine) as write_session:
+            out = asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        slow_target,
+                        technique="aiid_replay",
+                        timeout_seconds=0.1,
+                    ),
+                    session=write_session,
+                    policy=_enabled_policy(),
+                )
+            )
+            assert out.result is None
+
+        with Session(engine) as read_session:
+            rows = read_session.exec(
+                select(RedRoomTrace).order_by(RedRoomTrace.id)
+            ).all()
+
         assert len(rows) == 2
         assert rows[0].kind == TraceKind.AUTHORIZE.value
         assert rows[1].kind == TraceKind.PROBE.value
