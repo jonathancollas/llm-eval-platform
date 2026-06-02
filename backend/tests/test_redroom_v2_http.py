@@ -12,6 +12,7 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 import sys
@@ -176,6 +177,39 @@ class TestProbe:
             },
         )
         assert r.status_code == 403, r.text
+
+    def test_timeout_response_and_traces_persist(self, client):
+        from api.routers import redroom_v2
+
+        async def _slow_target(prompt: str) -> str:
+            await asyncio.sleep(2)
+            return "too late"
+
+        redroom_v2._TARGET_INVOKE_OVERRIDE["f"] = _slow_target
+
+        sid = "sess-timeout-http"
+        r = client.post(
+            f"/api/redroom/v2/sessions/{sid}/probe",
+            json={
+                "technique": "aiid_replay",
+                "target_model_id": 1,
+                "target_class": "self",
+                "aggressiveness": 1,
+                "max_turns": 1,
+                "prompt_seed": "BUILTIN-001",
+                "timeout_seconds": 1.0,
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["n_attempts"] == 0
+        assert body["aborted_reason"] == "timeout"
+
+        traces = client.get(f"/api/redroom/v2/sessions/{sid}/traces")
+        assert traces.status_code == 200, traces.text
+        rows = traces.json()["rows"]
+        assert [row["kind"] for row in rows] == ["authorize", "probe"]
+        assert '"aborted_reason":"timeout"' in rows[1]["payload_json"]
 
 
 # ════════════════════════════════════════════════════════════════════
