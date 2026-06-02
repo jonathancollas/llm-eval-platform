@@ -126,6 +126,7 @@ class RunOutput:
     result: ProbeResult | None
     duration_seconds: float
     session_uuid: str            # the run's stable id, surfaces in URLs
+    aborted_reason: str | None = None
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -252,11 +253,13 @@ async def run_probe(
                 },
                 created_by_user_id=inputs.created_by_user_id,
             )
+            session.commit()
             return RunOutput(
                 decision=decision,
                 result=None,
                 duration_seconds=duration,
                 session_uuid=session_uuid,
+                aborted_reason="timeout",
             )
 
         duration = time.monotonic() - started
@@ -342,6 +345,7 @@ async def run_probe(
             result=result,
             duration_seconds=duration,
             session_uuid=session_uuid,
+            aborted_reason=result.aborted_reason,
         )
 
 

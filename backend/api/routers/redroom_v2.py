@@ -312,7 +312,7 @@ async def run_one_probe(
         duration_seconds=out.duration_seconds,
         n_attempts=n_attempts,
         aborted_reason=(
-            out.result.aborted_reason if out.result is not None else None
+            out.result.aborted_reason if out.result is not None else out.aborted_reason
         ),
     )
 
