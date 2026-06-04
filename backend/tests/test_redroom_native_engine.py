@@ -438,12 +438,52 @@ class TestRunner:
                 policy=_enabled_policy(),
             )
         )
-        assert out.result is None  # timed out before producing a result
+        assert out.result is not None
+        assert out.result.attempts == ()
+        assert out.result.aborted_reason == "timeout"
         rows = session.exec(select(RedRoomTrace).order_by(RedRoomTrace.id)).all()
         # AUTHORIZE + timeout PROBE
         assert len(rows) == 2
         assert rows[0].kind == TraceKind.AUTHORIZE.value
         assert rows[1].kind == TraceKind.PROBE.value
+        assert "timeout" in rows[1].payload_json
+
+    def test_timeout_trace_survives_session_close(self, tmp_path):
+        async def slow_target(prompt: str) -> str:
+            await asyncio.sleep(2)
+            return "too late"
+
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'redroom-timeout.sqlite'}",
+            connect_args={"check_same_thread": False},
+        )
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as durable_session:
+            out = asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        slow_target,
+                        technique="aiid_replay",
+                        timeout_seconds=0.1,
+                    ),
+                    session=durable_session,
+                    policy=_enabled_policy(),
+                )
+            )
+
+        assert out.result is not None
+        assert out.result.aborted_reason == "timeout"
+
+        with Session(engine) as fresh_session:
+            rows = fresh_session.exec(
+                select(RedRoomTrace).order_by(RedRoomTrace.id)
+            ).all()
+
+        assert [row.kind for row in rows] == [
+            TraceKind.AUTHORIZE.value,
+            TraceKind.PROBE.value,
+        ]
         assert "timeout" in rows[1].payload_json
 
     def test_replay_hash_stable_across_runs(self, session):
