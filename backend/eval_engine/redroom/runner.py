@@ -252,9 +252,18 @@ async def run_probe(
                 },
                 created_by_user_id=inputs.created_by_user_id,
             )
+            session.commit()
             return RunOutput(
                 decision=decision,
-                result=None,
+                result=ProbeResult(
+                    technique=inputs.technique,
+                    attempts=(),
+                    metadata={
+                        "timeout_seconds": effective_timeout,
+                        "duration_seconds": duration,
+                    },
+                    aborted_reason="timeout",
+                ),
                 duration_seconds=duration,
                 session_uuid=session_uuid,
             )

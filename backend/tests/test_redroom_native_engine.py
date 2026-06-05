@@ -438,12 +438,52 @@ class TestRunner:
                 policy=_enabled_policy(),
             )
         )
-        assert out.result is None  # timed out before producing a result
+        assert out.result is not None
+        assert out.result.attempts == ()
+        assert out.result.aborted_reason == "timeout"
         rows = session.exec(select(RedRoomTrace).order_by(RedRoomTrace.id)).all()
         # AUTHORIZE + timeout PROBE
         assert len(rows) == 2
         assert rows[0].kind == TraceKind.AUTHORIZE.value
         assert rows[1].kind == TraceKind.PROBE.value
+        assert "timeout" in rows[1].payload_json
+
+    def test_timeout_trace_persists_after_request_session_closes(self, tmp_path):
+        async def slow_target(prompt: str) -> str:
+            await asyncio.sleep(2)
+            return "too late"
+
+        db_path = tmp_path / "timeout-traces.db"
+        engine = create_engine(
+            f"sqlite:///{db_path}", connect_args={"check_same_thread": False}
+        )
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as writer:
+            out = asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        slow_target,
+                        session_id="sess-timeout-durable",
+                        technique="aiid_replay",
+                        timeout_seconds=0.1,
+                    ),
+                    session=writer,
+                    policy=_enabled_policy(),
+                )
+            )
+            assert out.result is not None
+            assert out.result.aborted_reason == "timeout"
+
+        with Session(engine) as reader:
+            rows = reader.exec(
+                select(RedRoomTrace).order_by(RedRoomTrace.id)
+            ).all()
+
+        assert [row.kind for row in rows] == [
+            TraceKind.AUTHORIZE.value,
+            TraceKind.PROBE.value,
+        ]
         assert "timeout" in rows[1].payload_json
 
     def test_replay_hash_stable_across_runs(self, session):
