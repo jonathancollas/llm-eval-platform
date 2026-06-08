@@ -10,6 +10,17 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
+export function apiUrl(pathOrUrl: string): string {
+  try {
+    return new URL(pathOrUrl).toString();
+  } catch {
+    const base = API_BASE.replace(/\/+$/, "");
+    const path = pathOrUrl.replace(/^\/+/, "");
+    const normalizedPath = path.startsWith("api/") ? path.slice(4) : path;
+    return `${base}/${normalizedPath}`;
+  }
+}
+
 /** Optional API key sent as X-API-Key — set NEXT_PUBLIC_API_KEY in your environment. */
 export const API_KEY =
   process.env.NEXT_PUBLIC_API_KEY ?? "";

@@ -1,7 +1,7 @@
 /**
  * OmniBar — server contracts as typed functions.
  */
-import { API_BASE, API_KEY } from "@/lib/config";
+import { API_BASE, API_KEY, apiUrl } from "@/lib/config";
 import type {
   IntentResponse,
   ExecuteRequest,
@@ -18,10 +18,14 @@ function withTimeout(ms: number): AbortSignal {
   return c.signal;
 }
 
-function buildHeaders(extra?: HeadersInit): Headers {
+export function buildHeaders(extra?: HeadersInit): Headers {
   const h = new Headers(extra);
   if (API_KEY) h.set("X-API-Key", API_KEY);
   return h;
+}
+
+export function resolveSubmitEndpoint(endpoint: string): string {
+  return apiUrl(endpoint);
 }
 
 /**
