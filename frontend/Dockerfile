@@ -11,6 +11,9 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
+RUN mkdir -p .next/standalone/.next && \
+    cp -r .next/static .next/standalone/.next/static && \
+    if [ -d public ]; then cp -r public .next/standalone/public; fi
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
