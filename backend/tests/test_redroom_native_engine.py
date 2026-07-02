@@ -446,6 +446,39 @@ class TestRunner:
         assert rows[1].kind == TraceKind.PROBE.value
         assert "timeout" in rows[1].payload_json
 
+    def test_timeout_trace_persists_after_writer_session_closes(self, tmp_path):
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'redroom.db'}",
+            connect_args={"check_same_thread": False},
+        )
+        SQLModel.metadata.create_all(engine)
+
+        async def slow_target(prompt: str) -> str:
+            await asyncio.sleep(2)
+            return "too late"
+
+        with Session(engine) as writer:
+            out = asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        slow_target,
+                        technique="aiid_replay",
+                        timeout_seconds=0.1,
+                    ),
+                    session=writer,
+                    policy=_enabled_policy(),
+                )
+            )
+            assert out.result is None
+
+        with Session(engine) as reader:
+            rows = reader.exec(select(RedRoomTrace).order_by(RedRoomTrace.id)).all()
+
+        assert len(rows) == 2
+        assert rows[0].kind == TraceKind.AUTHORIZE.value
+        assert rows[1].kind == TraceKind.PROBE.value
+        assert "timeout" in rows[1].payload_json
+
     def test_replay_hash_stable_across_runs(self, session):
         """Two runs with same inputs must have the same replay_hash so that
         deduplication and idempotency work.
