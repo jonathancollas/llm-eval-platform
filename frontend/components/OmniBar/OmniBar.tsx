@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import { campaignsApi } from "@/lib/api";
 import { classifyIntent, fetchTypeahead, executeIntent } from "./api";
 import type {
   IntentResponse,
@@ -85,20 +86,13 @@ export function OmniBar({
         if (mode === "overlay") onOpenChange?.(false);
       } else if (payload.kind === "launch" && payload.preview) {
         // Call /execute to get the ready-to-submit body
-        const { submit_body, submit_endpoint } = await executeIntent({
+        const { submit_body } = await executeIntent({
           query: intent.query, role,
         });
-        if (submit_body && submit_endpoint) {
-          const res = await fetch(submit_endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(submit_body),
-          });
-          if (res.ok) {
-            const created = await res.json();
-            router.push(`/campaigns/${created.id}`);
-            if (mode === "overlay") onOpenChange?.(false);
-          }
+        if (submit_body) {
+          await campaignsApi.create(submit_body);
+          router.push("/campaigns");
+          if (mode === "overlay") onOpenChange?.(false);
         }
       } else if (payload.kind === "attack") {
         // Redirect to Red Room with prefilled state — user confirms there
