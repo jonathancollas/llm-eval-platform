@@ -15,26 +15,28 @@ from typing import Optional
 
 from core.utils import safe_json_load
 from core.database import get_session
-from core.models import Campaign, EvalRun, EvalResult, EvalRunMetric, LLMModel, Benchmark, JobStatus
+from core.models import Campaign, EvalRun, EvalResult, EvalRunMetric, LLMModel, Benchmark, JobStatus, Tenant
 from core.relations import get_eval_run_metrics
 from eval_engine.confidence_engine import compute_confidence
 from core.utils import normalize_adversarial_risk
 from eval_engine.comparison_engine import compare_campaigns as _compare_campaigns_engine
 from eval_engine.win_rate_engine import compute_win_rates
+from core.auth import require_tenant
+from api.routers.campaigns import _can_access_campaign
 
 router = APIRouter(prefix="/results", tags=["results"])
 
 # ── In-process TTL cache for completed-campaign dashboard data ────────────────
 # Completed campaigns are immutable — their dashboard never changes.
 # Cache for 30s for running campaigns (they change), indefinitely for completed.
-_dashboard_cache: dict[int, tuple[float, object]] = {}
+_dashboard_cache: dict[tuple[int, int], tuple[float, object]] = {}
 _dashboard_cache_lock = threading.Lock()
 _DASHBOARD_TTL_RUNNING = 5.0    # seconds — running campaigns change fast
 _DASHBOARD_TTL_COMPLETED = 30.0  # seconds — completed campaigns are stable
 
 # ── In-process TTL cache for stats/summary ───────────────────────────────────
 # This endpoint is polled every 30 s by SWR; caching for 30 s cuts DB load ~50×.
-_stats_cache: tuple[float, object] | None = None
+_stats_cache: dict[int, tuple[float, object]] = {}
 _stats_cache_lock = threading.Lock()
 _STATS_TTL = 30.0  # seconds
 
@@ -72,6 +74,28 @@ def _csv_escape(value: str) -> str:
     return value
 
 
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
+
+
+def _get_accessible_run(session: Session, run_id: int, tenant: Tenant) -> EvalRun:
+    run = session.get(EvalRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    _get_accessible_campaign(session, run.campaign_id, tenant)
+    return run
+
+
+def _ensure_result_access(session: Session, result: EvalResult, tenant: Tenant) -> None:
+    run = session.get(EvalRun, result.run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Result not found.")
+    _get_accessible_campaign(session, run.campaign_id, tenant)
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 class HeatmapCell(BaseModel):
@@ -104,21 +128,23 @@ class DashboardData(BaseModel):
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/campaign/{campaign_id}/dashboard", response_model=DashboardData)
-def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
+def get_dashboard(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
+    cache_key = (tenant.id, campaign_id)
     # Check cache first
     now = time.monotonic()
     with _dashboard_cache_lock:
-        cached = _dashboard_cache.get(campaign_id)
+        cached = _dashboard_cache.get(cache_key)
         if cached is not None:
             ts, data = cached
             # Use TTL based on whether the campaign was completed when cached
             ttl = _DASHBOARD_TTL_COMPLETED if isinstance(data, DashboardData) and data.status == JobStatus.COMPLETED else _DASHBOARD_TTL_RUNNING
             if now - ts < ttl:
                 return data
-
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
 
     runs = session.exec(
         select(EvalRun).where(EvalRun.campaign_id == campaign_id)
@@ -198,13 +224,16 @@ def get_dashboard(campaign_id: int, session: Session = Depends(get_session)):
         alerts=alerts,
     )
     with _dashboard_cache_lock:
-        _dashboard_cache[campaign_id] = (now, result)
+        _dashboard_cache[cache_key] = (now, result)
     return result
 
 
 
 @router.get("/stats/summary")
-def get_stats_summary(session: Session = Depends(get_session)):
+def get_stats_summary(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Aggregate platform statistics in a single query — replaces three separate list() calls.
 
     Returns the five counters shown on the home page overview:
@@ -214,8 +243,9 @@ def get_stats_summary(session: Session = Depends(get_session)):
 
     now = time.monotonic()
     with _stats_cache_lock:
-        if _stats_cache is not None:
-            ts, data = _stats_cache
+        cached = _stats_cache.get(tenant.id)
+        if cached is not None:
+            ts, data = cached
             if now - ts < _STATS_TTL:
                 return data
 
@@ -231,9 +261,14 @@ def get_stats_summary(session: Session = Depends(get_session)):
     ).one()
 
     # Single pass for campaign totals
-    campaign_count = session.exec(select(func.count()).select_from(Campaign)).one()
+    campaign_count = session.exec(
+        select(func.count()).select_from(Campaign).where(Campaign.tenant_id == tenant.id)
+    ).one()
     completed_count = session.exec(
-        select(func.count()).select_from(Campaign).where(Campaign.status == JobStatus.COMPLETED)
+        select(func.count()).select_from(Campaign).where(
+            Campaign.tenant_id == tenant.id,
+            Campaign.status == JobStatus.COMPLETED,
+        )
     ).one()
 
     result = {
@@ -244,7 +279,7 @@ def get_stats_summary(session: Session = Depends(get_session)):
         "completed_runs": completed_count,
     }
     with _stats_cache_lock:
-        _stats_cache = (now, result)
+        _stats_cache[tenant.id] = (now, result)
     return result
 
 
@@ -254,11 +289,10 @@ def get_run_items(
     limit: int = 50,
     offset: int = 0,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Drill-down: per-item results for one EvalRun."""
-    run = session.get(EvalRun, run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found.")
+    run = _get_accessible_run(session, run_id, tenant)
 
     results = session.exec(
         select(EvalResult)
@@ -289,11 +323,13 @@ def get_run_items(
 
 
 @router.get("/campaign/{campaign_id}/export.csv")
-def export_csv(campaign_id: int, session: Session = Depends(get_session)):
+def export_csv(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Export all results for a campaign as CSV."""
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
     run_ids = [r.id for r in runs]
@@ -344,10 +380,11 @@ def get_campaign_live_feed(
     campaign_id: int,
     limit: int = 15,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Live feed of most recent eval results for a running campaign."""
 
-    campaign = session.get(Campaign, campaign_id)
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
 
     # Get all runs for this campaign
     runs = session.exec(
@@ -440,8 +477,11 @@ def get_failed_items(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Get all failed/errored items for a campaign with error classification."""
+
+    _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(
         select(EvalRun).where(EvalRun.campaign_id == campaign_id)
@@ -546,11 +586,13 @@ def set_human_review(
     result_id: int,
     payload: HumanReviewPayload,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Record a human verdict for an eval result (override automatic score)."""
     result = session.get(EvalResult, result_id)
     if not result:
         raise HTTPException(status_code=404, detail="Result not found.")
+    _ensure_result_access(session, result, tenant)
     result.human_verdict = payload.verdict
     session.add(result)
     session.commit()
@@ -561,7 +603,11 @@ def set_human_review(
 # Aggregates: eval results + genome + judge + redbox in a single response
 
 @router.get("/campaign/{campaign_id}/insights")
-def get_campaign_insights(campaign_id: int, session: Session = Depends(get_session)):
+def get_campaign_insights(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Unified view across all modules for one campaign.
     Returns eval summary + genome + judge agreement + redbox exploits.
@@ -569,9 +615,7 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
     from core.models import FailureProfile, JudgeEvaluation, RedboxExploit
     from core.utils import safe_json_load
 
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(
         select(EvalRun).where(EvalRun.campaign_id == campaign_id)
@@ -727,13 +771,15 @@ def get_campaign_insights(campaign_id: int, session: Session = Depends(get_sessi
 # ── CATALOG-1: Contamination Detection ─────────────────────────────────────────
 
 @router.get("/campaign/{campaign_id}/contamination")
-def check_contamination(campaign_id: int, session: Session = Depends(get_session)):
+def check_contamination(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Analyze benchmark results for signs of test data contamination."""
     from eval_engine.contamination import analyze_contamination
 
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+    _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(
         select(EvalRun).where(EvalRun.campaign_id == campaign_id, EvalRun.status == JobStatus.COMPLETED)
@@ -793,13 +839,19 @@ def check_contamination(campaign_id: int, session: Session = Depends(get_session
 # ── Confidence calibration ────────────────────────────────────────────────────
 
 @router.get("/run/{run_id}/confidence")
-def run_confidence(run_id: int, session: Session = Depends(get_session)):
+def run_confidence(
+    run_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Confidence calibration for an evaluation run.
     Logic in eval_engine/confidence_engine.py (#88).
 
     Returns 95% bootstrap CI, Wilson interval, reliability grade A-D.
     """
+    _get_accessible_run(session, run_id, tenant)
+
     results = session.exec(
         select(EvalResult).where(EvalResult.run_id == run_id)
     ).all()
@@ -849,6 +901,7 @@ def compare_campaigns_endpoint(
     baseline_id: int = Query(..., description="Baseline campaign ID"),
     candidate_id: int = Query(..., description="Candidate campaign ID"),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Version-to-version comparison. Logic lives in eval_engine/comparison_engine.py.
@@ -870,10 +923,10 @@ def compare_campaigns_endpoint(
                 out[key] = {"score": r.score, "model": model.name, "benchmark": bench.name}
         return out
 
+    b_camp = _get_accessible_campaign(session, baseline_id, tenant)
+    c_camp = _get_accessible_campaign(session, candidate_id, tenant)
     b_runs = get_runs_map(baseline_id)
     c_runs = get_runs_map(candidate_id)
-    b_camp = session.get(Campaign, baseline_id)
-    c_camp = session.get(Campaign, candidate_id)
 
     report = _compare_campaigns_engine(
         baseline_runs=b_runs,
