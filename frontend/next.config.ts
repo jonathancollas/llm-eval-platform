@@ -1,5 +1,22 @@
 import type { NextConfig } from "next";
 
+function apiOrigin(): string | null {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+  try {
+    return new URL(apiUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
+const connectSrc = [
+  "'self'",
+  "https://openrouter.ai",
+  "https://api.lakera.ai",
+  "https://llm-eval-backend-kqlh.onrender.com",
+  apiOrigin(),
+].filter(Boolean).join(" ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -12,7 +29,7 @@ const securityHeaders = [
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
-      "connect-src 'self' https://openrouter.ai https://api.lakera.ai https://llm-eval-backend-kqlh.onrender.com",
+      `connect-src ${connectSrc}`,
       "frame-ancestors 'none'",
     ].join("; "),
   },
