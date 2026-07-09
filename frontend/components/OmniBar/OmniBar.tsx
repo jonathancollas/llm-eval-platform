@@ -14,7 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { classifyIntent, fetchTypeahead, executeIntent } from "./api";
+import { buildHeaders, classifyIntent, fetchTypeahead, executeIntent, resolveApiEndpoint } from "./api";
 import type {
   IntentResponse,
   IntentPayload,
@@ -89,15 +89,17 @@ export function OmniBar({
           query: intent.query, role,
         });
         if (submit_body && submit_endpoint) {
-          const res = await fetch(submit_endpoint, {
+          const res = await fetch(resolveApiEndpoint(submit_endpoint), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: buildHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(submit_body),
           });
           if (res.ok) {
-            const created = await res.json();
-            router.push(`/campaigns/${created.id}`);
+            await res.json();
+            router.push("/campaigns");
             if (mode === "overlay") onOpenChange?.(false);
+          } else {
+            throw new Error(`launch failed: ${res.status}`);
           }
         }
       } else if (payload.kind === "attack") {
