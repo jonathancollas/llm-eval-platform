@@ -18,10 +18,16 @@ function withTimeout(ms: number): AbortSignal {
   return c.signal;
 }
 
-function buildHeaders(extra?: HeadersInit): Headers {
+export function buildHeaders(extra?: HeadersInit): Headers {
   const h = new Headers(extra);
   if (API_KEY) h.set("X-API-Key", API_KEY);
   return h;
+}
+
+export function resolveApiEndpoint(endpoint: string): string {
+  if (/^https?:\/\//i.test(endpoint)) return endpoint;
+  const path = endpoint.startsWith("/api/") ? endpoint.slice(4) : endpoint;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 /**
