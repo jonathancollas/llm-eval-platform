@@ -252,6 +252,7 @@ async def run_probe(
                 },
                 created_by_user_id=inputs.created_by_user_id,
             )
+            session.commit()
             return RunOutput(
                 decision=decision,
                 result=None,
