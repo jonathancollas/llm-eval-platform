@@ -12,14 +12,23 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field as PydField
 from sqlmodel import Session, select
 
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, JudgeEvaluation, JobStatus
+from core.models import Campaign, EvalRun, EvalResult, LLMModel, JudgeEvaluation, JobStatus, Tenant
 from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/judge", tags=["judge"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -145,11 +154,13 @@ def _correlation(xs: list[float], ys: list[float]) -> float:
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.post("/evaluate")
-async def evaluate_with_judges(payload: EvaluateRequest, session: Session = Depends(get_session)):
+async def evaluate_with_judges(
+    payload: EvaluateRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Run multi-judge evaluation on campaign results."""
-    campaign = session.get(Campaign, payload.campaign_id)
-    if not campaign:
-        raise HTTPException(404, detail="Campaign not found.")
+    _get_accessible_campaign(session, payload.campaign_id, tenant)
 
     # Get completed runs + their results
     runs = session.exec(
@@ -211,8 +222,13 @@ async def evaluate_with_judges(payload: EvaluateRequest, session: Session = Depe
 
 
 @router.get("/agreement/{campaign_id}")
-def get_judge_agreement(campaign_id: int, session: Session = Depends(get_session)):
+def get_judge_agreement(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Compute inter-judge agreement (Cohen's kappa + Pearson correlation)."""
+    _get_accessible_campaign(session, campaign_id, tenant)
     evals = session.exec(
         select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id)
     ).all()
@@ -266,8 +282,13 @@ def get_judge_agreement(campaign_id: int, session: Session = Depends(get_session
 
 
 @router.post("/calibrate")
-def calibrate_judges(payload: CalibrateRequest, session: Session = Depends(get_session)):
+def calibrate_judges(
+    payload: CalibrateRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Upload oracle (human) labels and compute judge calibration metrics."""
+    _get_accessible_campaign(session, payload.campaign_id, tenant)
     # Store oracle labels
     for label in payload.oracle_labels:
         evals = session.exec(
@@ -345,8 +366,13 @@ def calibrate_judges(payload: CalibrateRequest, session: Session = Depends(get_s
 
 
 @router.get("/bias/{campaign_id}")
-def detect_judge_bias(campaign_id: int, session: Session = Depends(get_session)):
+def detect_judge_bias(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Detect systematic biases in judge evaluations."""
+    _get_accessible_campaign(session, campaign_id, tenant)
     evals = session.exec(
         select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id)
     ).all()
@@ -416,8 +442,13 @@ def detect_judge_bias(campaign_id: int, session: Session = Depends(get_session))
 
 
 @router.get("/summary/{campaign_id}")
-def judge_summary(campaign_id: int, session: Session = Depends(get_session)):
+def judge_summary(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Summary of all judge evaluations for a campaign."""
+    _get_accessible_campaign(session, campaign_id, tenant)
     evals = session.exec(
         select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id)
     ).all()
