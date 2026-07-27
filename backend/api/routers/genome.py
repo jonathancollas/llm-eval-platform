@@ -32,8 +32,9 @@ router = APIRouter(prefix="/genome", tags=["genome"])
 logger = logging.getLogger(__name__)
 
 # ── In-process TTL cache for safety heatmap ──────────────────────────────────
-# The heatmap aggregates all FailureProfiles — expensive full-scan operation.
-_heatmap_cache: tuple[float, object] | None = None
+# The heatmap aggregates FailureProfiles — expensive full-scan operation.
+# Keyed by tenant_id so one tenant cannot reuse another's aggregated view.
+_heatmap_cache: dict[int, tuple[float, object]] = {}
 _heatmap_cache_lock = threading.Lock()
 _HEATMAP_TTL = 300.0  # 5 minutes
 
@@ -282,17 +283,20 @@ def get_ontology():
 
 
 @router.get("/safety-heatmap")
-def get_safety_heatmap(session: Session = Depends(get_session)):
+def get_safety_heatmap(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Safety Heatmap: capability × risk matrix.
-    Aggregates failure profiles across all completed runs.
+    Aggregates failure profiles across completed runs visible to this tenant.
     """
-    global _heatmap_cache
-
     now = time.monotonic()
+    cache_key = tenant.id
     with _heatmap_cache_lock:
-        if _heatmap_cache is not None:
-            ts, data = _heatmap_cache
+        cached = _heatmap_cache.get(cache_key)
+        if cached is not None:
+            ts, data = cached
             if now - ts < _HEATMAP_TTL:
                 return data
 
@@ -312,7 +316,18 @@ def get_safety_heatmap(session: Session = Depends(get_session)):
         "agentique": "Agentique",
     }
 
-    profiles = session.exec(select(FailureProfile)).all()
+    # Only include profiles from campaigns this tenant can access.
+    accessible_campaigns = [
+        c for c in session.exec(select(Campaign)).all()
+        if _can_access_campaign(c, tenant)
+    ]
+    accessible_ids = [c.id for c in accessible_campaigns]
+    if not accessible_ids:
+        return {"heatmap": [], "models": [], "capabilities": [], "computed": False}
+
+    profiles = session.exec(
+        select(FailureProfile).where(FailureProfile.campaign_id.in_(accessible_ids))
+    ).all()
     if not profiles:
         return {"heatmap": [], "models": [], "capabilities": [], "computed": False}
 
@@ -410,7 +425,7 @@ def get_safety_heatmap(session: Session = Depends(get_session)):
         "computed": True,
     }
     with _heatmap_cache_lock:
-        _heatmap_cache = (now, result)
+        _heatmap_cache[cache_key] = (now, result)
     return result
 
 
