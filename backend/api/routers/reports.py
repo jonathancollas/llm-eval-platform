@@ -13,15 +13,42 @@ from fastapi.responses import StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Report, JobStatus, FailureProfile
+from core.models import (
+    Campaign,
+    EvalRun,
+    EvalResult,
+    LLMModel,
+    Benchmark,
+    Report,
+    JobStatus,
+    FailureProfile,
+    Tenant,
+)
 from core.utils import safe_json_load
 from core.relations import get_eval_run_metrics
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
+
+
+def _get_accessible_report(session: Session, report_id: int, tenant: Tenant) -> Report:
+    report = session.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    _get_accessible_campaign(session, report.campaign_id, tenant)
+    return report
 
 
 class ReportRequest(BaseModel):
@@ -132,10 +159,12 @@ Cost/Efficiency, Head-to-Head Comparison, Recommendations, Methodological Limita
 
 
 @router.post("/generate", response_model=ReportRead)
-async def generate_report(payload: ReportRequest, session: Session = Depends(get_session)):
-    campaign = session.get(Campaign, payload.campaign_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found.")
+async def generate_report(
+    payload: ReportRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    campaign = _get_accessible_campaign(session, payload.campaign_id, tenant)
     if campaign.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
         raise HTTPException(status_code=400, detail="Campaign must be completed or failed first.")
 
@@ -221,7 +250,12 @@ async def generate_report(payload: ReportRequest, session: Session = Depends(get
 
 
 @router.get("/campaign/{campaign_id}", response_model=list[ReportRead])
-def list_reports(campaign_id: int, session: Session = Depends(get_session)):
+def list_reports(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    _get_accessible_campaign(session, campaign_id, tenant)
     reports_q = session.exec(select(Report).where(Report.campaign_id == campaign_id)).all()
     return [
         ReportRead(id=r.id, campaign_id=r.campaign_id, title=r.title,
@@ -232,10 +266,12 @@ def list_reports(campaign_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{report_id}/export.md")
-def export_report_markdown(report_id: int, session: Session = Depends(get_session)):
-    report = session.get(Report, report_id)
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found.")
+def export_report_markdown(
+    report_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    report = _get_accessible_report(session, report_id, tenant)
     return StreamingResponse(
         iter([report.content_markdown]),
         media_type="text/markdown",
@@ -244,11 +280,13 @@ def export_report_markdown(report_id: int, session: Session = Depends(get_sessio
 
 
 @router.get("/{report_id}/export.html")
-def export_report_html(report_id: int, session: Session = Depends(get_session)):
+def export_report_html(
+    report_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Export report as styled HTML."""
-    report = session.get(Report, report_id)
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found.")
+    report = _get_accessible_report(session, report_id, tenant)
 
     campaign = session.get(Campaign, report.campaign_id)
     campaign_name = campaign.name if campaign else "Unknown"

@@ -9,8 +9,20 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, FailureProfile, ModelFingerprint, JobStatus
+from core.models import (
+    Campaign,
+    EvalRun,
+    EvalResult,
+    LLMModel,
+    Benchmark,
+    FailureProfile,
+    ModelFingerprint,
+    JobStatus,
+    Tenant,
+)
 from core.utils import safe_json_load
 from eval_engine.failure_genome.ontology import ONTOLOGY, FAILURE_GENOME_VERSION
 from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome, classify_run_hybrid
@@ -26,14 +38,31 @@ _heatmap_cache_lock = threading.Lock()
 _HEATMAP_TTL = 300.0  # 5 minutes
 
 
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
+
+
+def _get_accessible_run(session: Session, run_id: int, tenant: Tenant) -> EvalRun:
+    run = session.get(EvalRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    _get_accessible_campaign(session, run.campaign_id, tenant)
+    return run
+
+
 # ── Compute genome for a campaign ─────────────────────────────────────────────
 
 @router.post("/campaigns/{campaign_id}/compute")
-def compute_campaign_genome(campaign_id: int, session: Session = Depends(get_session)):
+def compute_campaign_genome(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Compute and store Failure Genome for all runs in a campaign (#63 — robust error handling)."""
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(404, detail="Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
     if campaign.status != JobStatus.COMPLETED:
         raise HTTPException(400, detail="Campaign must be completed before computing genome.")
 
@@ -158,8 +187,13 @@ def _update_model_fingerprints(campaign_id: int, session: Session):
 # ── Get genome for a campaign ──────────────────────────────────────────────────
 
 @router.get("/campaigns/{campaign_id}")
-def get_campaign_genome(campaign_id: int, session: Session = Depends(get_session)):
+def get_campaign_genome(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Get aggregated Failure Genome for all models in a campaign."""
+    _get_accessible_campaign(session, campaign_id, tenant)
     profiles = session.exec(
         select(FailureProfile).where(FailureProfile.campaign_id == campaign_id)
     ).all()
@@ -385,12 +419,16 @@ def compare_campaigns(
     baseline_id: int,
     candidate_id: int,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     REGRESSION-2: Compare two campaigns and identify probable causes.
     Returns score diff + causal attribution.
     """
     from core.models import EvalRun
+
+    _get_accessible_campaign(session, baseline_id, tenant)
+    _get_accessible_campaign(session, candidate_id, tenant)
 
     def _campaign_summary(campaign_id: int):
         c = session.get(Campaign, campaign_id)
@@ -459,13 +497,14 @@ async def explain_regression(
     baseline_id: int,
     candidate_id: int,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Generate a natural language causal explanation of the regression."""
     from core.config import get_settings
     settings = get_settings()
 
     # First get the comparison data
-    comparison = compare_campaigns(baseline_id, candidate_id, session)
+    comparison = compare_campaigns(baseline_id, candidate_id, session, tenant)
 
     if not comparison.get("regression_detected"):
         return {
@@ -480,8 +519,8 @@ async def explain_regression(
         }
 
     # Get genome data for both campaigns
-    baseline_genome = get_campaign_genome(baseline_id, session)
-    candidate_genome = get_campaign_genome(candidate_id, session)
+    baseline_genome = get_campaign_genome(baseline_id, session, tenant)
+    candidate_genome = get_campaign_genome(candidate_id, session, tenant)
 
     import anthropic, asyncio
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -536,13 +575,16 @@ Write in the same language as the campaign names. Be precise, cite numbers."""
 # ── GENOME-2: Signal Extractor API ─────────────────────────────────────────────
 
 @router.get("/signals/{run_id}")
-def get_run_signals(run_id: int, limit: int = 20, session: Session = Depends(get_session)):
+def get_run_signals(
+    run_id: int,
+    limit: int = 20,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Extract and return signals for items in an eval run (debugging/analysis)."""
     from eval_engine.failure_genome.signal_extractor import extract_signals, signals_to_dict
 
-    run = session.get(EvalRun, run_id)
-    if not run:
-        raise HTTPException(404, detail="Run not found.")
+    run = _get_accessible_run(session, run_id, tenant)
 
     results = session.exec(
         select(EvalResult).where(EvalResult.run_id == run_id).limit(limit)
@@ -570,7 +612,11 @@ def get_run_signals(run_id: int, limit: int = 20, session: Session = Depends(get
 # ── GENOME-4: Hybrid Classification API ───────────────────────────────────────
 
 @router.post("/campaigns/{campaign_id}/compute-hybrid")
-async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get_session)):
+async def compute_hybrid_genome(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Compute genome with LLM hybrid classification (GENOME-4).
     More accurate than rule-based only, but uses LLM API calls.
     Falls back to rule-based classification if LLM is unavailable (#63).
@@ -578,9 +624,7 @@ async def compute_hybrid_genome(campaign_id: int, session: Session = Depends(get
     from core.config import get_settings as _get_settings
     settings = _get_settings()
 
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(404, detail="Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
     if campaign.status != JobStatus.COMPLETED:
         raise HTTPException(400, detail="Campaign must be completed.")
 
