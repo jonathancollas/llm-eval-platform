@@ -252,6 +252,10 @@ async def run_probe(
                 },
                 created_by_user_id=inputs.created_by_user_id,
             )
+            # write_trace only flushes; get_session() does not auto-commit.
+            # Without an explicit commit here the AUTHORIZE + timeout PROBE
+            # rows are rolled back when the request session closes.
+            session.commit()
             return RunOutput(
                 decision=decision,
                 result=None,

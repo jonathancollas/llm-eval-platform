@@ -422,25 +422,36 @@ class TestRunner:
                 )
             )
 
-    def test_timeout_records_inconclusive_trace(self, session):
+    def test_timeout_records_inconclusive_trace(self, tmp_path):
         async def slow_target(prompt: str) -> str:
             await asyncio.sleep(2)
             return "too late"
 
-        out = asyncio.run(
-            run_probe(
-                _make_run_inputs(
-                    slow_target,
-                    technique="aiid_replay",
-                    timeout_seconds=0.1,
-                ),
-                session=session,
-                policy=_enabled_policy(),
-            )
+        # Use a file-backed DB + fresh reader session so a same-session
+        # flush cannot mask a missing commit on the timeout abort path.
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'redroom-timeout.db'}",
+            connect_args={"check_same_thread": False},
         )
+        SQLModel.metadata.create_all(engine)
+
+        with Session(engine) as write_session:
+            out = asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        slow_target,
+                        technique="aiid_replay",
+                        timeout_seconds=0.1,
+                    ),
+                    session=write_session,
+                    policy=_enabled_policy(),
+                )
+            )
         assert out.result is None  # timed out before producing a result
-        rows = session.exec(select(RedRoomTrace).order_by(RedRoomTrace.id)).all()
-        # AUTHORIZE + timeout PROBE
+
+        with Session(engine) as read_session:
+            rows = read_session.exec(select(RedRoomTrace).order_by(RedRoomTrace.id)).all()
+        # AUTHORIZE + timeout PROBE must survive session close
         assert len(rows) == 2
         assert rows[0].kind == TraceKind.AUTHORIZE.value
         assert rows[1].kind == TraceKind.PROBE.value
