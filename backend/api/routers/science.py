@@ -15,8 +15,10 @@ from sqlmodel import Session, select
 
 from core.database import get_session
 from core.config import get_settings
-from core.models import LLMModel, Benchmark, EvalRun, EvalResult, JobStatus
+from core.models import LLMModel, Benchmark, EvalRun, EvalResult, JobStatus, Campaign, Tenant
 from core.utils import resolve_safe_path
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from inference.adapter import get_adapter
 from eval_engine.capability_propensity import CapabilityPropensityEngine
 from eval_engine.mech_interp import MechInterpValidator
@@ -25,6 +27,13 @@ from eval_engine.contamination import analyze_contamination
 router = APIRouter(prefix="/science", tags=["science"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 # ── Shared helper ─────────────────────────────────────────────────────────────
@@ -466,15 +475,13 @@ def analyze_run_contamination(run_id: int, session: Session = Depends(get_sessio
 def analyze_campaign_contamination(
     campaign_id: int,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Cross-model contamination analysis for a full campaign.
     Aggregates run-level contamination scores and flags suspicious patterns.
     """
-    from core.models import Campaign
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(
         select(EvalRun).where(
@@ -745,6 +752,7 @@ def get_failure_clusters(
     min_cluster_size: int = 2,
     similarity_threshold: float = 0.3,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Cluster failure traces from a campaign and detect novel failure patterns.
@@ -756,6 +764,8 @@ def get_failure_clusters(
     """
     from eval_engine.failure_clustering import FailureClusteringEngine
     from core.models import EvalResult
+
+    _get_accessible_campaign(session, campaign_id, tenant)
 
     # Load failures (scored items below 0.5)
     results = session.exec(

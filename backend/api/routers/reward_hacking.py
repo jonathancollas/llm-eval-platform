@@ -24,8 +24,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import EvalRun, EvalResult, LLMModel, Benchmark, JobStatus, Campaign
+from core.models import EvalRun, EvalResult, LLMModel, Benchmark, JobStatus, Campaign, Tenant
 from eval_engine.reward_hacking import (
     analyze_reward_hacking,
     implausibly_consistent_scores,
@@ -49,6 +51,13 @@ _REFERENCES = [
     "Meinke et al. (2024) — Sandbagging in safety evaluations",
     "Apollo Research / OpenAI (2025) — Covert behaviours in frontier models",
 ]
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 # ── Serialisation helpers ─────────────────────────────────────────────────────
@@ -185,6 +194,7 @@ def analyze_run(
     run_id: int,
     payload: Optional[RunAnalysisRequest] = None,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Run the full reward-hacking detection battery on one EvalRun.
@@ -202,6 +212,7 @@ def analyze_run(
     run = session.get(EvalRun, run_id)
     if not run:
         raise HTTPException(404, "EvalRun not found.")
+    _get_accessible_campaign(session, run.campaign_id, tenant)
 
     bench = session.get(Benchmark, run.benchmark_id)
     model = session.get(LLMModel, run.model_id)
@@ -247,6 +258,7 @@ def analyze_run(
 def analyze_campaign(
     campaign_id: int,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Run reward-hacking detection across all completed runs in a campaign.
@@ -260,9 +272,7 @@ def analyze_campaign(
     - overall campaign risk level
     - deduplicated alert list
     """
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(
         select(EvalRun).where(
@@ -384,6 +394,7 @@ def list_alerts(
         "medium", description="Minimum severity: medium | high | critical"
     ),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     List all reward-hacking alerts for a campaign, filtered by minimum severity.
@@ -401,9 +412,7 @@ def list_alerts(
     severity_order = {"medium": 0, "high": 1, "critical": 2}
     min_idx = severity_order.get(min_severity, 0)
 
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
 
     runs = session.exec(
         select(EvalRun).where(
@@ -460,6 +469,7 @@ def list_alerts(
 def alerts_for_run(
     run_id: int,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Generate and return all reward-hacking alerts for a single EvalRun.
@@ -470,6 +480,7 @@ def alerts_for_run(
     run = session.get(EvalRun, run_id)
     if not run:
         raise HTTPException(404, "EvalRun not found.")
+    _get_accessible_campaign(session, run.campaign_id, tenant)
 
     bench = session.get(Benchmark, run.benchmark_id)
     model = session.get(LLMModel, run.model_id)

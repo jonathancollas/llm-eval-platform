@@ -11,8 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, JobStatus
+from core.models import Campaign, EvalRun, EvalResult, LLMModel, JobStatus, Tenant
 from core.utils import safe_json_load
 
 router = APIRouter(prefix="/policy", tags=["policy"])
@@ -20,6 +22,13 @@ logger = logging.getLogger(__name__)
 NEMO_GUARDRAILS_AVAILABLE = find_spec("nemoguardrails") is not None
 PATTERN_MATCH_THRESHOLD = 0.3
 MAX_TOOL_NAME_LENGTH = 120
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 # ── Policy Definitions ─────────────────────────────────────────────────────────
@@ -423,7 +432,11 @@ class PolicyEvalRequest(BaseModel):
 
 
 @router.post("/evaluate")
-def evaluate_campaign_policy(payload: PolicyEvalRequest, session: Session = Depends(get_session)):
+def evaluate_campaign_policy(
+    payload: PolicyEvalRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Evaluate a campaign's results against a policy framework."""
     from core.models import FailureProfile, RedboxExploit
     from eval_engine.failure_genome.classifiers import aggregate_genome
@@ -431,9 +444,7 @@ def evaluate_campaign_policy(payload: PolicyEvalRequest, session: Session = Depe
     if payload.policy_id not in POLICIES:
         raise HTTPException(400, detail=f"Unknown policy. Available: {list(POLICIES.keys())}")
 
-    campaign = session.get(Campaign, payload.campaign_id)
-    if not campaign:
-        raise HTTPException(404, detail="Campaign not found.")
+    campaign = _get_accessible_campaign(session, payload.campaign_id, tenant)
 
     # Get runs
     query = select(EvalRun).where(EvalRun.campaign_id == payload.campaign_id, EvalRun.status == JobStatus.COMPLETED)
