@@ -21,12 +21,17 @@ def safe_bench_path(bench_library_path: str, dataset_path: str) -> Path:
 
     Raises HTTP 400 if the resolved path escapes the bench_library root (path traversal).
     Returns the resolved absolute Path on success.
+
+    Uses Path.relative_to() rather than str.startswith(): a sibling directory
+    such as ``/data/bench_evil`` shares the ``/data/bench`` prefix and would
+    incorrectly pass a startswith check after ``../bench_evil/...`` resolution.
     """
-    root = Path(bench_library_path).resolve()
-    candidate = (root / dataset_path).resolve()
-    if not str(candidate).startswith(str(root)):
-        raise HTTPException(status_code=400, detail="Invalid dataset path.")
-    return candidate
+    from core.utils import resolve_safe_path
+
+    try:
+        return resolve_safe_path(Path(bench_library_path), dataset_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid dataset path.") from exc
 
 
 def _get_fernet() -> Fernet:

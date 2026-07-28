@@ -552,6 +552,21 @@ class TestSafeBenchPath:
         with pytest.raises(HTTPException):
             safe_bench_path(str(tmp_path), "custom/../../etc/shadow")
 
+    def test_prefix_sibling_escape_is_rejected(self, tmp_path):
+        """Classic startswith bypass: ../bench_evil shares the /bench prefix."""
+        from fastapi import HTTPException
+        from core.security import safe_bench_path
+
+        root = tmp_path / "bench"
+        root.mkdir()
+        evil = tmp_path / "bench_evil"
+        evil.mkdir()
+        (evil / "secret.json").write_text('{"leaked": true}')
+
+        with pytest.raises(HTTPException) as exc_info:
+            safe_bench_path(str(root), "../bench_evil/secret.json")
+        assert exc_info.value.status_code == 400
+
     def test_simple_subpath_allowed(self, tmp_path):
         from core.security import safe_bench_path
         result = safe_bench_path(str(tmp_path), "benchmarks/mmlu.json")
