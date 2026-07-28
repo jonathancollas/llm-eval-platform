@@ -2,8 +2,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List
 from sqlmodel import Session, select
+from fastapi import HTTPException
+
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import JudgeEvaluation
+from core.models import Campaign, JudgeEvaluation, Tenant
 from eval_engine.scenario_runtime import (
     EXAMPLE_SCENARIOS, ScenarioRuntime, load_scenario, validate_scenario,
     evaluate_step, ScenarioStep,
@@ -12,6 +16,13 @@ from eval_engine.judge_bias import pearson_correlation
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 _runtime = ScenarioRuntime()
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 @router.get("/examples")
@@ -62,7 +73,12 @@ def evaluate_step_endpoint(req: StepEvalRequest):
 
 
 @router.get("/bias/report/{campaign_id}")
-def bias_report(campaign_id: int, session: Session = Depends(get_session)):
+def bias_report(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    _get_accessible_campaign(session, campaign_id, tenant)
     evals = session.exec(
         select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id)
     ).all()

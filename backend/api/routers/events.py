@@ -6,14 +6,23 @@ Query the event log and replay campaign state at any point in time.
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import EvalEventRecord
+from core.models import Campaign, EvalEventRecord, Tenant
 from eval_engine.event_pipeline import get_replay_engine, EventType
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+
+def _get_accessible_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 @router.get("/campaign/{campaign_id}")
@@ -23,6 +32,7 @@ def get_campaign_events(
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Stream the full event log for a campaign.
@@ -32,6 +42,7 @@ def get_campaign_events(
     - Auditing safety-critical evaluations
     - Powering real-time observability dashboards
     """
+    _get_accessible_campaign(session, campaign_id, tenant)
     query = (
         select(EvalEventRecord)
         .where(EvalEventRecord.campaign_id == campaign_id)
@@ -70,6 +81,8 @@ def get_campaign_events(
 async def get_campaign_state(
     campaign_id: int,
     at_sequence: Optional[int] = None,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Replay all events and return reconstructed campaign state.
@@ -79,6 +92,7 @@ async def get_campaign_state(
 
     This is the foundation of deterministic replay (#46).
     """
+    _get_accessible_campaign(session, campaign_id, tenant)
     engine = get_replay_engine()
     state = await engine.replay(campaign_id, up_to_sequence=at_sequence)
     return state.summary
@@ -89,6 +103,8 @@ async def get_campaign_diff(
     campaign_id: int,
     from_sequence: int = Query(..., description="Start sequence (inclusive)"),
     to_sequence: int = Query(..., description="End sequence (inclusive)"),
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Show what changed between two points in the event log.
@@ -96,6 +112,7 @@ async def get_campaign_diff(
     Useful for understanding regressions or unexpected state transitions.
     Example: diff between before and after a sandbagging signal was emitted.
     """
+    _get_accessible_campaign(session, campaign_id, tenant)
     engine = get_replay_engine()
     diff = await engine.diff(campaign_id, from_sequence, to_sequence)
     return {
@@ -110,11 +127,13 @@ async def get_campaign_diff(
 def get_campaign_timeline(
     campaign_id: int,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Condensed timeline of key milestones for a campaign.
     Returns one entry per meaningful state transition (skips ITEM events).
     """
+    _get_accessible_campaign(session, campaign_id, tenant)
     milestone_types = {
         "campaign.started", "campaign.completed", "campaign.failed",
         "run.started", "run.completed", "run.failed",
