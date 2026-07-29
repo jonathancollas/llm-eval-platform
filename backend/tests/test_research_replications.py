@@ -4,12 +4,15 @@ import secrets
 import sys
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
+
+from core.auth import require_tenant  # noqa: E402
+from core.models import Tenant  # noqa: E402
 
 BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
 RESEARCH_PATH = os.path.join(BACKEND_DIR, "api", "routers", "research.py")
@@ -24,6 +27,10 @@ def db_engine(tmp_path_factory):
     db_path = tmp_path_factory.mktemp("research_replications_test") / "research_replications.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        tenant = Tenant(name="Replication Tenant", slug="replication-tenant", api_key_hash="rep")
+        session.add(tenant)
+        session.commit()
     return engine
 
 
@@ -33,9 +40,20 @@ def app(db_engine):
         with Session(db_engine) as session:
             yield session
 
+    def _require_tenant_override(
+        tenant_key: str | None = Header(default=None, alias="X-Tenant-Key"),
+    ):
+        # Tests historically omitted the header; map missing/any key to the fixture tenant.
+        with Session(db_engine) as session:
+            tenant = session.exec(select(Tenant).where(Tenant.slug == "replication-tenant")).first()
+            if not tenant:
+                raise HTTPException(status_code=401, detail="Invalid tenant.")
+            return tenant
+
     test_app = FastAPI()
     test_app.include_router(research.router)
     test_app.dependency_overrides[research.get_session] = _get_session_override
+    test_app.dependency_overrides[require_tenant] = _require_tenant_override
     return test_app
 
 

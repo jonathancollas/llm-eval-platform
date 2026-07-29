@@ -11,18 +11,86 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
 from core.models import (
     Workspace, ExperimentManifest, SafetyIncident, TelemetryEvent,
-    Campaign, EvalRun, LLMModel, Benchmark, JobStatus,
+    Campaign, EvalRun, LLMModel, Benchmark, JobStatus, Tenant,
 )
 
 router = APIRouter(prefix="/research", tags=["research"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _campaign_collaboration(campaign: Campaign) -> dict:
+    """Mirror campaigns._campaign_collaboration without importing that router."""
+    if not campaign.run_context_json:
+        return {"visibility": "private", "collaborator_tenant_ids": []}
+    try:
+        parsed = json.loads(campaign.run_context_json)
+        context = parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        context = {}
+    collab = context.get("collaboration", {})
+    if not isinstance(collab, dict):
+        collab = {}
+    return {
+        "visibility": collab.get("visibility", "private"),
+        "collaborator_tenant_ids": [
+            int(tid) for tid in collab.get("collaborator_tenant_ids", []) if isinstance(tid, int)
+        ],
+    }
+
+
+def _can_access_campaign(campaign: Campaign, tenant: Tenant) -> bool:
+    """Same rules as api.routers.campaigns._can_access_campaign."""
+    if campaign.tenant_id == tenant.id:
+        return True
+    collab = _campaign_collaboration(campaign)
+    if collab["visibility"] == "public":
+        return True
+    if collab["visibility"] == "shared" and tenant.id in collab["collaborator_tenant_ids"]:
+        return True
+    return False
+
+
+def _can_access_workspace(workspace: Workspace, tenant: Tenant) -> bool:
+    """Tenant-owned workspaces, plus explicitly public ones."""
+    if workspace.tenant_id == tenant.id:
+        return True
+    return workspace.visibility == "public"
+
+
+def _get_accessible_workspace(
+    session: Session, workspace_id: int, tenant: Tenant
+) -> Workspace:
+    workspace = session.get(Workspace, workspace_id)
+    if not workspace or not _can_access_workspace(workspace, tenant):
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    return workspace
+
+
+def _get_owned_workspace(
+    session: Session, workspace_id: int, tenant: Tenant
+) -> Workspace:
+    workspace = session.get(Workspace, workspace_id)
+    if not workspace or workspace.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    return workspace
+
+
+def _get_accessible_campaign(
+    session: Session, campaign_id: int, tenant: Tenant
+) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 # ── Workspace CRUD ─────────────────────────────────────────────────────────────
@@ -49,7 +117,11 @@ class WorkspaceUpdate(BaseModel):
 
 
 @router.post("/workspaces")
-def create_workspace(payload: WorkspaceCreate, session: Session = Depends(get_session)):
+def create_workspace(
+    payload: WorkspaceCreate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     slug = payload.name.lower().replace(" ", "-")[:50]
     slug = "".join(c for c in slug if c.isalnum() or c == "-")
 
@@ -66,6 +138,7 @@ def create_workspace(payload: WorkspaceCreate, session: Session = Depends(get_se
         risk_domain=payload.risk_domain,
         visibility=payload.visibility,
         tags=json.dumps(payload.tags),
+        tenant_id=tenant.id,
     )
     session.add(ws)
     session.commit()
@@ -79,8 +152,11 @@ def list_workspaces(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
-    query = select(Workspace)
+    query = select(Workspace).where(
+        or_(Workspace.tenant_id == tenant.id, Workspace.visibility == "public")
+    )
     if visibility:
         query = query.where(Workspace.visibility == visibility)
     workspaces = session.exec(query.order_by(Workspace.updated_at.desc()).offset(offset).limit(limit)).all()
@@ -93,10 +169,12 @@ def list_workspaces(
 
 
 @router.get("/workspaces/{workspace_id}")
-def get_workspace(workspace_id: int, session: Session = Depends(get_session)):
-    ws = session.get(Workspace, workspace_id)
-    if not ws:
-        raise HTTPException(404, detail="Workspace not found.")
+def get_workspace(
+    workspace_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    ws = _get_accessible_workspace(session, workspace_id, tenant)
 
     # Gather linked entities
     campaign_ids = json.loads(ws.campaign_ids) if ws.campaign_ids else []
@@ -123,13 +201,20 @@ def get_workspace(workspace_id: int, session: Session = Depends(get_session)):
 
 
 @router.patch("/workspaces/{workspace_id}")
-def update_workspace(workspace_id: int, payload: WorkspaceUpdate, session: Session = Depends(get_session)):
-    ws = session.get(Workspace, workspace_id)
-    if not ws:
-        raise HTTPException(404, detail="Workspace not found.")
+def update_workspace(
+    workspace_id: int,
+    payload: WorkspaceUpdate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    ws = _get_owned_workspace(session, workspace_id, tenant)
 
     for field, value in payload.dict(exclude_unset=True).items():
-        if field in ("benchmark_ids", "campaign_ids", "model_ids", "tags"):
+        if field == "campaign_ids":
+            for campaign_id in value or []:
+                _get_accessible_campaign(session, campaign_id, tenant)
+            setattr(ws, field, json.dumps(value))
+        elif field in ("benchmark_ids", "model_ids", "tags"):
             setattr(ws, field, json.dumps(value))
         else:
             setattr(ws, field, value)
@@ -140,10 +225,13 @@ def update_workspace(workspace_id: int, payload: WorkspaceUpdate, session: Sessi
 
 
 @router.post("/workspaces/{workspace_id}/fork")
-def fork_workspace(workspace_id: int, new_name: str = "Fork", session: Session = Depends(get_session)):
-    parent = session.get(Workspace, workspace_id)
-    if not parent:
-        raise HTTPException(404, detail="Workspace not found.")
+def fork_workspace(
+    workspace_id: int,
+    new_name: str = "Fork",
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    parent = _get_accessible_workspace(session, workspace_id, tenant)
 
     slug = f"{parent.slug}-fork-{int(datetime.now(UTC).timestamp())}"
     fork = Workspace(
@@ -157,6 +245,7 @@ def fork_workspace(workspace_id: int, new_name: str = "Fork", session: Session =
         model_ids=parent.model_ids,
         forked_from_id=parent.id,
         tags=parent.tags,
+        tenant_id=tenant.id,
     )
     session.add(fork)
     parent.fork_count += 1
@@ -169,11 +258,16 @@ def fork_workspace(workspace_id: int, new_name: str = "Fork", session: Session =
 # ── Experiment Manifest ────────────────────────────────────────────────────────
 
 @router.post("/manifests/generate/{campaign_id}")
-def generate_manifest(campaign_id: int, workspace_id: Optional[int] = None, session: Session = Depends(get_session)):
+def generate_manifest(
+    campaign_id: int,
+    workspace_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Auto-generate a reproducibility manifest from a completed campaign."""
-    campaign = session.get(Campaign, campaign_id)
-    if not campaign:
-        raise HTTPException(404, detail="Campaign not found.")
+    campaign = _get_accessible_campaign(session, campaign_id, tenant)
+    if workspace_id is not None:
+        _get_owned_workspace(session, workspace_id, tenant)
 
     runs = session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all()
 
@@ -239,10 +333,15 @@ def generate_manifest(campaign_id: int, workspace_id: Optional[int] = None, sess
 
 
 @router.get("/manifests/{manifest_id}")
-def get_manifest(manifest_id: int, session: Session = Depends(get_session)):
+def get_manifest(
+    manifest_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     m = session.get(ExperimentManifest, manifest_id)
     if not m:
         raise HTTPException(404, detail="Manifest not found.")
+    _get_accessible_campaign(session, m.campaign_id, tenant)
     return {
         "id": m.id, "workspace_id": m.workspace_id, "campaign_id": m.campaign_id,
         "experiment_hash": m.experiment_hash,
@@ -566,6 +665,7 @@ def request_replication(
     workspace_id: int,
     payload: ReplicationRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Request an independent replication of a workspace (#110)."""
     if payload.workspace_id != workspace_id:
@@ -573,9 +673,7 @@ def request_replication(
             400,
             f"Workspace ID mismatch: expected {workspace_id}, got {payload.workspace_id}.",
         )
-    ws = session.get(Workspace, workspace_id)
-    if not ws:
-        raise HTTPException(404, "Workspace not found.")
+    ws = _get_accessible_workspace(session, workspace_id, tenant)
     # Store replication request in workspace tags/metadata
     import json as _json
     reps_raw = getattr(ws, "tags", "[]") or "[]"
@@ -605,6 +703,7 @@ def submit_replication_result(
     workspace_id: int,
     payload: ReplicationResult,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Submit completed replication results (#110)."""
     if payload.workspace_id != workspace_id:
@@ -612,9 +711,7 @@ def submit_replication_result(
             400,
             f"Workspace ID mismatch: expected {workspace_id}, got {payload.workspace_id}.",
         )
-    ws = session.get(Workspace, workspace_id)
-    if not ws:
-        raise HTTPException(404, "Workspace not found.")
+    ws = _get_accessible_workspace(session, workspace_id, tenant)
     import json as _json
     reps_raw = getattr(ws, "tags", "[]") or "[]"
     try:
@@ -677,11 +774,13 @@ def submit_replication_result(
 
 
 @router.get("/workspaces/{workspace_id}/replications")
-def get_replications(workspace_id: int, session: Session = Depends(get_session)):
+def get_replications(
+    workspace_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Get all replication requests and results for a workspace."""
-    ws = session.get(Workspace, workspace_id)
-    if not ws:
-        raise HTTPException(404)
+    ws = _get_accessible_workspace(session, workspace_id, tenant)
     import json as _json
     try:
         reps = _json.loads(getattr(ws, "tags", "[]") or "[]")
@@ -708,7 +807,11 @@ def get_replications(workspace_id: int, session: Session = Depends(get_session))
 # ── #111 Executable paper artifacts ──────────────────────────────────────────
 
 @router.post("/workspaces/{workspace_id}/publish")
-def publish_workspace(workspace_id: int, session: Session = Depends(get_session)):
+def publish_workspace(
+    workspace_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Publish workspace as an executable paper artifact (#111).
 
@@ -719,9 +822,7 @@ def publish_workspace(workspace_id: int, session: Session = Depends(get_session)
     - Replication command
     - Permanent citation link (workspace slug)
     """
-    ws = session.get(Workspace, workspace_id)
-    if not ws:
-        raise HTTPException(404, "Workspace not found.")
+    ws = _get_owned_workspace(session, workspace_id, tenant)
 
     import json as _json
     from core.models import ExperimentManifest
