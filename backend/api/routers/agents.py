@@ -11,15 +11,66 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field as PydField
 from sqlmodel import Session, select, desc
 
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
-from core.models import AgentTrajectory, LLMModel
+from core.models import AgentTrajectory, Campaign, LLMModel, Tenant
 from core.utils import safe_json_load
 from core.utils import safe_extract_text
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def _campaign_collaboration(campaign: Campaign) -> dict:
+    """Mirror campaigns._campaign_collaboration without importing that router."""
+    if not campaign.run_context_json:
+        return {"visibility": "private", "collaborator_tenant_ids": []}
+    try:
+        parsed = json.loads(campaign.run_context_json)
+        context = parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        context = {}
+    collab = context.get("collaboration", {})
+    if not isinstance(collab, dict):
+        collab = {}
+    return {
+        "visibility": collab.get("visibility", "private"),
+        "collaborator_tenant_ids": [
+            int(tid) for tid in collab.get("collaborator_tenant_ids", []) if isinstance(tid, int)
+        ],
+    }
+
+
+def _can_access_campaign(campaign: Campaign, tenant: Tenant) -> bool:
+    """Same rules as api.routers.campaigns._can_access_campaign."""
+    if campaign.tenant_id == tenant.id:
+        return True
+    collab = _campaign_collaboration(campaign)
+    if collab["visibility"] == "public":
+        return True
+    if collab["visibility"] == "shared" and tenant.id in collab["collaborator_tenant_ids"]:
+        return True
+    return False
+
+
+def _require_campaign_access(
+    session: Session, campaign_id: int, tenant: Tenant
+) -> Campaign:
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
+
+
+def _get_accessible_trajectory(
+    session: Session, trajectory_id: int, tenant: Tenant
+) -> AgentTrajectory:
+    traj = session.get(AgentTrajectory, trajectory_id)
+    if not traj or traj.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Trajectory not found.")
+    return traj
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -214,11 +265,18 @@ Respond ONLY with JSON: {{"task_completion": 0.X, "tool_precision": 0.X, "planni
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.post("/trajectories")
-def create_trajectory(payload: TrajectoryCreate, session: Session = Depends(get_session)):
+def create_trajectory(
+    payload: TrajectoryCreate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Upload an agent trajectory for evaluation."""
     model = session.get(LLMModel, payload.model_id)
     if not model:
         raise HTTPException(404, detail="Model not found.")
+
+    if payload.campaign_id is not None:
+        _require_campaign_access(session, payload.campaign_id, tenant)
 
     steps_data = [s.model_dump() for s in payload.steps]
     total_tokens = sum(s.tokens for s in payload.steps)
@@ -226,6 +284,7 @@ def create_trajectory(payload: TrajectoryCreate, session: Session = Depends(get_
     total_cost = total_tokens / 1000 * (model.cost_input_per_1k + model.cost_output_per_1k) / 2
 
     traj = AgentTrajectory(
+        tenant_id=tenant.id,
         model_id=payload.model_id,
         campaign_id=payload.campaign_id,
         task_description=payload.task_description,
@@ -247,11 +306,13 @@ def create_trajectory(payload: TrajectoryCreate, session: Session = Depends(get_
 
 
 @router.post("/evaluate")
-async def evaluate_trajectory(payload: TrajectoryEvalRequest, session: Session = Depends(get_session)):
+async def evaluate_trajectory(
+    payload: TrajectoryEvalRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Score a trajectory on 6 axes."""
-    traj = session.get(AgentTrajectory, payload.trajectory_id)
-    if not traj:
-        raise HTTPException(404, detail="Trajectory not found.")
+    traj = _get_accessible_trajectory(session, payload.trajectory_id, tenant)
 
     steps = safe_json_load(traj.steps_json, [])
 
@@ -368,12 +429,18 @@ def list_trajectories(
     task_type: Optional[str] = None,
     limit: int = 50,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """List agent trajectories."""
-    query = select(AgentTrajectory).order_by(desc(AgentTrajectory.created_at))
+    query = (
+        select(AgentTrajectory)
+        .where(AgentTrajectory.tenant_id == tenant.id)
+        .order_by(desc(AgentTrajectory.created_at))
+    )
     if model_id:
         query = query.where(AgentTrajectory.model_id == model_id)
     if campaign_id:
+        _require_campaign_access(session, campaign_id, tenant)
         query = query.where(AgentTrajectory.campaign_id == campaign_id)
     if task_type:
         query = query.where(AgentTrajectory.task_type == task_type)
@@ -411,11 +478,13 @@ def list_trajectories(
 
 
 @router.get("/trajectories/{trajectory_id}")
-def get_trajectory(trajectory_id: int, session: Session = Depends(get_session)):
+def get_trajectory(
+    trajectory_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Get full trajectory with steps."""
-    traj = session.get(AgentTrajectory, trajectory_id)
-    if not traj:
-        raise HTTPException(404, detail="Trajectory not found.")
+    traj = _get_accessible_trajectory(session, trajectory_id, tenant)
 
     model = session.get(LLMModel, traj.model_id)
     steps = safe_json_load(traj.steps_json, [])
@@ -450,9 +519,13 @@ def get_trajectory(trajectory_id: int, session: Session = Depends(get_session)):
 def agent_dashboard(
     model_id: Optional[int] = None,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Aggregate agent eval metrics across trajectories."""
-    query = select(AgentTrajectory).where(AgentTrajectory.score_overall != None)
+    query = select(AgentTrajectory).where(
+        AgentTrajectory.score_overall != None,
+        AgentTrajectory.tenant_id == tenant.id,
+    )
     if model_id:
         query = query.where(AgentTrajectory.model_id == model_id)
 
@@ -497,13 +570,15 @@ def agent_dashboard(
 # ── Trajectory-Native Storage API ──────────────────────────────────────────────
 
 @router.get("/trajectories/{trajectory_id}/steps")
-def get_trajectory_steps(trajectory_id: int, session: Session = Depends(get_session)):
+def get_trajectory_steps(
+    trajectory_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Get all steps for a trajectory — trajectory-native query."""
     from core.models import TrajectoryStep
 
-    traj = session.get(AgentTrajectory, trajectory_id)
-    if not traj:
-        raise HTTPException(404, detail="Trajectory not found.")
+    traj = _get_accessible_trajectory(session, trajectory_id, tenant)
 
     steps = session.exec(
         select(TrajectoryStep)
@@ -551,13 +626,15 @@ def get_trajectory_steps(trajectory_id: int, session: Session = Depends(get_sess
 
 
 @router.get("/trajectories/{trajectory_id}/replay")
-def replay_trajectory(trajectory_id: int, session: Session = Depends(get_session)):
+def replay_trajectory(
+    trajectory_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Replay a trajectory step-by-step with diffs and safety signals."""
     from core.models import TrajectoryStep
 
-    traj = session.get(AgentTrajectory, trajectory_id)
-    if not traj:
-        raise HTTPException(404, detail="Trajectory not found.")
+    traj = _get_accessible_trajectory(session, trajectory_id, tenant)
 
     steps = session.exec(
         select(TrajectoryStep)
@@ -603,15 +680,18 @@ def replay_trajectory(trajectory_id: int, session: Session = Depends(get_session
 
 
 @router.post("/trajectories/{trajectory_id}/ingest-steps")
-def ingest_trajectory_steps(trajectory_id: int, steps: list[dict], session: Session = Depends(get_session)):
+def ingest_trajectory_steps(
+    trajectory_id: int,
+    steps: list[dict],
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Ingest structured steps into trajectory-native storage.
     Converts from JSON format to individual TrajectoryStep records.
     """
     from core.models import TrajectoryStep
 
-    traj = session.get(AgentTrajectory, trajectory_id)
-    if not traj:
-        raise HTTPException(404, detail="Trajectory not found.")
+    _get_accessible_trajectory(session, trajectory_id, tenant)
 
     created = 0
     for idx, step in enumerate(steps):
