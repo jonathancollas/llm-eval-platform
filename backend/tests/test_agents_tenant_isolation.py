@@ -19,9 +19,9 @@ from sqlmodel import Session, SQLModel, create_engine, select
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-agents-tenant-isolation-32b")
 
-from api.routers import agents  # noqa: E402
+import importlib.util  # noqa: E402
+
 from core.auth import require_tenant  # noqa: E402
-from core.database import get_session  # noqa: E402
 from core.models import (  # noqa: E402
     AgentTrajectory,
     Benchmark,
@@ -32,6 +32,13 @@ from core.models import (  # noqa: E402
     ModelProvider,
     Tenant,
 )
+
+BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
+AGENTS_PATH = os.path.join(BACKEND_DIR, "api", "routers", "agents.py")
+_spec = importlib.util.spec_from_file_location("agents_tenant_isolation_module", AGENTS_PATH)
+agents = importlib.util.module_from_spec(_spec)
+assert _spec is not None and _spec.loader is not None
+_spec.loader.exec_module(agents)
 
 
 def _setup():
@@ -144,11 +151,9 @@ def _setup():
                 is_active=tenant.is_active,
             )
 
-    app.dependency_overrides[get_session] = _get_session_override
-    app.dependency_overrides[require_tenant] = _require_tenant_override
-    # Also override the symbol imported into the agents module.
-    app.dependency_overrides[agents.require_tenant] = _require_tenant_override
     app.dependency_overrides[agents.get_session] = _get_session_override
+    app.dependency_overrides[agents.require_tenant] = _require_tenant_override
+    app.dependency_overrides[require_tenant] = _require_tenant_override
 
     return TestClient(app), ids, engine
 
