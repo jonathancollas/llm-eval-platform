@@ -309,6 +309,8 @@ class AgentTrajectory(SQLModel, table=True):
     __tablename__ = "agent_trajectories"
 
     id: Optional[int]          = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]   = Field(default=None, foreign_key="tenants.id", index=True,
+                                       sa_column_kwargs={"nullable": True})
     campaign_id: Optional[int] = Field(default=None, foreign_key="campaigns.id", index=True)
     model_id: int              = Field(foreign_key="llm_models.id", index=True)
     task_description: str      = Field(default="")
