@@ -13,14 +13,25 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select, desc
 
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
-from core.models import LLMModel, RedboxExploit
+from core.models import LLMModel, RedboxExploit, Tenant
 from core.utils import safe_extract_text, normalize_adversarial_risk
 
 router = APIRouter(prefix="/redbox", tags=["redbox"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+
+def _get_owned_exploit(
+    session: Session, exploit_id: int, tenant: Tenant
+) -> RedboxExploit:
+    """Return exploit only when it belongs to the calling tenant."""
+    exploit = session.get(RedboxExploit, exploit_id)
+    if not exploit or exploit.tenant_id != tenant.id:
+        raise HTTPException(404, detail="Exploit not found.")
+    return exploit
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -738,7 +749,11 @@ async def forge_variants(payload: ForgeRequest):
 
 
 @router.post("/run")
-async def run_variants(payload: RunRequest, session: Session = Depends(get_session)):
+async def run_variants(
+    payload: RunRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Run adversarial variants against a model and record exploits."""
     model = session.get(LLMModel, payload.model_id)
     if not model:
@@ -781,6 +796,7 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
         )
 
         exploit = RedboxExploit(
+            tenant_id=tenant.id,
             model_id=payload.model_id,
             seed_prompt=v.prompt[:500],
             mutation_type=v.mutation,
@@ -830,9 +846,14 @@ def list_exploits(
     mutation_type: Optional[str] = None,
     limit: int = 100,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """List recorded exploits with optional filters."""
-    query = select(RedboxExploit).order_by(desc(RedboxExploit.severity))
+    query = (
+        select(RedboxExploit)
+        .where(RedboxExploit.tenant_id == tenant.id)
+        .order_by(desc(RedboxExploit.severity))
+    )
 
     if model_id is not None:
         query = query.where(RedboxExploit.model_id == model_id)
@@ -879,9 +900,14 @@ def list_exploits(
 
 
 @router.get("/heatmap")
-def attack_surface_heatmap(session: Session = Depends(get_session)):
+def attack_surface_heatmap(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Attack surface: model × mutation_type breach rates."""
-    exploits = session.exec(select(RedboxExploit)).all()
+    exploits = session.exec(
+        select(RedboxExploit).where(RedboxExploit.tenant_id == tenant.id)
+    ).all()
 
     if not exploits:
         return {"heatmap": [], "models": [], "mutations": [], "computed": False}
@@ -955,11 +981,14 @@ def attack_surface_heatmap(session: Session = Depends(get_session)):
 
 
 @router.post("/replay/{exploit_id}")
-async def replay_exploit(exploit_id: int, payload: ReplayRequest, session: Session = Depends(get_session)):
+async def replay_exploit(
+    exploit_id: int,
+    payload: ReplayRequest,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Replay a known exploit against a different model."""
-    original = session.get(RedboxExploit, exploit_id)
-    if not original:
-        raise HTTPException(404, detail="Exploit not found.")
+    original = _get_owned_exploit(session, exploit_id, tenant)
 
     model = session.get(LLMModel, payload.model_id)
     if not model:
@@ -988,6 +1017,7 @@ async def replay_exploit(exploit_id: int, payload: ReplayRequest, session: Sessi
     )
 
     replay = RedboxExploit(
+        tenant_id=tenant.id,
         model_id=payload.model_id,
         seed_prompt=original.seed_prompt,
         mutation_type=original.mutation_type,
@@ -1129,13 +1159,22 @@ async def smart_forge(payload: SmartForgeRequest, session: Session = Depends(get
 # ── REDBOX Live Feed ───────────────────────────────────────────────────────────
 
 @router.get("/live/{model_id}")
-def redbox_live_feed(model_id: int, limit: int = 10, session: Session = Depends(get_session)):
+def redbox_live_feed(
+    model_id: int,
+    limit: int = 10,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Live feed of latest REDBOX exploits for a model — poll during attacks."""
     from sqlmodel import desc
 
+    tenant_model = (
+        (RedboxExploit.tenant_id == tenant.id)
+        & (RedboxExploit.model_id == model_id)
+    )
     exploits = session.exec(
         select(RedboxExploit)
-        .where(RedboxExploit.model_id == model_id)
+        .where(tenant_model)
         .order_by(desc(RedboxExploit.id))
         .limit(limit)
     ).all()
@@ -1144,11 +1183,11 @@ def redbox_live_feed(model_id: int, limit: int = 10, session: Session = Depends(
     model_name = model.name if model else f"Model {model_id}"
 
     total = session.exec(
-        select(func.count()).select_from(RedboxExploit).where(RedboxExploit.model_id == model_id)
+        select(func.count()).select_from(RedboxExploit).where(tenant_model)
     ).one()
     breached_total = session.exec(
         select(func.count()).select_from(RedboxExploit).where(
-            RedboxExploit.model_id == model_id, RedboxExploit.breached == True
+            tenant_model, RedboxExploit.breached == True
         )
     ).one()
 
@@ -1362,6 +1401,7 @@ class AttackCampaignRequest(BaseModel):
 async def run_attack_campaign(
     payload: AttackCampaignRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Real adversarial attack campaign (#271).
@@ -1446,6 +1486,7 @@ async def run_attack_campaign(
                 # Persist as exploit
                 try:
                     exploit = RedboxExploit(
+                        tenant_id=tenant.id,
                         model_id=payload.model_id,
                         seed_prompt=attack.prompt[:500],
                         mutation_type=attack.attack_type,

@@ -12,11 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
 from core.models import (
     LLMModel, Benchmark, EvalResult, EvalRun, MultiAgentSimulation,
-    SandbaggingReport, JobStatus,
+    SandbaggingReport, JobStatus, Tenant,
 )
 from inference.adapter import get_adapter
 
@@ -128,6 +129,7 @@ def _resolve_models(model_ids: list[int], session: Session) -> list[LLMModel]:
 async def simulate_pipeline_injection(
     payload: PipelineSimulationRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Run a pipeline injection simulation (synchronous — waits for result).
@@ -176,7 +178,7 @@ async def simulate_pipeline_injection(
 
     # Persist to DB if model exists
     try:
-        _persist_simulation(result, session)
+        _persist_simulation(result, session, tenant_id=tenant.id)
     except Exception as e:
         logger.warning(f"Could not persist simulation: {e}")
 
@@ -187,6 +189,7 @@ async def simulate_pipeline_injection(
 async def simulate_custom(
     payload: CustomSimulationRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Run a fully custom multi-agent scenario."""
     if not payload.agents:
@@ -235,7 +238,7 @@ async def simulate_custom(
     result = await asyncio.wait_for(simulator.run(scenario), timeout=120.0)
 
     try:
-        _persist_simulation(result, session)
+        _persist_simulation(result, session, tenant_id=tenant.id)
     except Exception as e:
         logger.warning(f"Persist failed: {e}")
 
@@ -243,11 +246,17 @@ async def simulate_custom(
 
 
 @router.get("/simulations")
-def list_simulations(session: Session = Depends(get_session)):
+def list_simulations(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """List past multi-agent simulations."""
     try:
         sims = session.exec(
-            select(MultiAgentSimulation).order_by(MultiAgentSimulation.id.desc()).limit(50)
+            select(MultiAgentSimulation)
+            .where(MultiAgentSimulation.tenant_id == tenant.id)
+            .order_by(MultiAgentSimulation.id.desc())
+            .limit(50)
         ).all()
         return {
             "simulations": [
@@ -272,11 +281,15 @@ def list_simulations(session: Session = Depends(get_session)):
 
 
 @router.get("/simulations/{sim_id}")
-def get_simulation(sim_id: int, session: Session = Depends(get_session)):
+def get_simulation(
+    sim_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Get a specific simulation with full steps."""
     try:
         sim = session.get(MultiAgentSimulation, sim_id)
-        if not sim:
+        if not sim or sim.tenant_id != tenant.id:
             raise HTTPException(404, detail="Simulation not found.")
         return {
             "id": sim.id,
@@ -328,6 +341,7 @@ def list_injection_payloads():
 async def probe_sandbagging(
     payload: SandbaggingRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Run anti-sandbagging battery on a model × benchmark pair.
@@ -373,7 +387,9 @@ async def probe_sandbagging(
 
     # Persist
     try:
-        _persist_sandbagging_report(report, payload.model_id, payload.benchmark_id, session)
+        _persist_sandbagging_report(
+            report, payload.model_id, payload.benchmark_id, session, tenant_id=tenant.id
+        )
     except Exception as e:
         logger.warning(f"Could not persist sandbagging report: {e}")
 
@@ -418,10 +434,16 @@ async def probe_sandbagging(
 def list_sandbagging_reports(
     model_id: Optional[int] = None,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """List past anti-sandbagging analyses."""
     try:
-        query = select(SandbaggingReport).order_by(SandbaggingReport.id.desc()).limit(50)
+        query = (
+            select(SandbaggingReport)
+            .where(SandbaggingReport.tenant_id == tenant.id)
+            .order_by(SandbaggingReport.id.desc())
+            .limit(50)
+        )
         if model_id:
             query = query.where(SandbaggingReport.model_id == model_id)
         reports = session.exec(query).all()
@@ -454,7 +476,9 @@ def list_sandbagging_reports(
 
 # ── DB persistence helpers ─────────────────────────────────────────────────────
 
-def _persist_simulation(result: SimulationResult, session: Session) -> None:
+def _persist_simulation(
+    result: SimulationResult, session: Session, *, tenant_id: int
+) -> None:
     steps_data = [
         {
             "step_index": s.step_index,
@@ -471,6 +495,7 @@ def _persist_simulation(result: SimulationResult, session: Session) -> None:
     ]
 
     sim = MultiAgentSimulation(
+        tenant_id=tenant_id,
         simulation_id=result.simulation_id,
         scenario_name=result.scenario_name,
         original_objective=result.original_objective,
@@ -498,7 +523,9 @@ def _persist_simulation(result: SimulationResult, session: Session) -> None:
     session.commit()
 
 
-def _persist_sandbagging_report(report, model_id: int, benchmark_id: int, session: Session) -> None:
+def _persist_sandbagging_report(
+    report, model_id: int, benchmark_id: int, session: Session, *, tenant_id: int
+) -> None:
     probes_data = [
         {
             "probe_id": p.probe_id,
@@ -515,6 +542,7 @@ def _persist_sandbagging_report(report, model_id: int, benchmark_id: int, sessio
     ]
 
     sr = SandbaggingReport(
+        tenant_id=tenant_id,
         model_id=model_id,
         benchmark_id=benchmark_id,
         n_probes=report.n_probes,

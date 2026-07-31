@@ -274,6 +274,8 @@ class RedboxExploit(SQLModel, table=True):
     __tablename__ = "redbox_exploits"
 
     id: Optional[int]         = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]  = Field(default=None, foreign_key="tenants.id", index=True,
+                                      sa_column_kwargs={"nullable": True})
     model_id: int             = Field(foreign_key="llm_models.id", index=True)
     seed_prompt: str          = Field(default="")
     mutation_type: str        = Field(default="", index=True)  # prompt_injection, jailbreak, etc.
@@ -671,6 +673,8 @@ class MultiAgentSimulation(SQLModel, table=True):
     __tablename__ = "multi_agent_simulations"
 
     id: Optional[int]                   = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]            = Field(default=None, foreign_key="tenants.id", index=True,
+                                                sa_column_kwargs={"nullable": True})
     simulation_id: str                  = Field(index=True)  # UUID-style string
     scenario_name: str                  = Field(default="")
     original_objective: str             = Field(default="")
@@ -722,6 +726,8 @@ class SandbaggingReport(SQLModel, table=True):
     __tablename__ = "sandbagging_reports"
 
     id: Optional[int]               = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]        = Field(default=None, foreign_key="tenants.id", index=True,
+                                            sa_column_kwargs={"nullable": True})
     model_id: int                   = Field(foreign_key="llm_models.id", index=True)
     benchmark_id: int               = Field(foreign_key="benchmarks.id", index=True)
 
