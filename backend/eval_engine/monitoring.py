@@ -351,6 +351,7 @@ class ContinuousMonitoringEngine:
         model_id: Optional[int],
         window_hours: int = 24,
         baseline_model_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
     ) -> MonitoringReport:
         """
         Load telemetry events for the window and compute monitoring report.
@@ -358,11 +359,14 @@ class ContinuousMonitoringEngine:
         baseline_model_id: if provided, use that model's pre-deployment eval
         scores as the baseline for drift detection.
 
+        tenant_id: when provided, only load TelemetryEvent rows for that tenant.
+        Callers that serve multi-tenant HTTP must pass this.
+
         All three DB queries (events, baseline, model name) share a single
         session to avoid opening multiple connections per analysis.
         """
         events, baseline, model_name = self._load_all_data(
-            model_id, window_hours, baseline_model_id
+            model_id, window_hours, baseline_model_id, tenant_id=tenant_id
         )
         n = len(events)
 
@@ -464,6 +468,7 @@ class ContinuousMonitoringEngine:
         model_id: Optional[int],
         window_hours: int,
         baseline_model_id: Optional[int],
+        tenant_id: Optional[int] = None,
     ) -> tuple[list[dict], Optional[dict], str]:
         """
         Execute all three DB queries (events, baseline, model name) inside a
@@ -471,7 +476,7 @@ class ContinuousMonitoringEngine:
         """
         from sqlmodel import Session, select
         from core.database import engine as db_engine
-        from core.models import TelemetryEvent, EvalRun, JobStatus, LLMModel
+        from core.models import Campaign, TelemetryEvent, EvalRun, JobStatus, LLMModel
 
         events: list[dict] = []
         baseline: Optional[dict] = None
@@ -486,6 +491,8 @@ class ContinuousMonitoringEngine:
                     .where(TelemetryEvent.timestamp >= cutoff)
                     .order_by(TelemetryEvent.timestamp)
                 )
+                if tenant_id is not None:
+                    query = query.where(TelemetryEvent.tenant_id == tenant_id)
                 if model_id is not None:
                     query = query.where(TelemetryEvent.model_id == model_id)
                 records = session.exec(query.limit(10000)).all()
@@ -504,14 +511,19 @@ class ContinuousMonitoringEngine:
                 # 2. Pre-deployment baseline
                 effective_baseline_id = baseline_model_id or model_id
                 if effective_baseline_id is not None:
-                    runs = session.exec(
+                    run_query = (
                         select(EvalRun)
                         .where(
                             EvalRun.model_id == effective_baseline_id,
                             EvalRun.status == JobStatus.COMPLETED,
                         )
-                        .limit(50)
-                    ).all()
+                    )
+                    if tenant_id is not None:
+                        run_query = (
+                            run_query.join(Campaign, Campaign.id == EvalRun.campaign_id)
+                            .where(Campaign.tenant_id == tenant_id)
+                        )
+                    runs = session.exec(run_query.limit(50)).all()
                     if runs:
                         bl_scores = [r.score for r in runs if r.score is not None]
                         bl_latencies = [r.total_latency_ms for r in runs if r.total_latency_ms > 0]
@@ -535,7 +547,11 @@ class ContinuousMonitoringEngine:
         return events, baseline, model_name
 
     @staticmethod
-    async def _load_events(model_id: Optional[int], window_hours: int) -> list[dict]:
+    async def _load_events(
+        model_id: Optional[int],
+        window_hours: int,
+        tenant_id: Optional[int] = None,
+    ) -> list[dict]:
         try:
             from sqlmodel import Session, select
             from core.database import engine
@@ -548,6 +564,8 @@ class ContinuousMonitoringEngine:
                     .where(TelemetryEvent.timestamp >= cutoff)
                     .order_by(TelemetryEvent.timestamp)
                 )
+                if tenant_id is not None:
+                    query = query.where(TelemetryEvent.tenant_id == tenant_id)
                 if model_id is not None:
                     query = query.where(TelemetryEvent.model_id == model_id)
                 records = session.exec(query.limit(10000)).all()
@@ -568,21 +586,28 @@ class ContinuousMonitoringEngine:
             return []
 
     @staticmethod
-    async def _load_baseline(model_id: Optional[int]) -> Optional[dict]:
+    async def _load_baseline(
+        model_id: Optional[int],
+        tenant_id: Optional[int] = None,
+    ) -> Optional[dict]:
         """Load pre-deployment eval baseline for a model."""
         if model_id is None:
             return None
         try:
             from sqlmodel import Session, select
             from core.database import engine
-            from core.models import EvalRun, JobStatus
+            from core.models import Campaign, EvalRun, JobStatus
 
             with Session(engine) as session:
-                runs = session.exec(
-                    select(EvalRun)
-                    .where(EvalRun.model_id == model_id, EvalRun.status == JobStatus.COMPLETED)
-                    .limit(50)
-                ).all()
+                run_query = select(EvalRun).where(
+                    EvalRun.model_id == model_id, EvalRun.status == JobStatus.COMPLETED
+                )
+                if tenant_id is not None:
+                    run_query = (
+                        run_query.join(Campaign, Campaign.id == EvalRun.campaign_id)
+                        .where(Campaign.tenant_id == tenant_id)
+                    )
+                runs = session.exec(run_query.limit(50)).all()
 
             if not runs:
                 return None

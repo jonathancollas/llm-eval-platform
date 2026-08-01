@@ -18,7 +18,8 @@ from sqlmodel import Session, select, desc
 
 from core.database import get_session
 from core.config import get_settings
-from core.models import TelemetryEvent
+from core.auth import require_tenant
+from core.models import TelemetryEvent, Tenant
 from eval_engine.monitoring import ContinuousMonitoringEngine
 from eval_engine.safety.llama_guard import classify_runtime_safety
 
@@ -28,8 +29,9 @@ settings = get_settings()
 
 # ── In-process TTL cache for fleet dashboard ──────────────────────────────────
 # The fleet dashboard runs asyncio.gather × up to 20 NIST analyses per request.
-# Cache per window_hours key for 60 s to avoid repeated heavy computation.
-_fleet_cache: dict[int, tuple[float, object]] = {}
+# Cache per (tenant_id, window_hours) for 60 s to avoid repeated heavy computation
+# and cross-tenant cache bleed.
+_fleet_cache: dict[tuple[int, int], tuple[float, object]] = {}
 _fleet_cache_lock = threading.Lock()
 _FLEET_TTL = 60.0  # seconds
 
@@ -69,6 +71,7 @@ async def ingest_telemetry(
     payload: TelemetryIngest,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Ingest a single production inference event.
@@ -89,6 +92,7 @@ async def ingest_telemetry(
             confidence = auto_conf
 
     event = TelemetryEvent(
+        tenant_id=tenant.id,
         model_id=payload.model_id,
         event_type=payload.event_type,
         prompt_hash=prompt_hash,
@@ -121,6 +125,7 @@ async def ingest_telemetry(
 async def ingest_telemetry_batch(
     payload: BatchTelemetryIngest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Batch ingestion — up to 1000 events per call."""
     if len(payload.events) > 1000:
@@ -163,6 +168,7 @@ async def ingest_telemetry_batch(
                 confidence = auto_conf
 
         records.append(TelemetryEvent(
+            tenant_id=tenant.id,
             model_id=e.model_id,
             event_type=e.event_type,
             prompt_hash=hashlib.sha256((e.prompt or "").encode()).hexdigest()[:16] if e.prompt else "",
@@ -191,6 +197,7 @@ async def get_monitoring_report(
     model_id: Optional[int] = None,
     window_hours: int = Query(default=24, ge=1, le=720),
     baseline_model_id: Optional[int] = None,
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Generate a NIST AI 800-4 compliant monitoring report.
@@ -210,6 +217,7 @@ async def get_monitoring_report(
         model_id=model_id,
         window_hours=window_hours,
         baseline_model_id=baseline_model_id,
+        tenant_id=tenant.id,
     )
 
     return {
@@ -274,23 +282,26 @@ async def get_monitoring_report(
 async def get_fleet_dashboard(
     window_hours: int = Query(default=24, ge=1, le=168),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Fleet-level monitoring dashboard — one row per active model.
     Shows health status, top alert, and key metrics for each model.
     """
     now = time.monotonic()
+    cache_key = (tenant.id, window_hours)
     with _fleet_cache_lock:
-        cached = _fleet_cache.get(window_hours)
+        cached = _fleet_cache.get(cache_key)
         if cached is not None:
             ts, data = cached
             if now - ts < _FLEET_TTL:
                 return data
 
-    # Get models with recent telemetry
+    # Get models with recent telemetry for this tenant only
     cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     recent_events = session.exec(
         select(TelemetryEvent.model_id)
+        .where(TelemetryEvent.tenant_id == tenant.id)
         .where(TelemetryEvent.timestamp >= cutoff)
         .where(TelemetryEvent.model_id != None)
         .distinct()
@@ -306,7 +317,7 @@ async def get_fleet_dashboard(
 
     async def analyze_bounded(mid: int):
         async with sem:
-            return await engine.analyze(mid, window_hours)
+            return await engine.analyze(mid, window_hours, tenant_id=tenant.id)
 
     results = await asyncio.gather(
         *[analyze_bounded(mid) for mid in active_model_ids[:20]],  # Cap at 20
@@ -349,7 +360,7 @@ async def get_fleet_dashboard(
         "generated_at": datetime.now(UTC).isoformat(),
     }
     with _fleet_cache_lock:
-        _fleet_cache[window_hours] = (now, response)
+        _fleet_cache[cache_key] = (now, response)
     return response
 
 
@@ -361,11 +372,13 @@ def get_telemetry_feed(
     offset: int = Query(default=0, ge=0),
     event_type: Optional[str] = None,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Recent telemetry events — raw feed for debugging."""
     cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     query = (
         select(TelemetryEvent)
+        .where(TelemetryEvent.tenant_id == tenant.id)
         .where(TelemetryEvent.timestamp >= cutoff)
         .order_by(desc(TelemetryEvent.timestamp))
         .offset(offset)
@@ -404,11 +417,13 @@ def get_telemetry_stats(
     window_hours: int = Query(default=24, ge=1, le=720),
     limit: int = Query(default=10000, le=100000),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Aggregate stats for a model over the time window — fast, no ML."""
     cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
     query = (
         select(TelemetryEvent)
+        .where(TelemetryEvent.tenant_id == tenant.id)
         .where(TelemetryEvent.timestamp >= cutoff)
         .order_by(desc(TelemetryEvent.timestamp))
         .limit(limit)
@@ -526,6 +541,7 @@ class LangfuseWebhookPayload(BaseModel):
 async def ingest_from_langfuse(
     payload: LangfuseWebhookPayload,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     Langfuse webhook ingestion (#112).
@@ -554,6 +570,7 @@ async def ingest_from_langfuse(
             model_id = m.id
 
     event = TelemetryEvent(
+        tenant_id=tenant.id,
         model_id=model_id,
         event_type="production_trace",
         prompt_hash=hashlib.sha256((payload.input or "").encode()).hexdigest()[:16],
@@ -596,6 +613,7 @@ class OTELBatchPayload(BaseModel):
 async def ingest_from_otel(
     payload: OTELBatchPayload,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """
     OpenTelemetry span ingestion (#112).
@@ -637,6 +655,7 @@ async def ingest_from_otel(
                 response = attrs.get("gen_ai.completion", attrs.get("llm.completions", ""))
 
                 event = TelemetryEvent(
+                    tenant_id=tenant.id,
                     model_id=model_id,
                     event_type="otel_span",
                     prompt_hash=hashlib.sha256(str(prompt).encode()).hexdigest()[:16],
