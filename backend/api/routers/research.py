@@ -15,8 +15,9 @@ from sqlmodel import Session, select
 
 from core.database import get_session
 from core.config import get_settings
+from core.auth import require_tenant
 from core.models import (
-    Workspace, ExperimentManifest, SafetyIncident, TelemetryEvent,
+    Workspace, ExperimentManifest, SafetyIncident, TelemetryEvent, Tenant,
     Campaign, EvalRun, LLMModel, Benchmark, JobStatus,
 )
 
@@ -363,11 +364,16 @@ class TelemetryBatch(BaseModel):
 
 
 @router.post("/telemetry/ingest")
-def ingest_telemetry(payload: TelemetryBatch, session: Session = Depends(get_session)):
+def ingest_telemetry(
+    payload: TelemetryBatch,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Ingest runtime telemetry events for continuous monitoring."""
     created = 0
     for evt in payload.events[:1000]:  # Max 1000 per batch
         te = TelemetryEvent(
+            tenant_id=tenant.id,
             model_id=evt.get("model_id"),
             event_type=evt.get("event_type", "inference"),
             prompt_hash=evt.get("prompt_hash", ""),
@@ -395,12 +401,17 @@ def telemetry_dashboard(
     model_id: Optional[int] = None,
     hours: int = 24,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Drift detection dashboard — aggregated telemetry signals."""
     from datetime import timedelta, UTC
 
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
-    query = select(TelemetryEvent).where(TelemetryEvent.timestamp >= cutoff)
+    query = (
+        select(TelemetryEvent)
+        .where(TelemetryEvent.tenant_id == tenant.id)
+        .where(TelemetryEvent.timestamp >= cutoff)
+    )
     if model_id:
         query = query.where(TelemetryEvent.model_id == model_id)
 
