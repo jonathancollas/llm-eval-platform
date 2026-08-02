@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List
 from sqlmodel import Session, select
+from api.routers.campaigns import _can_access_campaign
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import EvalRun, EvalResult, LLMModel, Benchmark
+from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, Tenant
 from eval_engine.statistical_tests import (
     power_analysis,
     compare_runs,
@@ -40,10 +42,25 @@ class ValidateReproducibilityRequest(BaseModel):
     run_id_b: int
 
 
+def _get_accessible_run(session: Session, run_id: int, tenant: Tenant) -> EvalRun:
+    """Load an EvalRun only if its campaign is accessible to the tenant."""
+    run = session.get(EvalRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    campaign = session.get(Campaign, run.campaign_id)
+    if not campaign or not _can_access_campaign(campaign, tenant):
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return run
+
+
 @router.post("/compare-runs")
 def compare_runs_endpoint(
-    req: CompareRunsRequest, session: Session = Depends(get_session)
+    req: CompareRunsRequest,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
 ):
+    _get_accessible_run(session, req.run_id_a, tenant)
+    _get_accessible_run(session, req.run_id_b, tenant)
     scores_a = [
         r.score
         for r in session.exec(
@@ -87,7 +104,12 @@ def calibration_endpoint(req: CalibrationRequest):
 
 
 @router.get("/run/{run_id}/confidence")
-def run_confidence(run_id: int, session: Session = Depends(get_session)):
+def run_confidence(
+    run_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
+    _get_accessible_run(session, run_id, tenant)
     results = session.exec(
         select(EvalResult).where(EvalResult.run_id == run_id)
     ).all()
@@ -142,15 +164,17 @@ def _run_to_fingerprint_inputs(
 
 
 @router.get("/run/{run_id}/fingerprint")
-def run_fingerprint(run_id: int, session: Session = Depends(get_session)):
+def run_fingerprint(
+    run_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     """Generate a reproducibility fingerprint for an eval run.
 
     Returns a cryptographic hash of all inputs (config, model, benchmark, seed,
     temperature) that uniquely identifies the exact experimental conditions.
     """
-    run = session.get(EvalRun, run_id)
-    if not run:
-        raise HTTPException(404, f"Run {run_id} not found")
+    run = _get_accessible_run(session, run_id, tenant)
 
     campaign_config, model_configs, benchmark_configs, seed, temperature = (
         _run_to_fingerprint_inputs(run, session)
@@ -175,15 +199,13 @@ def run_fingerprint(run_id: int, session: Session = Depends(get_session)):
 
 @router.post("/validate-reproducibility")
 def validate_runs_reproducibility(
-    req: ValidateReproducibilityRequest, session: Session = Depends(get_session)
+    req: ValidateReproducibilityRequest,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
 ):
     """Compare two eval runs to determine if they are reproducible (identical inputs)."""
-    run_a = session.get(EvalRun, req.run_id_a)
-    run_b = session.get(EvalRun, req.run_id_b)
-    if not run_a:
-        raise HTTPException(404, f"Run {req.run_id_a} not found")
-    if not run_b:
-        raise HTTPException(404, f"Run {req.run_id_b} not found")
+    run_a = _get_accessible_run(session, req.run_id_a, tenant)
+    run_b = _get_accessible_run(session, req.run_id_b, tenant)
 
     cfg_a, mc_a, bc_a, seed_a, temp_a = _run_to_fingerprint_inputs(run_a, session)
     cfg_b, mc_b, bc_b, seed_b, temp_b = _run_to_fingerprint_inputs(run_b, session)
