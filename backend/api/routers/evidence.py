@@ -17,16 +17,38 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
 from core.models import (
     EvalTrial, RealWorldDataset, RealWorldEvidence,
-    EvalRun, LLMModel, TelemetryEvent, JobStatus,
+    EvalRun, LLMModel, TelemetryEvent, JobStatus, Tenant,
 )
 
 router = APIRouter(prefix="/evidence", tags=["evidence"])
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _get_owned_trial(session: Session, trial_id: int, tenant: Tenant) -> EvalTrial:
+    trial = session.get(EvalTrial, trial_id)
+    if not trial or trial.tenant_id != tenant.id:
+        raise HTTPException(404, detail="Trial not found.")
+    return trial
+
+
+def _get_owned_rwd(session: Session, rwd_id: int, tenant: Tenant) -> RealWorldDataset:
+    rwd = session.get(RealWorldDataset, rwd_id)
+    if not rwd or rwd.tenant_id != tenant.id:
+        raise HTTPException(404, detail="RWD dataset not found.")
+    return rwd
+
+
+def _get_owned_rwe(session: Session, rwe_id: int, tenant: Tenant) -> RealWorldEvidence:
+    evidence = session.get(RealWorldEvidence, rwe_id)
+    if not evidence or evidence.tenant_id != tenant.id:
+        raise HTTPException(404, detail="RWE not found.")
+    return evidence
 
 
 # ── Trial Design ───────────────────────────────────────────────────────────────
@@ -53,7 +75,11 @@ class TrialCreate(BaseModel):
 
 
 @router.post("/trials")
-def create_trial(payload: TrialCreate, session: Session = Depends(get_session)):
+def create_trial(
+    payload: TrialCreate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Design a Randomized Control Trial for AI evaluation."""
 
     # Power analysis (simplified)
@@ -75,6 +101,7 @@ def create_trial(payload: TrialCreate, session: Session = Depends(get_session)):
     }
 
     trial = EvalTrial(
+        tenant_id=tenant.id,
         name=payload.name,
         workspace_id=payload.workspace_id,
         hypothesis=payload.hypothesis,
@@ -106,8 +133,15 @@ def create_trial(payload: TrialCreate, session: Session = Depends(get_session)):
 
 
 @router.get("/trials")
-def list_trials(session: Session = Depends(get_session)):
-    trials = session.exec(select(EvalTrial).order_by(EvalTrial.created_at.desc())).all()
+def list_trials(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    trials = session.exec(
+        select(EvalTrial)
+        .where(EvalTrial.tenant_id == tenant.id)
+        .order_by(EvalTrial.created_at.desc())
+    ).all()
     return {"trials": [{
         "id": t.id, "name": t.name, "status": t.status,
         "trial_type": t.trial_type, "hypothesis": t.hypothesis[:200],
@@ -118,10 +152,12 @@ def list_trials(session: Session = Depends(get_session)):
 
 
 @router.get("/trials/{trial_id}")
-def get_trial(trial_id: int, session: Session = Depends(get_session)):
-    t = session.get(EvalTrial, trial_id)
-    if not t:
-        raise HTTPException(404, detail="Trial not found.")
+def get_trial(
+    trial_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    t = _get_owned_trial(session, trial_id, tenant)
     return {
         "id": t.id, "name": t.name, "status": t.status,
         "trial_type": t.trial_type, "hypothesis": t.hypothesis,
@@ -144,11 +180,13 @@ def get_trial(trial_id: int, session: Session = Depends(get_session)):
 
 
 @router.post("/trials/{trial_id}/analyze")
-def analyze_trial(trial_id: int, session: Session = Depends(get_session)):
+def analyze_trial(
+    trial_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Compute statistical analysis for a completed trial."""
-    trial = session.get(EvalTrial, trial_id)
-    if not trial:
-        raise HTTPException(404, detail="Trial not found.")
+    trial = _get_owned_trial(session, trial_id, tenant)
 
     campaign_ids = json.loads(trial.campaign_ids)
     if not campaign_ids:
@@ -227,6 +265,7 @@ def collect_rwd(
     hours: int = 168,  # 7 days default
     name: Optional[str] = None,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Aggregate telemetry into a Real World Dataset."""
     from datetime import timedelta, UTC
@@ -235,6 +274,7 @@ def collect_rwd(
     events = session.exec(
         select(TelemetryEvent).where(
             TelemetryEvent.model_id == model_id,
+            TelemetryEvent.tenant_id == tenant.id,
             TelemetryEvent.timestamp >= cutoff,
         )
     ).all()
@@ -259,6 +299,7 @@ def collect_rwd(
         flag_dist[e.safety_flag] = flag_dist.get(e.safety_flag, 0) + 1
 
     rwd = RealWorldDataset(
+        tenant_id=tenant.id,
         name=name or f"RWD — {model_name} — {hours}h",
         model_id=model_id,
         source_type="telemetry",
@@ -282,8 +323,15 @@ def collect_rwd(
 
 
 @router.get("/rwd")
-def list_rwd(session: Session = Depends(get_session)):
-    datasets = session.exec(select(RealWorldDataset).order_by(RealWorldDataset.created_at.desc())).all()
+def list_rwd(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    datasets = session.exec(
+        select(RealWorldDataset)
+        .where(RealWorldDataset.tenant_id == tenant.id)
+        .order_by(RealWorldDataset.created_at.desc())
+    ).all()
     return {"datasets": [{
         "id": d.id, "name": d.name, "model_id": d.model_id,
         "total_events": d.total_events, "avg_score": d.avg_score,
@@ -300,16 +348,13 @@ def synthesize_evidence(
     name: Optional[str] = None,
     workspace_id: Optional[int] = None,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
     """Synthesize RCT results with RWD into Real World Evidence.
     Answers: does the model's controlled evaluation predict its production behavior?
     """
-    trial = session.get(EvalTrial, trial_id)
-    if not trial:
-        raise HTTPException(404, detail="Trial not found.")
-    rwd = session.get(RealWorldDataset, rwd_dataset_id)
-    if not rwd:
-        raise HTTPException(404, detail="RWD dataset not found.")
+    trial = _get_owned_trial(session, trial_id, tenant)
+    rwd = _get_owned_rwd(session, rwd_dataset_id, tenant)
 
     # Get RCT scores
     rct_results = json.loads(trial.results_json) if trial.results_json != "{}" else None
@@ -351,6 +396,7 @@ def synthesize_evidence(
     generalizability = concordance  # Simplified: concordance ≈ generalizability
 
     rwe = RealWorldEvidence(
+        tenant_id=tenant.id,
         name=name or f"RWE — Trial #{trial_id} × RWD #{rwd_dataset_id}",
         trial_id=trial_id,
         rwd_dataset_id=rwd_dataset_id,
@@ -381,8 +427,15 @@ def synthesize_evidence(
 
 
 @router.get("/rwe")
-def list_rwe(session: Session = Depends(get_session)):
-    evidences = session.exec(select(RealWorldEvidence).order_by(RealWorldEvidence.created_at.desc())).all()
+def list_rwe(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    evidences = session.exec(
+        select(RealWorldEvidence)
+        .where(RealWorldEvidence.tenant_id == tenant.id)
+        .order_by(RealWorldEvidence.created_at.desc())
+    ).all()
     return {"evidence": [{
         "id": e.id, "name": e.name, "evidence_grade": e.evidence_grade,
         "rct_score": e.rct_score, "rwd_score": e.rwd_score,
@@ -392,10 +445,12 @@ def list_rwe(session: Session = Depends(get_session)):
 
 
 @router.get("/rwe/{rwe_id}")
-def get_rwe(rwe_id: int, session: Session = Depends(get_session)):
-    e = session.get(RealWorldEvidence, rwe_id)
-    if not e:
-        raise HTTPException(404, detail="RWE not found.")
+def get_rwe(
+    rwe_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    e = _get_owned_rwe(session, rwe_id, tenant)
     return {
         "id": e.id, "name": e.name,
         "trial_id": e.trial_id, "rwd_dataset_id": e.rwd_dataset_id,
