@@ -561,6 +561,7 @@ class EvalTrial(SQLModel, table=True):
     __tablename__ = "eval_trials"
 
     id: Optional[int]           = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]    = Field(default=None, foreign_key="tenants.id", index=True)
     workspace_id: Optional[int] = Field(default=None, foreign_key="workspaces.id", index=True)
     name: str                   = Field(index=True)
     description: str            = Field(default="")
@@ -601,6 +602,7 @@ class RealWorldDataset(SQLModel, table=True):
     __tablename__ = "rwd_datasets"
 
     id: Optional[int]           = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]    = Field(default=None, foreign_key="tenants.id", index=True)
     name: str                   = Field(index=True)
     description: str            = Field(default="")
     model_id: Optional[int]     = Field(default=None, foreign_key="llm_models.id", index=True)
@@ -632,6 +634,7 @@ class RealWorldEvidence(SQLModel, table=True):
     __tablename__ = "rwe_evidence"
 
     id: Optional[int]           = Field(default=None, primary_key=True)
+    tenant_id: Optional[int]    = Field(default=None, foreign_key="tenants.id", index=True)
     name: str                   = Field(index=True)
     description: str            = Field(default="")
     # Linked data sources
