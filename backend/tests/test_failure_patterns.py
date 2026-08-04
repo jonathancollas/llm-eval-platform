@@ -219,18 +219,20 @@ class TestAnomalyDetection:
 
 # ── Human validation gate (API router logic) ──────────────────────────────────
 
+def _test_tenant(tenant_id: int = 1):
+    from core.models import Tenant
+    return Tenant(id=tenant_id, name=f"T{tenant_id}", slug=f"t{tenant_id}", api_key_hash="x")
+
+
 class TestHumanValidationGate:
     """Test the human validation gate state machine directly."""
 
     def setup_method(self):
         """Reset in-memory state before each test."""
         import api.routers.failure_patterns as fp
-        fp._pending_clusters.clear()
-        fp._confirmed_taxonomy.clear()
-        fp._rejected_ids.clear()
+        fp._reset_stores()
 
     def test_cluster_queues_novel_for_review(self):
-        import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import ClusterRequest, FailureRecord, cluster_failures
         failures = [
             FailureRecord(
@@ -249,7 +251,7 @@ class TestHumanValidationGate:
             similarity_threshold=0.1,
             min_cluster_size=2,
         )
-        result = cluster_failures(req)
+        result = cluster_failures(req, tenant=_test_tenant())
         # Result should have validation gate info
         assert "validation_gate" in result
         assert result["validation_gate"]["pending_count"] >= 0
@@ -258,24 +260,26 @@ class TestHumanValidationGate:
         import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import ConfirmPatternRequest, confirm_pattern
 
+        tenant = _test_tenant()
         # Manually insert a pending cluster
-        fp._pending_clusters["cluster_test_001"] = {
+        fp._pending_for(tenant.id)["cluster_test_001"] = {
             "cluster_id": "cluster_test_001",
             "name": "Test cluster",
             "failure_type": "novel",
             "status": "pending_review",
+            "tenant_id": tenant.id,
         }
 
         req = ConfirmPatternRequest(reviewer="alice", notes="Confirmed by alice", suggested_name="Novel Pattern A")
-        result = confirm_pattern("cluster_test_001", req)
+        result = confirm_pattern("cluster_test_001", req, tenant=tenant)
 
         assert result["status"] == "confirmed"
         assert "pattern_id" in result
-        assert "cluster_test_001" not in fp._pending_clusters
-        assert len(fp._confirmed_taxonomy) == 1
+        assert "cluster_test_001" not in fp._pending_for(tenant.id)
+        assert len(fp._taxonomy_for(tenant.id)) == 1
 
         # Confirmed entry should have eval creation note
-        entry = list(fp._confirmed_taxonomy.values())[0]
+        entry = list(fp._taxonomy_for(tenant.id).values())[0]
         assert entry["eval_creation_required"] is True
         assert "human" in entry["eval_creation_note"].lower() or "human" in entry["eval_creation_note"].lower()
 
@@ -283,47 +287,51 @@ class TestHumanValidationGate:
         import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import RejectPatternRequest, reject_pattern
 
-        fp._pending_clusters["cluster_test_002"] = {
+        tenant = _test_tenant()
+        fp._pending_for(tenant.id)["cluster_test_002"] = {
             "cluster_id": "cluster_test_002",
             "name": "False positive cluster",
             "status": "pending_review",
+            "tenant_id": tenant.id,
         }
 
         req = RejectPatternRequest(reviewer="bob", reason="Not a real pattern")
-        result = reject_pattern("cluster_test_002", req)
+        result = reject_pattern("cluster_test_002", req, tenant=tenant)
 
         assert result["status"] == "rejected"
-        assert "cluster_test_002" not in fp._pending_clusters
-        assert "cluster_test_002" in fp._rejected_ids
+        assert "cluster_test_002" not in fp._pending_for(tenant.id)
+        assert "cluster_test_002" in fp._rejected_for(tenant.id)
 
     def test_confirm_nonexistent_raises_404(self):
         from fastapi import HTTPException
         from api.routers.failure_patterns import ConfirmPatternRequest, confirm_pattern
         with pytest.raises(HTTPException) as exc_info:
-            confirm_pattern("nonexistent_id", ConfirmPatternRequest())
+            confirm_pattern("nonexistent_id", ConfirmPatternRequest(), tenant=_test_tenant())
         assert exc_info.value.status_code == 404
 
     def test_reject_nonexistent_raises_404(self):
         from fastapi import HTTPException
         from api.routers.failure_patterns import RejectPatternRequest, reject_pattern
         with pytest.raises(HTTPException) as exc_info:
-            reject_pattern("nonexistent_id", RejectPatternRequest())
+            reject_pattern("nonexistent_id", RejectPatternRequest(), tenant=_test_tenant())
         assert exc_info.value.status_code == 404
 
     def test_double_reject_is_idempotent(self):
         import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import RejectPatternRequest, reject_pattern
 
-        fp._pending_clusters["cluster_test_003"] = {
+        tenant = _test_tenant()
+        fp._pending_for(tenant.id)["cluster_test_003"] = {
             "cluster_id": "cluster_test_003",
             "name": "Test",
             "status": "pending_review",
+            "tenant_id": tenant.id,
         }
         req = RejectPatternRequest(reviewer="charlie")
-        reject_pattern("cluster_test_003", req)
+        reject_pattern("cluster_test_003", req, tenant=tenant)
 
         # Second rejection should return already_rejected
-        result = reject_pattern("cluster_test_003", req)
+        result = reject_pattern("cluster_test_003", req, tenant=tenant)
         assert result["status"] == "already_rejected"
 
     def test_confirm_already_confirmed_raises_400(self):
@@ -331,23 +339,30 @@ class TestHumanValidationGate:
         from fastapi import HTTPException
         from api.routers.failure_patterns import ConfirmPatternRequest, confirm_pattern
 
-        fp._confirmed_taxonomy["pat_001"] = {"pattern_id": "pat_001", "name": "Existing"}
+        tenant = _test_tenant()
+        fp._taxonomy_for(tenant.id)["pat_001"] = {"pattern_id": "pat_001", "name": "Existing"}
 
-        # cluster_id = pat_001 is already in confirmed_taxonomy, but cluster is in pending
-        fp._pending_clusters["cluster_dup"] = {"cluster_id": "cluster_dup", "name": "Dup", "status": "pending_review"}
+        # cluster is in pending
+        fp._pending_for(tenant.id)["cluster_dup"] = {
+            "cluster_id": "cluster_dup",
+            "name": "Dup",
+            "status": "pending_review",
+            "tenant_id": tenant.id,
+        }
         # Confirm it once
-        confirm_pattern("cluster_dup", ConfirmPatternRequest())
+        confirm_pattern("cluster_dup", ConfirmPatternRequest(), tenant=tenant)
         # Now it's in confirmed_taxonomy, not pending; trying to confirm again raises
         with pytest.raises(HTTPException) as exc_info:
-            confirm_pattern("cluster_dup", ConfirmPatternRequest())
+            confirm_pattern("cluster_dup", ConfirmPatternRequest(), tenant=tenant)
         assert exc_info.value.status_code in (400, 404)
 
     def test_taxonomy_listing(self):
         import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import list_taxonomy
 
-        fp._confirmed_taxonomy["pat_x"] = {"pattern_id": "pat_x", "name": "Pattern X"}
-        result = list_taxonomy()
+        tenant = _test_tenant()
+        fp._taxonomy_for(tenant.id)["pat_x"] = {"pattern_id": "pat_x", "name": "Pattern X"}
+        result = list_taxonomy(tenant=tenant)
         assert result["count"] == 1
         assert len(result["taxonomy"]) == 1
 
@@ -355,9 +370,10 @@ class TestHumanValidationGate:
         import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import list_pending
 
-        fp._pending_clusters["c1"] = {"cluster_id": "c1", "name": "C1", "status": "pending_review"}
-        fp._pending_clusters["c2"] = {"cluster_id": "c2", "name": "C2", "status": "pending_review"}
-        result = list_pending()
+        tenant = _test_tenant()
+        fp._pending_for(tenant.id)["c1"] = {"cluster_id": "c1", "name": "C1", "status": "pending_review"}
+        fp._pending_for(tenant.id)["c2"] = {"cluster_id": "c2", "name": "C2", "status": "pending_review"}
+        result = list_pending(tenant=tenant)
         assert result["count"] == 2
         assert "gate_policy" in result
 
@@ -369,13 +385,15 @@ class TestHumanValidationGate:
         import api.routers.failure_patterns as fp
         from api.routers.failure_patterns import ConfirmPatternRequest, confirm_pattern
 
-        fp._pending_clusters["cluster_guard"] = {
+        tenant = _test_tenant()
+        fp._pending_for(tenant.id)["cluster_guard"] = {
             "cluster_id": "cluster_guard",
             "name": "Guard test",
             "status": "pending_review",
+            "tenant_id": tenant.id,
         }
-        confirm_pattern("cluster_guard", ConfirmPatternRequest(reviewer="tester"))
-        entry = list(fp._confirmed_taxonomy.values())[-1]
+        confirm_pattern("cluster_guard", ConfirmPatternRequest(reviewer="tester"), tenant=tenant)
+        entry = list(fp._taxonomy_for(tenant.id).values())[-1]
         assert entry["eval_creation_required"] is True
         # The note must explicitly warn against auto-generation
         note = entry["eval_creation_note"].lower()
