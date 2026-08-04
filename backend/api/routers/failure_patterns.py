@@ -22,6 +22,12 @@ Human validation gate:
   A human reviewer must explicitly confirm or reject each cluster before it
   enters the canonical failure taxonomy.  Confirmed patterns can then be used
   to guide (but never auto-generate) new eval cases.
+
+Tenant isolation:
+  Pending queues, confirmed taxonomy, and rejected IDs are keyed by tenant_id.
+  Cluster IDs are derived from client-supplied campaign_id and are not globally
+  unique across tenants — without scoping, Tenant B can read/confirm/reject
+  Tenant A's queued failure traces (prompts/responses).
 """
 
 import logging
@@ -29,9 +35,11 @@ import uuid
 from datetime import datetime, UTC
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.auth import require_tenant
+from core.models import Tenant
 from eval_engine.failure_clustering import FailureClusteringEngine, FailureCluster, ClusteringReport
 from eval_engine.anomaly_detection import AnomalyDetectionEngine
 
@@ -40,15 +48,35 @@ logger = logging.getLogger(__name__)
 
 
 # ── In-memory stores (production: replace with DB tables) ─────────────────────
+# All stores are keyed by tenant_id first so queues never cross tenants.
 
-# Pending clusters awaiting human validation
-_pending_clusters: dict[str, dict] = {}
+# Pending clusters awaiting human validation: tenant_id → cluster_id → payload
+_pending_clusters: dict[int, dict[str, dict]] = {}
 
-# Confirmed failure taxonomy entries
-_confirmed_taxonomy: dict[str, dict] = {}
+# Confirmed failure taxonomy entries: tenant_id → pattern_id → payload
+_confirmed_taxonomy: dict[int, dict[str, dict]] = {}
 
-# Rejected cluster IDs (to avoid re-alerting)
-_rejected_ids: set[str] = set()
+# Rejected cluster IDs (to avoid re-alerting): tenant_id → set[cluster_id]
+_rejected_ids: dict[int, set[str]] = {}
+
+
+def _pending_for(tenant_id: int) -> dict[str, dict]:
+    return _pending_clusters.setdefault(tenant_id, {})
+
+
+def _taxonomy_for(tenant_id: int) -> dict[str, dict]:
+    return _confirmed_taxonomy.setdefault(tenant_id, {})
+
+
+def _rejected_for(tenant_id: int) -> set[str]:
+    return _rejected_ids.setdefault(tenant_id, set())
+
+
+def _reset_stores() -> None:
+    """Clear all in-memory stores (tests only)."""
+    _pending_clusters.clear()
+    _confirmed_taxonomy.clear()
+    _rejected_ids.clear()
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -112,10 +140,21 @@ def _cluster_to_dict(c: FailureCluster) -> dict:
     }
 
 
+def _pattern_in_taxonomy(tenant_id: int, cluster_id: str) -> bool:
+    """True if any confirmed pattern for this tenant originated from cluster_id."""
+    for entry in _taxonomy_for(tenant_id).values():
+        if entry.get("cluster_id") == cluster_id or entry.get("pattern_id") == cluster_id:
+            return True
+    return False
+
+
 # ── PR1: Failure clustering ────────────────────────────────────────────────────
 
 @router.post("/cluster")
-def cluster_failures(req: ClusterRequest):
+def cluster_failures(
+    req: ClusterRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Cluster failure traces by semantic similarity.
 
@@ -129,19 +168,31 @@ def cluster_failures(req: ClusterRequest):
     failures = [f.model_dump() for f in req.failures]
     report: ClusteringReport = engine.discover(failures, campaign_id=req.campaign_id)
 
+    pending = _pending_for(tenant.id)
+    rejected = _rejected_for(tenant.id)
+
     # Queue novel clusters for human validation (if not already seen/rejected)
     newly_queued: list[str] = []
     for cluster in report.novel_clusters:
         cid = cluster.cluster_id
-        if cid not in _pending_clusters and cid not in _rejected_ids and cid not in _confirmed_taxonomy:
-            _pending_clusters[cid] = {
+        if (
+            cid not in pending
+            and cid not in rejected
+            and not _pattern_in_taxonomy(tenant.id, cid)
+        ):
+            pending[cid] = {
                 **_cluster_to_dict(cluster),
                 "queued_at": datetime.now(UTC).isoformat(),
                 "campaign_id": req.campaign_id,
+                "tenant_id": tenant.id,
                 "status": "pending_review",
             }
             newly_queued.append(cid)
-            logger.info("Novel cluster queued for human validation: %s", cid)
+            logger.info(
+                "Novel cluster queued for human validation: %s (tenant=%s)",
+                cid,
+                tenant.id,
+            )
 
     return {
         "campaign_id": report.campaign_id,
@@ -161,7 +212,7 @@ def cluster_failures(req: ClusterRequest):
                 "Novel clusters have been queued for human review. "
                 "No failure pattern enters the canonical taxonomy without human confirmation."
             ) if newly_queued else "No new patterns to review.",
-            "pending_count": len(_pending_clusters),
+            "pending_count": len(pending),
         },
     }
 
@@ -169,15 +220,16 @@ def cluster_failures(req: ClusterRequest):
 # ── PR1: Taxonomy listing ─────────────────────────────────────────────────────
 
 @router.get("/taxonomy")
-def list_taxonomy():
+def list_taxonomy(tenant: Tenant = Depends(require_tenant)):
     """
     List all confirmed failure patterns in the canonical taxonomy.
 
     These are patterns that have been explicitly confirmed by a human reviewer.
     """
+    taxonomy = list(_taxonomy_for(tenant.id).values())
     return {
-        "taxonomy": list(_confirmed_taxonomy.values()),
-        "count": len(_confirmed_taxonomy),
+        "taxonomy": taxonomy,
+        "count": len(taxonomy),
         "note": (
             "All entries in this taxonomy have been confirmed by a human reviewer. "
             "Automated analysis discovers pattern candidates; humans decide what enters here."
@@ -188,13 +240,17 @@ def list_taxonomy():
 # ── PR2: Anomaly detection ─────────────────────────────────────────────────────
 
 @router.post("/anomalies")
-def detect_anomalies(req: AnomalyRequest):
+def detect_anomalies(
+    req: AnomalyRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Detect statistical anomalies in an evaluation score distribution.
 
     Flags: uniform scores (possible judge anchoring), impossible scores,
     bimodal collapse (loss of discrimination).
     """
+    _ = tenant  # auth gate; anomaly math is request-local
     engine = AnomalyDetectionEngine()
     alerts = engine.analyse_score_distribution(
         req.scores,
@@ -224,13 +280,17 @@ def detect_anomalies(req: AnomalyRequest):
 
 
 @router.post("/performance-delta")
-def detect_performance_delta(req: PerformanceDeltaRequest):
+def detect_performance_delta(
+    req: PerformanceDeltaRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Compare current benchmark scores against a baseline.
 
     Returns alerts for significant regressions (>15pp drop) or unexpected
     improvements (possible contamination).
     """
+    _ = tenant  # auth gate; comparison is request-local
     engine = AnomalyDetectionEngine()
     alerts = engine.detect_performance_changes(
         baseline_scores=req.baseline_scores,
@@ -263,16 +323,17 @@ def detect_performance_delta(req: PerformanceDeltaRequest):
 # ── PR3: Human validation gate ─────────────────────────────────────────────────
 
 @router.get("/pending")
-def list_pending():
+def list_pending(tenant: Tenant = Depends(require_tenant)):
     """
     List all failure clusters awaiting human validation.
 
     These are novel patterns discovered by automated clustering that have
     NOT yet been confirmed or rejected by a human reviewer.
     """
+    pending = list(_pending_for(tenant.id).values())
     return {
-        "pending": list(_pending_clusters.values()),
-        "count": len(_pending_clusters),
+        "pending": pending,
+        "count": len(pending),
         "gate_policy": (
             "All automatically discovered failure patterns require human confirmation "
             "before entering the canonical failure taxonomy. "
@@ -282,26 +343,35 @@ def list_pending():
 
 
 @router.post("/{cluster_id}/confirm")
-def confirm_pattern(cluster_id: str, req: ConfirmPatternRequest):
+def confirm_pattern(
+    cluster_id: str,
+    req: ConfirmPatternRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Confirm a pending failure cluster as a canonical failure pattern.
 
     Moves the cluster from the pending queue to the confirmed taxonomy.
     This is the human validation gate — no automated path bypasses this step.
     """
-    if cluster_id not in _pending_clusters:
-        if cluster_id in _confirmed_taxonomy:
+    pending = _pending_for(tenant.id)
+    taxonomy = _taxonomy_for(tenant.id)
+    rejected = _rejected_for(tenant.id)
+
+    if cluster_id not in pending:
+        if _pattern_in_taxonomy(tenant.id, cluster_id):
             raise HTTPException(400, detail="Pattern already confirmed.")
-        if cluster_id in _rejected_ids:
+        if cluster_id in rejected:
             raise HTTPException(400, detail="Pattern was previously rejected. Cannot confirm a rejected pattern.")
         raise HTTPException(404, detail="Cluster not found in pending queue.")
 
-    cluster = _pending_clusters.pop(cluster_id)
+    cluster = pending.pop(cluster_id)
 
     pattern_id = str(uuid.uuid4())
     taxonomy_entry = {
         **cluster,
         "pattern_id": pattern_id,
+        "tenant_id": tenant.id,
         "status": "confirmed",
         "confirmed_at": datetime.now(UTC).isoformat(),
         "confirmed_by": req.reviewer,
@@ -313,8 +383,14 @@ def confirm_pattern(cluster_id: str, req: ConfirmPatternRequest):
             "Do NOT auto-generate eval cases from failure traces — this causes eval contamination."
         ),
     }
-    _confirmed_taxonomy[pattern_id] = taxonomy_entry
-    logger.info("Failure pattern confirmed by %s: %s → %s", req.reviewer, cluster_id, pattern_id)
+    taxonomy[pattern_id] = taxonomy_entry
+    logger.info(
+        "Failure pattern confirmed by %s: %s → %s (tenant=%s)",
+        req.reviewer,
+        cluster_id,
+        pattern_id,
+        tenant.id,
+    )
 
     return {
         "status": "confirmed",
@@ -331,22 +407,35 @@ def confirm_pattern(cluster_id: str, req: ConfirmPatternRequest):
 
 
 @router.post("/{cluster_id}/reject")
-def reject_pattern(cluster_id: str, req: RejectPatternRequest):
+def reject_pattern(
+    cluster_id: str,
+    req: RejectPatternRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Reject a pending failure cluster.
 
     The cluster is discarded and will not be re-alerted in future runs.
     """
-    if cluster_id not in _pending_clusters:
-        if cluster_id in _confirmed_taxonomy:
+    pending = _pending_for(tenant.id)
+    rejected = _rejected_for(tenant.id)
+
+    if cluster_id not in pending:
+        if _pattern_in_taxonomy(tenant.id, cluster_id):
             raise HTTPException(400, detail="Cannot reject an already confirmed pattern.")
-        if cluster_id in _rejected_ids:
+        if cluster_id in rejected:
             return {"status": "already_rejected", "cluster_id": cluster_id}
         raise HTTPException(404, detail="Cluster not found in pending queue.")
 
-    cluster = _pending_clusters.pop(cluster_id)
-    _rejected_ids.add(cluster_id)
-    logger.info("Failure pattern rejected by %s: %s (reason: %s)", req.reviewer, cluster_id, req.reason)
+    cluster = pending.pop(cluster_id)
+    rejected.add(cluster_id)
+    logger.info(
+        "Failure pattern rejected by %s: %s (reason: %s, tenant=%s)",
+        req.reviewer,
+        cluster_id,
+        req.reason,
+        tenant.id,
+    )
 
     return {
         "status": "rejected",
@@ -361,17 +450,25 @@ def reject_pattern(cluster_id: str, req: RejectPatternRequest):
 
 
 @router.delete("/taxonomy/{pattern_id}")
-def retire_pattern(pattern_id: str):
+def retire_pattern(
+    pattern_id: str,
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Retire a confirmed failure pattern from the taxonomy.
 
     Use when a pattern is no longer relevant or has been superseded.
     """
-    if pattern_id not in _confirmed_taxonomy:
+    taxonomy = _taxonomy_for(tenant.id)
+    if pattern_id not in taxonomy:
         raise HTTPException(404, detail="Pattern not found in taxonomy.")
 
-    entry = _confirmed_taxonomy.pop(pattern_id)
-    logger.info("Failure taxonomy pattern retired: %s", pattern_id)
+    entry = taxonomy.pop(pattern_id)
+    logger.info(
+        "Failure taxonomy pattern retired: %s (tenant=%s)",
+        pattern_id,
+        tenant.id,
+    )
 
     return {
         "status": "retired",
