@@ -170,10 +170,18 @@ async def run_probe(
             f"L{probe.MAX_AGGRESSIVENESS}; got L{inputs.aggressiveness}"
         )
 
+    # Technique floor: probes do not scale their behaviour by the dialled
+    # aggressiveness. Charter consent / dual-approval must therefore see at
+    # least the probe's inherent risk level, or callers can understate
+    # (aggressiveness=1 + technique=composition) and bypass those gates.
+    effective_aggressiveness = max(
+        inputs.aggressiveness, probe.MAX_AGGRESSIVENESS
+    )
+
     # ── 1. Charter authorization ────────────────────────────────────
     request = AttackRequest(
         target_class=inputs.target_class,  # type: ignore[arg-type]
-        aggressiveness=_int_to_aggressiveness(inputs.aggressiveness),
+        aggressiveness=_int_to_aggressiveness(effective_aggressiveness),
         has_signed_consent=inputs.has_signed_consent,
         dual_approval_signers=inputs.dual_approval_signers,
     )
@@ -194,7 +202,7 @@ async def run_probe(
         session_id=inputs.session_id,
         kind=TraceKind.AUTHORIZE,
         target_class=inputs.target_class,
-        aggressiveness=inputs.aggressiveness,
+        aggressiveness=effective_aggressiveness,
         replay_hash=replay_hash,
         target_model_id=inputs.target_model_id,
         verdict=None,
@@ -238,7 +246,7 @@ async def run_probe(
                 session_id=inputs.session_id,
                 kind=TraceKind.PROBE,
                 target_class=inputs.target_class,
-                aggressiveness=inputs.aggressiveness,
+                aggressiveness=effective_aggressiveness,
                 replay_hash=replay_hash,
                 target_model_id=inputs.target_model_id,
                 verdict=TraceVerdict.INCONCLUSIVE,
@@ -269,7 +277,7 @@ async def run_probe(
                 session_id=inputs.session_id,
                 kind=TraceKind.PROBE,
                 target_class=inputs.target_class,
-                aggressiveness=inputs.aggressiveness,
+                aggressiveness=effective_aggressiveness,
                 replay_hash=replay_hash,
                 target_model_id=inputs.target_model_id,
                 verdict=None,
@@ -293,7 +301,7 @@ async def run_probe(
                 session_id=inputs.session_id,
                 kind=TraceKind.RESPONSE,
                 target_class=inputs.target_class,
-                aggressiveness=inputs.aggressiveness,
+                aggressiveness=effective_aggressiveness,
                 replay_hash=replay_hash,
                 target_model_id=inputs.target_model_id,
                 verdict=None,
@@ -315,7 +323,7 @@ async def run_probe(
             session_id=inputs.session_id,
             kind=TraceKind.PROBE,
             target_class=inputs.target_class,
-            aggressiveness=inputs.aggressiveness,
+            aggressiveness=effective_aggressiveness,
             replay_hash=replay_hash,
             target_model_id=inputs.target_model_id,
             verdict=(

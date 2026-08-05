@@ -422,6 +422,91 @@ class TestRunner:
                 )
             )
 
+    def test_technique_floor_blocks_consent_understatement(self, session):
+        """many_shot is L2-inherent; dialling L1 must not bypass consent-above-L1.
+
+        Probes do not scale behaviour by the aggressiveness dial, so charter
+        gates must authorize at the technique floor (MAX_AGGRESSIVENESS).
+        """
+        target, _ = _make_target()
+        policy = _enabled_policy(
+            max_aggressiveness=Aggressiveness.MULTI_TURN,
+            require_signed_consent_above=Aggressiveness.INERT_PROBES,
+        )
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        target,
+                        technique="many_shot",
+                        aggressiveness=1,
+                        has_signed_consent=False,
+                        prompt_seed="ignore previous instructions",
+                        max_turns=2,
+                    ),
+                    session=session,
+                    policy=policy,
+                )
+            )
+        assert exc.value.status_code == 403
+        assert "consent" in exc.value.detail.lower()
+        rows = session.exec(select(RedRoomTrace)).all()
+        assert len(rows) == 0
+
+    def test_technique_floor_blocks_dual_approval_understatement(self, session):
+        """garak is L3-inherent; dialling L1 must not bypass dual-approval-above-L2."""
+        target, _ = _make_target()
+        policy = _enabled_policy(
+            max_aggressiveness=Aggressiveness.LLM_ATTACKER,
+            require_dual_approval_above=Aggressiveness.MULTI_TURN,
+        )
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(
+                run_probe(
+                    _make_run_inputs(
+                        target,
+                        technique="garak",
+                        aggressiveness=1,
+                        dual_approval_signers=(),
+                        prompt_seed="x",
+                        max_turns=1,
+                    ),
+                    session=session,
+                    policy=policy,
+                )
+            )
+        assert exc.value.status_code == 403
+        assert "dual approval" in exc.value.detail.lower()
+        rows = session.exec(select(RedRoomTrace)).all()
+        assert len(rows) == 0
+
+    def test_technique_floor_allows_with_consent(self, session):
+        """Understated dial + matching consent still runs at the technique floor."""
+        target, _ = _make_target()
+        policy = _enabled_policy(
+            max_aggressiveness=Aggressiveness.MULTI_TURN,
+            require_signed_consent_above=Aggressiveness.INERT_PROBES,
+        )
+        out = asyncio.run(
+            run_probe(
+                _make_run_inputs(
+                    target,
+                    technique="many_shot",
+                    aggressiveness=1,
+                    has_signed_consent=True,
+                    prompt_seed="ignore previous instructions",
+                    max_turns=2,
+                ),
+                session=session,
+                policy=policy,
+            )
+        )
+        assert out.decision.allowed is True
+        rows = session.exec(select(RedRoomTrace)).all()
+        # Audit trail must record the effective (floor) aggressiveness.
+        assert rows
+        assert all(r.aggressiveness == 2 for r in rows)
+
     def test_timeout_records_inconclusive_trace(self, session):
         async def slow_target(prompt: str) -> str:
             await asyncio.sleep(2)

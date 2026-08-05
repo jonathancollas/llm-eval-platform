@@ -179,18 +179,27 @@ def _check_charter_or_403(
     *,
     target_class: str,
     aggressiveness: int,
+    technique_max_aggressiveness: int | None = None,
 ) -> tuple[str, str]:
     """Pre-flight charter check. Raises 403 on refusal.
+
+    When ``technique_max_aggressiveness`` is known, authorize at
+    ``max(requested, technique_max)`` so understated dials cannot bypass
+    consent / dual-approval for high-risk techniques. Probe-level ceilings
+    (requested > technique max) are enforced later inside ``run_probe``.
 
     Returns (decision_reason, effective_disclosure) so callers can
     surface them in API responses.
     """
     if aggressiveness < 1 or aggressiveness > 5:
         raise HTTPException(status_code=400, detail="aggressiveness must be 1..5")
+    effective = aggressiveness
+    if technique_max_aggressiveness is not None:
+        effective = max(aggressiveness, technique_max_aggressiveness)
     try:
         request = AttackRequest(
             target_class=target_class,  # type: ignore[arg-type]
-            aggressiveness=Aggressiveness(aggressiveness),
+            aggressiveness=Aggressiveness(effective),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -267,10 +276,6 @@ async def run_one_probe(
     flattened summary; the full event chain is fetched via
     GET /sessions/{id}/traces.
     """
-    decision_reason, effective_disclosure = _check_charter_or_403(
-        target_class=req.target_class, aggressiveness=req.aggressiveness
-    )
-
     registry = build_default_registry()
     if req.technique not in registry:
         raise HTTPException(
@@ -280,6 +285,13 @@ async def run_one_probe(
                 f"registered: {sorted(registry)}"
             ),
         )
+
+    probe = registry[req.technique]
+    decision_reason, effective_disclosure = _check_charter_or_403(
+        target_class=req.target_class,
+        aggressiveness=req.aggressiveness,
+        technique_max_aggressiveness=probe.MAX_AGGRESSIVENESS,
+    )
 
     target_invoke = _get_target_invoke()
     inputs = RunInputs(
