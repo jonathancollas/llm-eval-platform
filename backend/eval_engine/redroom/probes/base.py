@@ -88,9 +88,9 @@ class Probe(ABC):
 
     Subclasses must:
       - Set TECHNIQUE to a stable identifier (used in replay_hash).
-      - Set MAX_AGGRESSIVENESS to the highest charter level this probe
-        should ever be requested at. The runner checks this against the
-        request before invoking the probe.
+      - Set MAX_AGGRESSIVENESS to the inherent risk level of this probe
+        (also the highest level it may be requested at). The runner uses
+        this as both a request ceiling and a charter authorization floor.
       - Implement run() as an async coroutine returning ProbeResult.
 
     Subclasses must NOT:
@@ -101,7 +101,8 @@ class Probe(ABC):
     """
 
     TECHNIQUE: str = ""
-    # Highest aggressiveness level at which this probe is appropriate.
+    # Highest aggressiveness level at which this probe is appropriate —
+    # also the inherent risk floor used for charter authorization.
     # The native probes here are all L1 (inert / templated) or L2
     # (multi-turn templated). LLM-driven attackers (PAIR/TAP — D3/D4)
     # would be L3, coevolution L4, compositional L5.
