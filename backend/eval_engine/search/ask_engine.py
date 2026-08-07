@@ -34,7 +34,11 @@ _MERCURY = re.compile(r"(what is|qu'est[- ]ce que|c'est quoi)\s+mercury", re.IGN
 _STATUS = re.compile(r"(status|statut|health)\b", re.IGNORECASE)
 
 
-def answer_deterministic(session: Session, question: str) -> Optional[AskPayload]:
+def answer_deterministic(
+    session: Session,
+    question: str,
+    tenant_id: Optional[int] = None,
+) -> Optional[AskPayload]:
     q = question.strip()
     if not q:
         return None
@@ -61,12 +65,26 @@ def answer_deterministic(session: Session, question: str) -> Optional[AskPayload
         )
 
     if _COUNT_CAMPAIGNS.search(q):
-        total = session.exec(select(func.count(Campaign.id))).one()
+        if tenant_id is None:
+            return AskPayload(
+                answer="0 campaigns total — 0 running, 0 completed.",
+                sources=[AskSource(id="route:/campaigns", label="Open Run History", href="/campaigns")],
+                deterministic=True,
+            )
+        total = session.exec(
+            select(func.count(Campaign.id)).where(Campaign.tenant_id == tenant_id)
+        ).one()
         running = session.exec(
-            select(func.count(Campaign.id)).where(Campaign.status == JobStatus.RUNNING)
+            select(func.count(Campaign.id)).where(
+                Campaign.tenant_id == tenant_id,
+                Campaign.status == JobStatus.RUNNING,
+            )
         ).one()
         completed = session.exec(
-            select(func.count(Campaign.id)).where(Campaign.status == JobStatus.COMPLETED)
+            select(func.count(Campaign.id)).where(
+                Campaign.tenant_id == tenant_id,
+                Campaign.status == JobStatus.COMPLETED,
+            )
         ).one()
         return AskPayload(
             answer=f"{total} campaigns total — {running} running, {completed} completed.",
@@ -75,8 +93,16 @@ def answer_deterministic(session: Session, question: str) -> Optional[AskPayload
         )
 
     if _LATEST_CAMPAIGN.search(q):
+        if tenant_id is None:
+            return AskPayload(
+                answer="No campaigns have been created yet.",
+                deterministic=True,
+            )
         row = session.exec(
-            select(Campaign).order_by(desc(Campaign.created_at)).limit(1)
+            select(Campaign)
+            .where(Campaign.tenant_id == tenant_id)
+            .order_by(desc(Campaign.created_at))
+            .limit(1)
         ).first()
         if row:
             return AskPayload(
@@ -95,6 +121,9 @@ def answer_deterministic(session: Session, question: str) -> Optional[AskPayload
 
     if _TOP_MODEL.search(q):
         # Top model = highest average score across completed runs.
+        # Scope via Campaign.tenant_id so scores never mix across tenants.
+        if tenant_id is None:
+            return None
         row = session.exec(
             select(
                 LLMModel.id, LLMModel.name,
@@ -102,7 +131,11 @@ def answer_deterministic(session: Session, question: str) -> Optional[AskPayload
                 func.count(EvalRun.id).label("n_runs"),
             )
             .join(EvalRun, EvalRun.model_id == LLMModel.id)
-            .where(EvalRun.status == JobStatus.COMPLETED)
+            .join(Campaign, Campaign.id == EvalRun.campaign_id)
+            .where(
+                EvalRun.status == JobStatus.COMPLETED,
+                Campaign.tenant_id == tenant_id,
+            )
             .group_by(LLMModel.id, LLMModel.name)
             .order_by(desc("avg_score"))
             .limit(1)

@@ -119,13 +119,26 @@ def resolve_benchmark(session: Session, query: str, limit: int = 5) -> list[Enti
     return scored[:limit]
 
 
-def find_campaign_by_slug(session: Session, query: str) -> Optional[EntityMatch]:
-    """Simple substring match on campaign names (best-effort)."""
+def find_campaign_by_slug(
+    session: Session,
+    query: str,
+    tenant_id: Optional[int] = None,
+) -> Optional[EntityMatch]:
+    """Simple substring match on campaign names (best-effort).
+
+    Scoped to ``tenant_id`` when provided. Without a tenant, returns None
+    so callers cannot accidentally discover cross-tenant campaigns.
+    """
     from core.models import Campaign
     if not query or len(query) < 3:
         return None
+    if tenant_id is None:
+        return None
     rows = session.exec(
-        select(Campaign.id, Campaign.name).order_by(Campaign.id.desc()).limit(200)
+        select(Campaign.id, Campaign.name)
+        .where(Campaign.tenant_id == tenant_id)
+        .order_by(Campaign.id.desc())
+        .limit(200)
     ).all()
     q = _normalise(query)
     for row in rows:
