@@ -14,6 +14,7 @@ Groups:
 from __future__ import annotations
 
 import time
+from typing import Optional
 
 from sqlmodel import Session
 
@@ -33,6 +34,7 @@ def build_typeahead_response(
     session: Session,
     query: str,
     limit_per_group: int = 5,
+    tenant_id: Optional[int] = None,
 ) -> TypeaheadResponse:
     t0 = time.time()
     q = (query or "").strip()
@@ -136,7 +138,7 @@ def build_typeahead_response(
 
     # ── Campaigns ─────────────────────────────────────────────────
     if q and len(q) >= 3:
-        camp = find_campaign_by_slug(session, q)
+        camp = find_campaign_by_slug(session, q, tenant_id=tenant_id)
         if camp:
             groups.append(TypeaheadGroup(kind="campaign", label="Campaigns", items=[
                 TypeaheadResult(

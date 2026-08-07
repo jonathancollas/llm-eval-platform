@@ -10,6 +10,8 @@ Three endpoints:
 
 Security:
   * All endpoints respect the platform-wide API-key middleware.
+  * All endpoints require a tenant (X-Tenant-Key / default) and scope
+    campaign discovery + ASK answers to that tenant's campaigns/runs.
   * /search/execute honours the user's role when building ATTACK bodies;
     a viewer cannot produce an executable attack body.
   * None of these endpoints mutate state. They are purely advisory.
@@ -29,8 +31,9 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from core.auth import get_request_role
+from core.auth import get_request_role, require_tenant
 from core.database import get_session
+from core.models import Tenant
 from eval_engine.search.engine import SearchEngine
 from eval_engine.search.schema import (
     ExecuteRequest, ExecuteResponse, IntentResponse, SearchIntent,
@@ -54,8 +57,9 @@ def typeahead(
     q: str = Query("", max_length=MAX_QUERY_LEN),
     limit: int = Query(5, ge=1, le=10),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ) -> TypeaheadResponse:
-    engine = SearchEngine(session)
+    engine = SearchEngine(session, tenant_id=tenant.id)
     return engine.typeahead(q, limit_per_group=limit)
 
 
@@ -65,8 +69,9 @@ def typeahead(
 async def intent(
     body: IntentRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ) -> IntentResponse:
-    engine = SearchEngine(session)
+    engine = SearchEngine(session, tenant_id=tenant.id)
     return await engine.classify(body.query)
 
 
@@ -82,6 +87,7 @@ async def execute(
     body: ExecuteBody,
     request: Request,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ) -> ExecuteResponse:
     role_str = get_request_role(request)
     # Normalise to the ExecuteRequest role union; default to 'viewer' for
@@ -94,5 +100,5 @@ async def execute(
         forced_intent=SearchIntent(body.forced_intent) if body.forced_intent else None,
         role=role,
     )
-    engine = SearchEngine(session)
+    engine = SearchEngine(session, tenant_id=tenant.id)
     return await engine.execute(req)

@@ -45,13 +45,19 @@ _AUTO_EXECUTE_THRESHOLD = 0.80
 class SearchEngine:
     """Stateless orchestrator. Create one per request or cache globally."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, tenant_id: Optional[int] = None):
         self.session = session
+        self.tenant_id = tenant_id
 
     # ── Typeahead ──────────────────────────────────────────────────
 
     def typeahead(self, query: str, limit_per_group: int = 5):
-        return build_typeahead_response(self.session, query, limit_per_group)
+        return build_typeahead_response(
+            self.session,
+            query,
+            limit_per_group,
+            tenant_id=self.tenant_id,
+        )
 
     # ── Intent classification ──────────────────────────────────────
 
@@ -168,7 +174,9 @@ class SearchEngine:
 
         if intent == "ask":
             question = str(slots.get("question") or "")
-            ans = answer_deterministic(self.session, question)
+            ans = answer_deterministic(
+                self.session, question, tenant_id=self.tenant_id
+            )
             if ans:
                 return ans
             return AskPayload(
