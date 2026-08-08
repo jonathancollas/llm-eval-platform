@@ -2,7 +2,7 @@
 Benchmarks — CRUD + dataset upload + HuggingFace import.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlmodel import Session, select
+from sqlmodel import Session, select, or_
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, UTC
@@ -10,13 +10,38 @@ import json
 import uuid
 from pathlib import Path
 
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import Benchmark, BenchmarkType
+from core.models import Benchmark, BenchmarkPack, BenchmarkType, Tenant
 from core.config import get_settings
 from core.utils import resolve_safe_path
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
+
+
+def _pack_accessible(tenant: Tenant):
+    """Own packs or public packs. Private packs with null tenant_id stay hidden."""
+    return or_(
+        BenchmarkPack.tenant_id == tenant.id,
+        BenchmarkPack.is_public == True,  # noqa: E712
+    )
+
+
+def _pack_to_dict(pack: BenchmarkPack) -> dict:
+    return {
+        "id": pack.id,
+        "name": pack.name,
+        "slug": pack.slug,
+        "version": pack.version,
+        "publisher": pack.publisher,
+        "family": pack.family,
+        "changelog": pack.changelog,
+        "benchmark_ids": json.loads(pack.benchmark_ids_json),
+        "is_public": pack.is_public,
+        "tenant_id": pack.tenant_id,
+        "created_at": pack.created_at.isoformat(),
+    }
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
@@ -111,10 +136,31 @@ class BenchmarkPackCreate(BaseModel):
 @router.post("/packs", status_code=201)
 def create_benchmark_pack(
     payload: BenchmarkPackCreate,
+    tenant: Tenant = Depends(require_tenant),
     session: Session = Depends(get_session),
 ):
-    """Create or version a benchmark pack. Same slug = new version of existing pack."""
-    from core.models import BenchmarkPack
+    """Create or version a benchmark pack. Same slug = new version within this tenant.
+
+    Cross-tenant slug collision is refused when the slug is already public under
+    another tenant (prevents poisoning GET /packs/{slug} "latest"). Private
+    same-slug packs under other tenants are also refused so version lineage stays
+    tenant-scoped.
+    """
+    foreign = session.exec(
+        select(BenchmarkPack).where(
+            BenchmarkPack.slug == payload.slug,
+            BenchmarkPack.tenant_id.is_not(None),  # type: ignore[union-attr]
+            BenchmarkPack.tenant_id != tenant.id,
+        )
+    ).first()
+    if foreign is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Benchmark pack slug '{payload.slug}' is already used by another tenant."
+            ),
+        )
+
     pack = BenchmarkPack(
         name=payload.name,
         slug=payload.slug,
@@ -124,57 +170,39 @@ def create_benchmark_pack(
         changelog=payload.changelog,
         benchmark_ids_json=json.dumps(payload.benchmark_ids),
         is_public=payload.is_public,
+        tenant_id=tenant.id,
     )
     session.add(pack)
     session.commit()
     session.refresh(pack)
-    return {
-        "id": pack.id,
-        "name": pack.name,
-        "slug": pack.slug,
-        "version": pack.version,
-        "publisher": pack.publisher,
-        "family": pack.family,
-        "changelog": pack.changelog,
-        "benchmark_ids": json.loads(pack.benchmark_ids_json),
-        "is_public": pack.is_public,
-        "created_at": pack.created_at.isoformat(),
-    }
+    return _pack_to_dict(pack)
 
 
 @router.get("/packs")
 def list_benchmark_packs(
     family: Optional[str] = None,
+    tenant: Tenant = Depends(require_tenant),
     session: Session = Depends(get_session),
 ):
-    """List benchmark packs, optionally filtered by family."""
-    from core.models import BenchmarkPack
-    from sqlmodel import select as sqlselect
-    q = sqlselect(BenchmarkPack).where(BenchmarkPack.is_public == True)
+    """List packs visible to the caller: own packs plus public packs."""
+    q = select(BenchmarkPack).where(_pack_accessible(tenant))
     if family:
         q = q.where(BenchmarkPack.family == family)
     packs = session.exec(q.order_by(BenchmarkPack.created_at.desc())).all()
-    return {
-        "packs": [
-            {
-                "id": p.id, "name": p.name, "slug": p.slug, "version": p.version,
-                "publisher": p.publisher, "family": p.family, "changelog": p.changelog,
-                "benchmark_ids": json.loads(p.benchmark_ids_json),
-                "is_public": p.is_public, "created_at": p.created_at.isoformat(),
-            }
-            for p in packs
-        ]
-    }
+    return {"packs": [_pack_to_dict(p) for p in packs]}
 
 
 @router.get("/packs/{slug}")
-def get_benchmark_pack(slug: str, session: Session = Depends(get_session)):
-    """Get all versions of a pack by slug, returns latest + changelog."""
-    from core.models import BenchmarkPack
-    from sqlmodel import select as sqlselect
+def get_benchmark_pack(
+    slug: str,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
+    """Get accessible versions of a pack by slug (own + public only)."""
     versions = session.exec(
-        sqlselect(BenchmarkPack)
+        select(BenchmarkPack)
         .where(BenchmarkPack.slug == slug)
+        .where(_pack_accessible(tenant))
         .order_by(BenchmarkPack.created_at.desc())
     ).all()
     if not versions:
@@ -186,6 +214,8 @@ def get_benchmark_pack(slug: str, session: Session = Depends(get_session)):
         "publisher": latest.publisher,
         "family": latest.family,
         "latest_version": latest.version,
+        "is_public": latest.is_public,
+        "tenant_id": latest.tenant_id,
         "versions": [
             {"version": v.version, "changelog": v.changelog, "created_at": v.created_at.isoformat()}
             for v in versions

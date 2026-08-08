@@ -87,6 +87,7 @@ def _setup_app():
     app.dependency_overrides[campaigns.get_session] = _get_session_override
     app.dependency_overrides[benchmarks.get_session] = _get_session_override
     app.dependency_overrides[campaigns.require_tenant] = _require_tenant_override
+    app.dependency_overrides[benchmarks.require_tenant] = _require_tenant_override
 
     return app, tenant_a, tenant_b, model, benchmark_a, benchmark_b
 
@@ -152,11 +153,13 @@ def test_campaign_sharing_comments_reviews_and_bundle_import():
 
 
 def test_benchmark_pack_publishing_and_changelog_versions():
-    app, _tenant_a, _tenant_b, _model, benchmark_a, benchmark_b = _setup_app()
+    app, tenant_a, _tenant_b, _model, benchmark_a, benchmark_b = _setup_app()
     client = TestClient(app)
+    headers = {"X-Tenant-Key": tenant_a.slug}
 
     v1_resp = client.post(
         "/benchmarks/packs",
+        headers=headers,
         json={
             "name": "AISI Safety Pack",
             "slug": "aisi-safety-pack",
@@ -169,9 +172,11 @@ def test_benchmark_pack_publishing_and_changelog_versions():
         },
     )
     assert v1_resp.status_code == 201, v1_resp.text
+    assert v1_resp.json()["tenant_id"] == tenant_a.id
 
     v2_resp = client.post(
         "/benchmarks/packs",
+        headers=headers,
         json={
             "name": "AISI Safety Pack",
             "slug": "aisi-safety-pack",
@@ -185,11 +190,11 @@ def test_benchmark_pack_publishing_and_changelog_versions():
     )
     assert v2_resp.status_code == 201, v2_resp.text
 
-    list_resp = client.get("/benchmarks/packs?family=aisi")
+    list_resp = client.get("/benchmarks/packs?family=aisi", headers=headers)
     assert list_resp.status_code == 200, list_resp.text
     assert len(list_resp.json()["packs"]) >= 2
 
-    details_resp = client.get("/benchmarks/packs/aisi-safety-pack")
+    details_resp = client.get("/benchmarks/packs/aisi-safety-pack", headers=headers)
     assert details_resp.status_code == 200, details_resp.text
     payload = details_resp.json()
     assert payload["latest_version"] == "1.1.0"
