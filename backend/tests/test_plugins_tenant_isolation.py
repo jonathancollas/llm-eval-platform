@@ -159,9 +159,7 @@ def test_owner_can_export_run():
     assert r.status_code == 200, r.text
     body = r.json()
     assert "export" in body
-    assert str(ids["run_a_id"]) in str(body) or ids["score"] in str(body).lower() or True
-    # Score should be present in the export payload somewhere.
-    assert "0.88" in r.text or 0.88 in body.get("export", {}) or "0.88" in str(body)
+    assert "0.88" in r.text or "0.88" in str(body)
 
 
 def test_other_tenant_cannot_export_run():

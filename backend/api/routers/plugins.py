@@ -88,13 +88,15 @@ def export_run(
 ):
     run = _get_accessible_run(session, run_id, tenant)
     config = ExportConfig()
+    # EvalRun has started_at/completed_at, not created_at (legacy export key).
+    stamp = run.completed_at or run.started_at
     run_data = {
         "run_id": run_id,
         "model_name": str(run.model_id),
         "benchmark_name": str(run.benchmark_id),
         "score": run.score or 0.0,
-        "n_items": 0,
-        "created_at": str(run.created_at),
+        "n_items": run.num_items or 0,
+        "created_at": str(stamp) if stamp is not None else config.date,
     }
     if format == "json_ld":
         return {"export": export_json_ld(run_data, config)}
