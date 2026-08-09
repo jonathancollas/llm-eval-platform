@@ -12,7 +12,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
 
-from core.models import LLMModel
+from core.models import LLMModel, Tenant
 
 BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
 MODELS_PATH = os.path.join(BACKEND_DIR, "api", "routers", "models.py")
@@ -27,6 +27,9 @@ def db_engine(tmp_path_factory):
     db_path = tmp_path_factory.mktemp("models_concurrency") / "models.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Tenant(name="Default", slug="default", api_key_hash="x"))
+        session.commit()
     return engine
 
 
@@ -36,9 +39,21 @@ def app(db_engine):
         with Session(db_engine) as session:
             yield session
 
+    def _require_tenant_override():
+        with Session(db_engine) as session:
+            tenant = session.exec(select(Tenant).where(Tenant.slug == "default")).first()
+            return Tenant(
+                id=tenant.id,
+                name=tenant.name,
+                slug=tenant.slug,
+                api_key_hash=tenant.api_key_hash,
+                is_active=tenant.is_active,
+            )
+
     test_app = FastAPI()
     test_app.include_router(models.router)
     test_app.dependency_overrides[models.get_session] = _get_session_override
+    test_app.dependency_overrides[models.require_tenant] = _require_tenant_override
     return test_app
 
 

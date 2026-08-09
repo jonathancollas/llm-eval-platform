@@ -15,8 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import LLMModel
+from core.models import LLMModel, Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +52,27 @@ class VibeResponse(BaseModel):
     results: List[VibeModelResult]
 
 
+def _assert_can_invoke(model: LLMModel, tenant: Tenant) -> None:
+    """Refuse cross-tenant credential use (confused-deputy via stored API keys)."""
+    if model.tenant_id is not None and model.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail=f"Model(s) not found: [{model.id}]")
+    if model.tenant_id is None and model.api_key_encrypted:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Model {model.id} credentials are not accessible "
+                "for shared catalog entries."
+            ),
+        )
+
+
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.post("/prompt", response_model=VibeResponse)
 async def vibe_prompt(
     body: VibeRequest,
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ) -> VibeResponse:
     """
     Send *body.prompt* to each model in *body.model_ids* in parallel.
@@ -76,6 +92,16 @@ async def vibe_prompt(
     missing = [mid for mid in body.model_ids if mid not in found_ids]
     if missing:
         raise HTTPException(status_code=404, detail=f"Model(s) not found: {missing}")
+
+    # Tenant gate before any provider call decrypts/uses api_key_encrypted.
+    inaccessible = [
+        m.id for m in models
+        if m.tenant_id is not None and m.tenant_id != tenant.id
+    ]
+    if inaccessible:
+        raise HTTPException(status_code=404, detail=f"Model(s) not found: {inaccessible}")
+    for model in models:
+        _assert_can_invoke(model, tenant)
 
     # Run all completions in parallel
     async def _call(model: LLMModel) -> VibeModelResult:

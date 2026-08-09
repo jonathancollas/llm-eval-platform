@@ -40,6 +40,10 @@ class LLMModel(SQLModel, table=True):
     model_id: str              = Field(index=True, unique=True)  # UNIQUE — prevents duplicate imports
     endpoint: Optional[str]    = Field(default=None)
     api_key_encrypted: Optional[str] = Field(default=None)
+    # NULL = shared catalog entry (sync/import). Set for tenant-owned private
+    # configs so encrypted provider keys cannot be invoked or mutated cross-tenant.
+    tenant_id: Optional[int]   = Field(default=None, foreign_key="tenants.id", index=True,
+                                       sa_column_kwargs={"nullable": True})
     context_length: int        = Field(default=4096)
     cost_input_per_1k: float   = Field(default=0.0)
     cost_output_per_1k: float  = Field(default=0.0)

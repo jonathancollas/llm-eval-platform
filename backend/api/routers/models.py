@@ -10,13 +10,55 @@ from datetime import datetime, UTC
 import json
 from urllib.parse import urlparse
 
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import LLMModel, ModelProvider
+from core.models import LLMModel, ModelProvider, Tenant
 from core.security import encrypt_api_key
 from core.utils import safe_json_load
+from sqlalchemy import or_
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = logging.getLogger(__name__)
+
+
+def _visible_to_tenant(tenant: Tenant):
+    """Shared catalog (tenant_id IS NULL) + rows owned by this tenant."""
+    return or_(LLMModel.tenant_id.is_(None), LLMModel.tenant_id == tenant.id)
+
+
+def _get_visible_model(session: Session, model_id: int, tenant: Tenant) -> LLMModel:
+    model = session.get(LLMModel, model_id)
+    if not model or (
+        model.tenant_id is not None and model.tenant_id != tenant.id
+    ):
+        raise HTTPException(status_code=404, detail="Model not found.")
+    return model
+
+
+def _get_owned_model(session: Session, model_id: int, tenant: Tenant) -> LLMModel:
+    """Mutations only on tenant-owned rows — never shared catalog via this API."""
+    model = session.get(LLMModel, model_id)
+    if not model or model.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Model not found.")
+    return model
+
+
+def _assert_can_invoke(model: LLMModel, tenant: Tenant) -> None:
+    """Block cross-tenant use of encrypted provider credentials.
+
+    - Owned models: OK.
+    - Shared catalog without a stored key: OK (env/platform keys).
+    - Shared catalog with a stored key (legacy orphan): refuse — credentials
+      must be re-registered under a tenant before anyone can burn them.
+    - Other tenant's model: 404.
+    """
+    if model.tenant_id is not None and model.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Model not found.")
+    if model.tenant_id is None and model.api_key_encrypted:
+        raise HTTPException(
+            status_code=403,
+            detail="Model credentials are not accessible for shared catalog entries.",
+        )
 
 
 def _validate_endpoint(url: Optional[str]) -> Optional[str]:
@@ -153,7 +195,10 @@ def _to_read(m: LLMModel) -> ModelRead:
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/slim")
-def list_models_slim(session: Session = Depends(get_session)):
+def list_models_slim(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Lightweight model list — only fields needed for selectors and dropdowns.
     ~10x smaller payload than GET /models/ — use this in ModelSelector, wizards, etc.
@@ -164,6 +209,7 @@ def list_models_slim(session: Session = Depends(get_session)):
         select(LLMModel.id, LLMModel.name, LLMModel.model_id,
                LLMModel.provider, LLMModel.is_free, LLMModel.is_open_weight,
                LLMModel.cost_input_per_1k, LLMModel.tags)
+        .where(_visible_to_tenant(tenant))
         .order_by(LLMModel.name)
     ).all()
 
@@ -191,6 +237,7 @@ def list_models_slim(session: Session = Depends(get_session)):
 @router.get("/", response_model=list[ModelRead])
 def list_models(
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
     limit: int = 500,
     offset: int = 0,
     provider: Optional[str] = None,
@@ -209,6 +256,7 @@ def list_models(
     # deduplication is done in SQL instead of loading all rows into memory.
     min_id_subq = (
         select(func.min(LLMModel.id).label("min_id"))
+        .where(_visible_to_tenant(tenant))
         .group_by(LLMModel.model_id)
         .subquery()
     )
@@ -232,7 +280,11 @@ def list_models(
 
 
 @router.post("/", response_model=ModelRead, status_code=status.HTTP_201_CREATED)
-def create_model(payload: ModelCreate, session: Session = Depends(get_session)):
+def create_model(
+    payload: ModelCreate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     # Deduplicate by model_id (prevents double-importing same OpenRouter model)
     existing = session.exec(
         select(LLMModel).where(LLMModel.model_id == payload.model_id)
@@ -246,6 +298,7 @@ def create_model(payload: ModelCreate, session: Session = Depends(get_session)):
         model_id=payload.model_id,
         endpoint=payload.endpoint,
         api_key_encrypted=encrypt_api_key(payload.api_key) if payload.api_key else None,
+        tenant_id=tenant.id,
         context_length=payload.context_length,
         cost_input_per_1k=payload.cost_input_per_1k,
         cost_output_per_1k=payload.cost_output_per_1k,
@@ -266,18 +319,23 @@ def create_model(payload: ModelCreate, session: Session = Depends(get_session)):
 
 
 @router.get("/{model_id}", response_model=ModelRead)
-def get_model(model_id: int, session: Session = Depends(get_session)):
-    model = session.get(LLMModel, model_id)
-    if not model:
-        raise HTTPException(status_code=404, detail="Model not found.")
+def get_model(
+    model_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    model = _get_visible_model(session, model_id, tenant)
     return _to_read(model)
 
 
 @router.patch("/{model_id}", response_model=ModelRead)
-def update_model(model_id: int, payload: ModelUpdate, session: Session = Depends(get_session)):
-    model = session.get(LLMModel, model_id)
-    if not model:
-        raise HTTPException(status_code=404, detail="Model not found.")
+def update_model(
+    model_id: int,
+    payload: ModelUpdate,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    model = _get_owned_model(session, model_id, tenant)
 
     for field, value in payload.model_dump(exclude_none=True).items():
         if field == "api_key":
@@ -295,20 +353,25 @@ def update_model(model_id: int, payload: ModelUpdate, session: Session = Depends
 
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_model(model_id: int, session: Session = Depends(get_session)):
-    model = session.get(LLMModel, model_id)
-    if not model:
-        raise HTTPException(status_code=404, detail="Model not found.")
+def delete_model(
+    model_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    model = _get_owned_model(session, model_id, tenant)
     session.delete(model)
     session.commit()
 
 
 @router.post("/{model_id}/test")
-async def test_model_connection(model_id: int, session: Session = Depends(get_session)):
+async def test_model_connection(
+    model_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """Live connection test — returns latency and a sample response."""
-    model = session.get(LLMModel, model_id)
-    if not model:
-        raise HTTPException(status_code=404, detail="Model not found.")
+    model = _get_visible_model(session, model_id, tenant)
+    _assert_can_invoke(model, tenant)
 
     from eval_engine.litellm_client import test_connection
     result = await test_connection(model)
@@ -327,7 +390,10 @@ async def inference_adapter_health():
 # ── Unified model explorer ────────────────────────────────────────────────────
 
 @router.get("/explorer")
-async def model_explorer(session: Session = Depends(get_session)):
+async def model_explorer(
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Unified model explorer — aggregates models from all sources:
     - Database (imported models from OpenRouter, custom, Ollama)
@@ -338,8 +404,10 @@ async def model_explorer(session: Session = Depends(get_session)):
     settings = get_settings()
     import httpx
 
-    # 1. All imported models from DB
-    db_models = session.exec(select(LLMModel)).all()
+    # 1. Visible models from DB (shared catalog + this tenant)
+    db_models = session.exec(
+        select(LLMModel).where(_visible_to_tenant(tenant))
+    ).all()
 
     # 2. Ollama locally installed models (live)
     ollama_installed: set[str] = set()
