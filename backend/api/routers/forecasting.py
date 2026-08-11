@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, UTC
 from sqlmodel import Session, select
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import AgentTrajectory
+from core.models import AgentTrajectory, Campaign, Tenant
 from eval_engine.capability_forecasting import (
     CapabilityForecastingEngine,
     ScalingDataPoint,
@@ -22,17 +23,47 @@ _metrics_engine = FrontierMetricsEngine()
 from eval_engine.long_horizon import LongHorizonEvaluator, LONG_HORIZON_TASKS
 _lh_evaluator = LongHorizonEvaluator()
 
-# ── In-memory calibration store (per-capability) ──────────────────────────────
-# Maps capability -> list of ForecastCalibrationRecord
-_calibration_store: dict[str, list[dict]] = {}
+# ── In-memory stores (production: replace with DB tables) ─────────────────────
+# Tenant-scoped: without the outer tenant_id key, Tenant B can read/poison
+# Tenant A's calibration history and frontier leaderboard entries.
 
-# ── In-memory frontier metrics leaderboard ────────────────────────────────────
-# Maps model_name -> list of leaderboard entries (supports trend over versions)
-_frontier_leaderboard: dict[str, list[dict]] = {}
+# Maps tenant_id -> capability -> list of ForecastCalibrationRecord
+_calibration_store: dict[int, dict[str, list[dict]]] = {}
+
+# Maps tenant_id -> model_name -> list of leaderboard entries
+_frontier_leaderboard: dict[int, dict[str, list[dict]]] = {}
+
+
+def _calibration_for(tenant_id: int) -> dict[str, list[dict]]:
+    return _calibration_store.setdefault(tenant_id, {})
+
+
+def _leaderboard_for(tenant_id: int) -> dict[str, list[dict]]:
+    return _frontier_leaderboard.setdefault(tenant_id, {})
+
+
+def _reset_stores() -> None:
+    """Clear all in-memory stores (tests only)."""
+    _calibration_store.clear()
+    _frontier_leaderboard.clear()
+
+
+def _require_accessible_campaign(
+    session: Session, campaign_id: int, tenant: Tenant
+) -> Campaign:
+    """Load a campaign only if it belongs to the calling tenant.
+
+    Duplicated (not imported from campaigns) so this router can be loaded in
+    isolation for tenant-isolation tests without pulling campaign side effects.
+    """
+    campaign = session.get(Campaign, campaign_id)
+    if not campaign or campaign.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    return campaign
 
 
 @router.get("/capabilities")
-def list_capabilities():
+def list_capabilities(tenant: Tenant = Depends(require_tenant)):
     return [
         "cybersecurity",
         "reasoning",
@@ -50,7 +81,7 @@ class FitRequest(BaseModel):
 
 
 @router.post("/fit")
-def fit_scaling_law(req: FitRequest):
+def fit_scaling_law(req: FitRequest, tenant: Tenant = Depends(require_tenant)):
     if len(req.data_points) < 2:
         raise HTTPException(400, "Need at least 2 data points")
     x = [float(d.get("x", i)) for i, d in enumerate(req.data_points)]
@@ -80,7 +111,10 @@ class ChinchillaFitRequest(BaseModel):
 
 
 @router.post("/fit/chinchilla")
-def fit_chinchilla_law(req: ChinchillaFitRequest):
+def fit_chinchilla_law(
+    req: ChinchillaFitRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Fit a Chinchilla-style multi-dimensional power law (compute + parameters)."""
     if len(req.data_points) < 4:
         raise HTTPException(400, "Need at least 4 data points for Chinchilla fitting")
@@ -107,7 +141,10 @@ class AggregateRequest(BaseModel):
 
 
 @router.post("/aggregate")
-def aggregate_historical_data(req: AggregateRequest):
+def aggregate_historical_data(
+    req: AggregateRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Aggregate and validate a batch of historical evaluation data points."""
     points = []
     for dp in req.data_points:
@@ -157,7 +194,10 @@ class ForecastRequest(BaseModel):
 
 
 @router.post("/forecast")
-def forecast_capability(req: ForecastRequest):
+def forecast_capability(
+    req: ForecastRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     engine = CapabilityForecastingEngine()
     for dp in req.data_points:
         engine.add_data_point(
@@ -194,7 +234,10 @@ class ReportRequest(BaseModel):
 
 
 @router.post("/report")
-def generate_forecast_report(req: ReportRequest):
+def generate_forecast_report(
+    req: ReportRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Generate a full forecast report across all capabilities."""
     engine = CapabilityForecastingEngine()
     for dp in req.data_points:
@@ -248,7 +291,10 @@ class ResidualRequest(BaseModel):
 
 
 @router.post("/scaling/residuals")
-def get_residual_analysis(req: ResidualRequest):
+def get_residual_analysis(
+    req: ResidualRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Compute residual analysis / goodness-of-fit diagnostics for a capability."""
     engine = CapabilityForecastingEngine()
     for dp in req.data_points:
@@ -270,7 +316,10 @@ class GapRequest(BaseModel):
 
 
 @router.post("/gaps/frontier")
-def compute_frontier_gaps(req: GapRequest):
+def compute_frontier_gaps(
+    req: GapRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Compute 'capability gap to frontier' metric for each capability."""
     engine = CapabilityForecastingEngine()
     for dp in req.data_points:
@@ -299,7 +348,10 @@ class CalibrationRecordRequest(BaseModel):
 
 
 @router.post("/calibration/record")
-def record_calibration(req: CalibrationRecordRequest):
+def record_calibration(
+    req: CalibrationRecordRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Record a historical forecast prediction vs actual outcome."""
     record = {
         "capability": req.capability,
@@ -308,18 +360,23 @@ def record_calibration(req: CalibrationRecordRequest):
         "absolute_error": round(abs(req.predicted_score - req.actual_score), 4),
         "horizon_label": req.horizon_label,
         "recorded_at": datetime.now(UTC).isoformat(),
+        "tenant_id": tenant.id,
     }
-    _calibration_store.setdefault(req.capability, []).append(record)
+    _calibration_for(tenant.id).setdefault(req.capability, []).append(record)
     return record
 
 
 @router.get("/calibration")
-def get_calibration_history(capability: Optional[str] = None):
+def get_calibration_history(
+    capability: Optional[str] = None,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Retrieve forecast calibration history (how accurate were past forecasts?)."""
+    store = _calibration_for(tenant.id)
     if capability:
-        records = _calibration_store.get(capability, [])
+        records = store.get(capability, [])
     else:
-        records = [r for recs in _calibration_store.values() for r in recs]
+        records = [r for recs in store.values() for r in recs]
 
     if not records:
         return {"records": [], "overall_mae": 0.0, "by_capability": {}}
@@ -344,7 +401,10 @@ def get_calibration_history(capability: Optional[str] = None):
 
 
 @router.get("/long-horizon/tasks")
-def list_long_horizon_tasks(domain: Optional[str] = None):
+def list_long_horizon_tasks(
+    domain: Optional[str] = None,
+    tenant: Tenant = Depends(require_tenant),
+):
     if domain:
         return [t for t in LONG_HORIZON_TASKS if t["domain"] == domain]
     return LONG_HORIZON_TASKS
@@ -357,7 +417,10 @@ class LongHorizonSimRequest(BaseModel):
 
 
 @router.post("/long-horizon/simulate")
-def simulate_long_horizon(req: LongHorizonSimRequest):
+def simulate_long_horizon(
+    req: LongHorizonSimRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     task_dict = next((t for t in LONG_HORIZON_TASKS if t["task_id"] == req.task_id), None)
     if not task_dict:
         raise HTTPException(404, f"Task '{req.task_id}' not found")
@@ -454,7 +517,10 @@ def _result_to_dict(result) -> dict:
 
 
 @router.post("/metrics/compute")
-def compute_frontier_metrics(req: FrontierMetricsRequest):
+def compute_frontier_metrics(
+    req: FrontierMetricsRequest,
+    tenant: Tenant = Depends(require_tenant),
+):
     result = _metrics_engine.compute_all(
         req.model_name,
         req.steps,
@@ -466,20 +532,21 @@ def compute_frontier_metrics(req: FrontierMetricsRequest):
         req.task_completed,
     )
     payload = _result_to_dict(result)
-    # Also persist to the in-memory leaderboard
+    # Persist to the calling tenant's in-memory leaderboard only
     entry = {
         **payload,
         "version": req.version or req.model_name,
+        "tenant_id": tenant.id,
     }
-    _frontier_leaderboard.setdefault(req.model_name, []).append(entry)
+    _leaderboard_for(tenant.id).setdefault(req.model_name, []).append(entry)
     return payload
 
 
 @router.get("/metrics/leaderboard")
-def get_frontier_leaderboard():
+def get_frontier_leaderboard(tenant: Tenant = Depends(require_tenant)):
     """Return the latest frontier metrics entry per model, ranked by composite score."""
     rows = []
-    for model_name, entries in _frontier_leaderboard.items():
+    for model_name, entries in _leaderboard_for(tenant.id).items():
         latest = entries[-1]
         rows.append({
             "model_name": model_name,
@@ -500,9 +567,12 @@ def get_frontier_leaderboard():
 
 
 @router.get("/metrics/leaderboard/trend/{model_name}")
-def get_model_trend(model_name: str):
+def get_model_trend(
+    model_name: str,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Return all historical frontier metric entries for a model (for trend chart)."""
-    entries = _frontier_leaderboard.get(model_name)
+    entries = _leaderboard_for(tenant.id).get(model_name)
     if not entries:
         raise HTTPException(404, f"No metrics found for model '{model_name}'")
     trend = [
@@ -521,7 +591,10 @@ def get_model_trend(model_name: str):
 
 
 @router.post("/metrics/correlations")
-def compute_metric_correlations(results: List[dict]):
+def compute_metric_correlations(
+    results: List[dict],
+    tenant: Tenant = Depends(require_tenant),
+):
     """
     Compute pairwise Pearson correlations between the 4 frontier metrics
     given a list of previously computed result payloads.
@@ -571,7 +644,17 @@ def compute_metric_correlations(results: List[dict]):
 
 
 @router.get("/metrics/{run_id}")
-def get_run_metrics(run_id: int, session: Session = Depends(get_session)):
+def get_run_metrics(
+    run_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
+    """Return trajectory counts for a campaign.
+
+    ``run_id`` is historically a campaign_id (see AgentTrajectory.campaign_id).
+    Access requires campaign ownership for the calling tenant.
+    """
+    _require_accessible_campaign(session, run_id, tenant)
     trajectories = session.exec(
         select(AgentTrajectory).where(AgentTrajectory.campaign_id == run_id)
     ).all()
