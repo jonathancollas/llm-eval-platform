@@ -2,14 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlmodel import Session, select
+from core.auth import require_tenant
 from core.database import get_session
 from core.models import (
     LLMModel,
     EvalRun,
     Benchmark,
+    Campaign,
     CapabilityDomainRecord,
     CapabilitySubCapabilityRecord,
     CapabilityEvalScore,
+    Tenant,
 )
 from eval_engine.capability_taxonomy import CAPABILITY_ONTOLOGY, CapabilityTaxonomyEngine, CapabilityScore
 from eval_engine.trajectory_analysis import TrajectoryAnalysisEngine
@@ -20,6 +23,44 @@ _taxonomy = CapabilityTaxonomyEngine()
 _traj = TrajectoryAnalysisEngine()
 _cross = CrossBenchmarkAnalyzer()
 
+
+def _eval_runs_for_tenant(
+    session: Session,
+    tenant: Tenant,
+    *,
+    model_id: int | None = None,
+) -> list[EvalRun]:
+    """EvalRuns whose campaign belongs to ``tenant`` — never another tenant's scores."""
+    stmt = (
+        select(EvalRun)
+        .join(Campaign, EvalRun.campaign_id == Campaign.id)
+        .where(Campaign.tenant_id == tenant.id)
+    )
+    if model_id is not None:
+        stmt = stmt.where(EvalRun.model_id == model_id)
+    return list(session.exec(stmt).all())
+
+
+def _capability_scores_for_tenant(
+    session: Session,
+    tenant: Tenant,
+    *,
+    model_id: int | None = None,
+) -> list[CapabilityEvalScore]:
+    """Persisted capability scores visible to ``tenant``.
+
+    Rows tied to an eval run are included only when that run's campaign is
+    owned by the caller. Orphan rows (``eval_run_id is NULL``) are catalog-level
+    scores with no campaign owner — they stay visible, matching the still-global
+    LLMModel table.
+    """
+    stmt = select(CapabilityEvalScore)
+    if model_id is not None:
+        stmt = stmt.where(CapabilityEvalScore.model_id == model_id)
+    scores = list(session.exec(stmt).all())
+    run_ids = {run.id for run in _eval_runs_for_tenant(session, tenant, model_id=model_id)}
+    return [s for s in scores if s.eval_run_id is None or s.eval_run_id in run_ids]
+
 @router.get("/taxonomy")
 def get_taxonomy(): return CAPABILITY_ONTOLOGY
 
@@ -29,10 +70,14 @@ def get_domain_taxonomy(domain: str):
     return CAPABILITY_ONTOLOGY[domain]
 
 @router.get("/profile/{model_id}")
-def get_model_profile(model_id: int, session: Session = Depends(get_session)):
+def get_model_profile(
+    model_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     model = session.get(LLMModel, model_id)
     if not model: raise HTTPException(404, "Model not found")
-    runs = session.exec(select(EvalRun).where(EvalRun.model_id == model_id)).all()
+    runs = _eval_runs_for_tenant(session, tenant, model_id=model_id)
     scores = []
     for run in runs:
         if run.score is not None:
@@ -44,10 +89,14 @@ def get_model_profile(model_id: int, session: Session = Depends(get_session)):
     return profile.__dict__
 
 @router.get("/gaps/{model_id}")
-def get_capability_gaps(model_id: int, session: Session = Depends(get_session)):
+def get_capability_gaps(
+    model_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     model = session.get(LLMModel, model_id)
     if not model: raise HTTPException(404, "Model not found")
-    runs = session.exec(select(EvalRun).where(EvalRun.model_id == model_id)).all()
+    runs = _eval_runs_for_tenant(session, tenant, model_id=model_id)
     scores = []
     for run in runs:
         if run.score is not None:
@@ -76,10 +125,14 @@ def analyze_trajectory(req: TrajectoryRequest):
     }
 
 @router.get("/cross-benchmark/{model_id}")
-def cross_benchmark(model_id: int, session: Session = Depends(get_session)):
+def cross_benchmark(
+    model_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     model = session.get(LLMModel, model_id)
     if not model: raise HTTPException(404, "Model not found")
-    runs = session.exec(select(EvalRun).where(EvalRun.model_id == model_id)).all()
+    runs = _eval_runs_for_tenant(session, tenant, model_id=model_id)
     run_dicts = [{"model_name": model.name, "benchmark_name": str(r.benchmark_id), "score": r.score or 0.0} for r in runs if r.score is not None]
     if not run_dicts: return {"model_name": model.name, "generalization_index": 0.5, "benchmarks": []}
     report = _cross.generate_report(model.name, run_dicts)
@@ -129,12 +182,17 @@ def list_sub_capabilities(domain: Optional[str] = None, session: Session = Depen
 
 
 @router.get("/scores/{model_id}")
-def get_model_scores(model_id: int, session: Session = Depends(get_session)):
+def get_model_scores(
+    model_id: int,
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     """Return persisted capability scores for a model, with confidence intervals."""
     model = session.get(LLMModel, model_id)
     if not model:
         raise HTTPException(404, "Model not found")
 
+    visible_ids = {s.id for s in _capability_scores_for_tenant(session, tenant, model_id=model_id)}
     rows = session.exec(
         select(CapabilityEvalScore, CapabilitySubCapabilityRecord, CapabilityDomainRecord)
         .join(CapabilitySubCapabilityRecord, CapabilityEvalScore.sub_capability_id == CapabilitySubCapabilityRecord.id)
@@ -155,15 +213,19 @@ def get_model_scores(model_id: int, session: Session = Depends(get_session)):
                 "ci_lower": s.ci_lower,
                 "ci_upper": s.ci_upper,
                 "n_items": s.n_items,
-                "scored_at": s.scored_at.isoformat(),
+                "scored_at": s.recorded_at.isoformat() if s.recorded_at else None,
             }
             for s, sc, d in rows
+            if s.id in visible_ids
         ],
     }
 
 
 @router.get("/coverage")
-def get_coverage_gaps(session: Session = Depends(get_session)):
+def get_coverage_gaps(
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     """Return which sub-capabilities have NOT been evaluated for each active model.
 
     This directly answers the acceptance criterion:
@@ -176,17 +238,17 @@ def get_coverage_gaps(session: Session = Depends(get_session)):
             CapabilitySubCapabilityRecord.domain_id == CapabilityDomainRecord.id,
         )
     ).all()
+    tenant_scores = _capability_scores_for_tenant(session, tenant)
 
     result = []
     for model in models:
         scored_ids = {
             row.sub_capability_id
-            for row in session.exec(
-                select(CapabilityEvalScore).where(CapabilityEvalScore.model_id == model.id)
-            ).all()
+            for row in tenant_scores
+            if row.model_id == model.id
         }
         # Also check inferred scores from eval_runs (pre-DB-scoring era)
-        runs = session.exec(select(EvalRun).where(EvalRun.model_id == model.id)).all()
+        runs = _eval_runs_for_tenant(session, tenant, model_id=model.id)
         for run in runs:
             if run.score is not None:
                 bench = session.get(Benchmark, run.benchmark_id)
@@ -225,7 +287,10 @@ def get_coverage_gaps(session: Session = Depends(get_session)):
 
 
 @router.get("/heatmap")
-def get_heatmap(session: Session = Depends(get_session)):
+def get_heatmap(
+    tenant: Tenant = Depends(require_tenant),
+    session: Session = Depends(get_session),
+):
     """Return model × capability matrix data for the coverage heatmap UI.
 
     Response shape::
@@ -250,7 +315,7 @@ def get_heatmap(session: Session = Depends(get_session)):
 
     # Fallback to in-memory ontology if taxonomy not yet seeded
     if not domain_rows:
-        return _heatmap_from_ontology(models, session)
+        return _heatmap_from_ontology(models, session, tenant)
 
     sub_cap_rows = session.exec(
         select(CapabilitySubCapabilityRecord, CapabilityDomainRecord).join(
@@ -259,8 +324,8 @@ def get_heatmap(session: Session = Depends(get_session)):
         ).order_by(CapabilityDomainRecord.sort_order, CapabilitySubCapabilityRecord.slug)
     ).all()
 
-    # Persisted scores keyed by (model_id, sub_cap_id)
-    all_scores = session.exec(select(CapabilityEvalScore)).all()
+    # Persisted scores keyed by (model_id, sub_cap_id) — tenant-scoped
+    all_scores = _capability_scores_for_tenant(session, tenant)
     score_index: dict[tuple[int, int], float] = {
         (s.model_id, s.sub_capability_id): s.score for s in all_scores
     }
@@ -272,7 +337,7 @@ def get_heatmap(session: Session = Depends(get_session)):
         all_sub_cap_by_slug[(d.slug, sc.slug)] = sc.id
 
     for model in models:
-        runs = session.exec(select(EvalRun).where(EvalRun.model_id == model.id)).all()
+        runs = _eval_runs_for_tenant(session, tenant, model_id=model.id)
         for run in runs:
             if run.score is None:
                 continue
@@ -331,7 +396,7 @@ def get_heatmap(session: Session = Depends(get_session)):
     }
 
 
-def _heatmap_from_ontology(models: list, session: Session) -> dict:
+def _heatmap_from_ontology(models: list, session: Session, tenant: Tenant) -> dict:
     """Fallback heatmap builder using the in-memory ontology (no taxonomy tables seeded yet)."""
     domains_out = []
     for domain_slug, domain_data in CAPABILITY_ONTOLOGY.items():
@@ -349,7 +414,7 @@ def _heatmap_from_ontology(models: list, session: Session) -> dict:
         mid = str(model.id)
         scores_out[mid] = {}
         coverage_out[mid] = {}
-        runs = session.exec(select(EvalRun).where(EvalRun.model_id == model.id)).all()
+        runs = _eval_runs_for_tenant(session, tenant, model_id=model.id)
         inferred_scores: dict[str, float] = {}
         for run in runs:
             if run.score is None:
