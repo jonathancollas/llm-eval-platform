@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from core.auth import require_tenant
 from core.database import get_session
 from core.config import get_settings
-from core.models import EvalRun, LLMModel, Benchmark, JobStatus
+from core.models import Campaign, EvalRun, LLMModel, Benchmark, JobStatus, Tenant
 
 router = APIRouter(prefix="/leaderboard", tags=["leaderboard"])
 settings = get_settings()
@@ -152,14 +153,31 @@ def _resolve_domain_benchmark_ids(
     return filtered
 
 
-def _get_domain_runs(domain: str, session: Session) -> tuple[list[_RunSlim], dict[int, LLMModel], dict[int, Benchmark]]:
+def _tenant_pk(tenant: Tenant) -> int:
+    if tenant.id is None:
+        raise HTTPException(status_code=500, detail="Resolved tenant has no id")
+    return int(tenant.id)
+
+
+def _cache_key(tenant_id: int, domain: str) -> str:
+    """Leaderboard/report cache entries are per-tenant — never share across tenants."""
+    return f"{tenant_id}:{domain}"
+
+
+def _get_domain_runs(
+    domain: str,
+    session: Session,
+    tenant_id: int,
+) -> tuple[list[_RunSlim], dict[int, LLMModel], dict[int, Benchmark]]:
     """
-    Return slim run projections for *domain*, plus lookup dicts for models and benchmarks.
+    Return slim run projections for *domain* owned by *tenant_id*, plus lookup dicts.
 
     Optimisations vs. the original implementation:
     - Only the five columns required for aggregation are fetched (no full ORM hydration).
     - The domain benchmark filter is pushed to SQL (WHERE benchmark_id IN (...)) so the
       database never transfers rows that would be discarded in Python.
+    - Campaign.tenant_id is enforced in SQL so another tenant's scores/cost/latency
+      never enter the aggregate (or the process-wide TTL cache).
     - The benchmarks table is small and always fetched in full to support name-key matching;
       models are fetched only for the IDs that appear in the result set.
     """
@@ -174,14 +192,21 @@ def _get_domain_runs(domain: str, session: Session) -> tuple[list[_RunSlim], dic
 
     domain_bench_ids = _resolve_domain_benchmark_ids(allowed_keys, all_benchmarks)
 
-    # Projected query — only fetch the columns we actually need.
-    stmt = select(
-        EvalRun.model_id,
-        EvalRun.benchmark_id,
-        EvalRun.score,
-        EvalRun.total_cost_usd,
-        EvalRun.total_latency_ms,
-    ).where(EvalRun.status == JobStatus.COMPLETED)
+    # Projected query — only fetch the columns we actually need, scoped to this tenant.
+    stmt = (
+        select(
+            EvalRun.model_id,
+            EvalRun.benchmark_id,
+            EvalRun.score,
+            EvalRun.total_cost_usd,
+            EvalRun.total_latency_ms,
+        )
+        .join(Campaign, EvalRun.campaign_id == Campaign.id)
+        .where(
+            EvalRun.status == JobStatus.COMPLETED,
+            Campaign.tenant_id == tenant_id,
+        )
+    )
 
     if domain_bench_ids is not None:
         # Apply domain filter at SQL level — avoids transferring irrelevant rows.
@@ -273,21 +298,24 @@ def list_domains():
 def get_leaderboard(
     domain: str,
     force_refresh: bool = Query(default=False, description="Bypass the in-process cache and recompute."),
+    tenant: Tenant = Depends(require_tenant),
     session: Session = Depends(get_session),
 ):
     if domain not in DOMAINS:
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found. Available: {list(DOMAINS.keys())}")
 
+    tenant_id = _tenant_pk(tenant)
+    cache_key = _cache_key(tenant_id, domain)
     now = time.monotonic()
     if not force_refresh:
         with _leaderboard_cache_lock:
-            cached = _leaderboard_cache.get(domain)
+            cached = _leaderboard_cache.get(cache_key)
             if cached is not None:
                 ts, data = cached
                 if now - ts < _LEADERBOARD_TTL:
                     return data
 
-    runs, models, benchmarks = _get_domain_runs(domain, session)
+    runs, models, benchmarks = _get_domain_runs(domain, session, tenant_id)
     rows, bench_names = _build_leaderboard(runs, models, benchmarks)
 
     cfg = DOMAINS[domain]
@@ -302,7 +330,7 @@ def get_leaderboard(
         total_runs=len(runs),
     )
     with _leaderboard_cache_lock:
-        _leaderboard_cache[domain] = (now, result)
+        _leaderboard_cache[cache_key] = (now, result)
     return result
 
 
@@ -310,20 +338,24 @@ def get_leaderboard(
 async def generate_domain_report(
     domain: str,
     force_refresh: bool = False,
+    tenant: Tenant = Depends(require_tenant),
     session: Session = Depends(get_session),
 ):
     """Generate a Claude narrative report for a leaderboard domain."""
     if domain not in DOMAINS:
         raise HTTPException(status_code=404, detail=f"Domain '{domain}' not found.")
 
+    tenant_id = _tenant_pk(tenant)
+    cache_key = _cache_key(tenant_id, domain)
+
     # Return cached report if available and not forcing refresh
-    if not force_refresh and domain in _report_cache:
-        return _report_cache[domain]
+    if not force_refresh and cache_key in _report_cache:
+        return _report_cache[cache_key]
 
     if not settings.anthropic_api_key and not settings.ollama_base_url:
         raise HTTPException(status_code=500, detail="No model available. Configure ANTHROPIC_API_KEY or Ollama.")
 
-    runs, models, benchmarks = _get_domain_runs(domain, session)
+    runs, models, benchmarks = _get_domain_runs(domain, session, tenant_id)
 
     if not runs:
         raise HTTPException(status_code=400, detail="No completed evaluation runs found for this domain. Run some campaigns first.")
@@ -393,11 +425,14 @@ Be concrete, name models, cite precise scores."""
         generated_at=datetime.now(UTC).isoformat(),
         model_used=settings.report_model,
     )
-    _report_cache[domain] = report
+    _report_cache[cache_key] = report
     return report
 
 
 @router.get("/{domain}/report", response_model=Optional[DomainReport])
-def get_cached_report(domain: str):
+def get_cached_report(
+    domain: str,
+    tenant: Tenant = Depends(require_tenant),
+):
     """Return the cached report for a domain, or null if not generated yet."""
-    return _report_cache.get(domain)
+    return _report_cache.get(_cache_key(_tenant_pk(tenant), domain))
