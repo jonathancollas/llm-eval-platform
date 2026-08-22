@@ -14,6 +14,7 @@ Impact: Cross-tenant disclosure of evaluation scores, spend, and latency.
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 import time
@@ -27,7 +28,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-leaderboard-tenant-isolation-32b")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
-from api.routers import leaderboard  # noqa: E402
+BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
+
+
+def _load_module(name: str, rel_path: str):
+    path = os.path.join(BACKEND_DIR, rel_path)
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+leaderboard = _load_module(
+    "leaderboard_tenant_isolation_module",
+    "api/routers/leaderboard.py",
+)
+
 from core.auth import require_tenant  # noqa: E402
 from core.database import get_session  # noqa: E402
 from core.models import (  # noqa: E402
