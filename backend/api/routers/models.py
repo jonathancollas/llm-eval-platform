@@ -1,7 +1,9 @@
 """
 Model Registry — CRUD + connection testing.
 """
+import ipaddress
 import logging
+import socket
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel, Field, field_validator
@@ -19,40 +21,62 @@ router = APIRouter(prefix="/models", tags=["models"])
 logger = logging.getLogger(__name__)
 
 
+def _is_blocked_ip(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for loopback / link-local / RFC1918 / reserved addresses."""
+    return bool(
+        addr.is_loopback
+        or addr.is_link_local
+        or addr.is_private
+        or addr.is_unspecified
+        or addr.is_multicast
+        or addr.is_reserved
+    )
+
+
 def _validate_endpoint(url: Optional[str]) -> Optional[str]:
-    """Reject endpoints whose scheme or host could enable SSRF attacks."""
+    """Reject endpoints whose scheme or host could enable SSRF attacks.
+
+    Policy rejections raise ValueError and must not be swallowed by the
+    DNS-resolution fallback. A previous ``except (ValueError, OSError)``
+    caught the private-IP raise and then only prefix-matched the hostname,
+    which missed 172.16.0.0/12 (Docker/K8s) and any hostname that resolved
+    to a private address.
+    """
     if not url:
         return url
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Endpoint scheme '{parsed.scheme}' is not allowed. Use http or https.")
     host = parsed.hostname or ""
-    # Resolve to a numeric IP when possible so hostname aliases are also caught
-    import ipaddress
+    if not host:
+        raise ValueError("Endpoint host is required.")
+
+    # Literal IPs are decided without DNS so 172.16/12 and IPv6 loopback
+    # cannot slip through a hostname-prefix fallback.
     try:
-        import socket
-        old_timeout = socket.getdefaulttimeout()
-        socket.setdefaulttimeout(5)
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None and _is_blocked_ip(literal):
+        raise ValueError(f"Endpoint host '{host}' resolves to a non-routable address and is not allowed.")
+
+    if host == "localhost" or host.endswith(".localhost"):
+        raise ValueError(f"Endpoint host '{host}' is not allowed.")
+
+    old_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(5)
+    try:
         try:
             numeric = socket.getaddrinfo(host, None)[0][4][0]
-        finally:
-            socket.setdefaulttimeout(old_timeout)
-        addr = ipaddress.ip_address(numeric)
-        if (
-            addr.is_loopback
-            or addr.is_link_local
-            or addr.is_private
-            or addr.is_unspecified
-            or addr.is_multicast
-            or addr.is_reserved
-        ):
-            raise ValueError(f"Endpoint host '{host}' resolves to a non-routable address and is not allowed.")
-    except (ValueError, OSError):
-        # If we can't resolve the name, fall back to simple string checks so that
-        # obviously dangerous literals are still rejected.
-        blocked_prefixes = ("127.", "10.", "0.0.0.0", "169.254.", "192.168.", "::1", "fd", "fc")  # nosec B104
-        if host == "localhost" or any(host.startswith(p) for p in blocked_prefixes):
-            raise ValueError(f"Endpoint host '{host}' is not allowed.")
+        except OSError:
+            # Unresolved hostname: literal and localhost checks already ran.
+            return url
+    finally:
+        socket.setdefaulttimeout(old_timeout)
+
+    addr = ipaddress.ip_address(numeric)
+    if _is_blocked_ip(addr):
+        raise ValueError(f"Endpoint host '{host}' resolves to a non-routable address and is not allowed.")
     return url
 
 
