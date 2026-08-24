@@ -124,6 +124,7 @@ def _migrate_add_columns() -> None:
         # Capability/Propensity dual scores (v0.5+)
         ("eval_runs", "capability_score", "REAL", "NULL"),
         ("eval_runs", "propensity_score", "REAL", "NULL"),
+        ("eval_results", "human_verdict", "INTEGER", "NULL"),
         ("benchmarks", "eval_dimension", "TEXT", "'capability'"),
         ("llm_models", "is_open_weight", "INTEGER", "0"),
     ]
