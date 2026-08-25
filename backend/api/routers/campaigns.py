@@ -12,7 +12,24 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from core.database import get_session
-from core.models import Benchmark, Campaign, EvalRun, JobStatus, LLMModel, Tenant
+from core.models import (
+    AgentTrajectory,
+    Benchmark,
+    Campaign,
+    CampaignBenchmark,
+    CampaignModel,
+    EvalEventRecord,
+    EvalResult,
+    EvalRun,
+    EvalRunMetric,
+    ExperimentManifest,
+    FailureProfile,
+    JobStatus,
+    JudgeEvaluation,
+    LLMModel,
+    Report,
+    Tenant,
+)
 from core.relations import (
     get_campaign_benchmark_ids,
     get_campaign_model_ids,
@@ -178,6 +195,114 @@ def _to_read(
             for r in (runs or [])
         ],
     )
+
+
+def _delete_rows(session: Session, rows) -> None:
+    for row in rows:
+        session.delete(row)
+
+
+def _purge_eval_run_graph(session: Session, campaign_id: int) -> list[int]:
+    """Delete EvalRuns for a campaign and every row that foreign-keys to them.
+
+    Re-run used to ``session.delete`` only EvalRun rows. Child tables
+    (EvalResult, FailureProfile, JudgeEvaluation, EvalRunMetric) FK to
+    ``eval_runs.id`` with no ON DELETE CASCADE. SQLite in this project never
+    enables ``PRAGMA foreign_keys``, so those children were silently orphaned
+    and campaign-scoped genome/judge queries mixed stale rows with the new
+    run. Postgres enforces the FKs and the same delete raises IntegrityError,
+    so re-run returns 500.
+
+    Also drops FailureProfile / JudgeEvaluation rows keyed only by
+    ``campaign_id`` so leftovers from earlier broken re-runs cannot leak into
+    the next genome/insights payload.
+    """
+    prev_runs = session.exec(
+        select(EvalRun).where(EvalRun.campaign_id == campaign_id)
+    ).all()
+    run_ids = [r.id for r in prev_runs if r.id is not None]
+
+    if run_ids:
+        _delete_rows(
+            session,
+            session.exec(
+                select(JudgeEvaluation).where(JudgeEvaluation.run_id.in_(run_ids))
+            ).all(),
+        )
+        _delete_rows(
+            session,
+            session.exec(select(EvalResult).where(EvalResult.run_id.in_(run_ids))).all(),
+        )
+        _delete_rows(
+            session,
+            session.exec(
+                select(EvalRunMetric).where(EvalRunMetric.run_id.in_(run_ids))
+            ).all(),
+        )
+        _delete_rows(
+            session,
+            session.exec(
+                select(FailureProfile).where(FailureProfile.run_id.in_(run_ids))
+            ).all(),
+        )
+
+    # Orphans from prior re-runs that deleted EvalRuns but not campaign-keyed children.
+    # Must run (and flush) before EvalRun DELETE — autoflush would otherwise emit
+    # the run deletes first and trip FK constraints.
+    _delete_rows(
+        session,
+        session.exec(
+            select(FailureProfile).where(FailureProfile.campaign_id == campaign_id)
+        ).all(),
+    )
+    _delete_rows(
+        session,
+        session.exec(
+            select(JudgeEvaluation).where(JudgeEvaluation.campaign_id == campaign_id)
+        ).all(),
+    )
+    session.flush()
+    _delete_rows(session, prev_runs)
+    return run_ids
+
+
+def _purge_campaign_dependents(session: Session, campaign_id: int) -> None:
+    """Remove campaign-scoped rows that would block DELETE of the campaign row."""
+    _purge_eval_run_graph(session, campaign_id)
+    _delete_rows(
+        session,
+        session.exec(select(Report).where(Report.campaign_id == campaign_id)).all(),
+    )
+    _delete_rows(
+        session,
+        session.exec(
+            select(ExperimentManifest).where(ExperimentManifest.campaign_id == campaign_id)
+        ).all(),
+    )
+    _delete_rows(
+        session,
+        session.exec(
+            select(EvalEventRecord).where(EvalEventRecord.campaign_id == campaign_id)
+        ).all(),
+    )
+    _delete_rows(
+        session,
+        session.exec(
+            select(CampaignModel).where(CampaignModel.campaign_id == campaign_id)
+        ).all(),
+    )
+    _delete_rows(
+        session,
+        session.exec(
+            select(CampaignBenchmark).where(CampaignBenchmark.campaign_id == campaign_id)
+        ).all(),
+    )
+    for trajectory in session.exec(
+        select(AgentTrajectory).where(AgentTrajectory.campaign_id == campaign_id)
+    ).all():
+        trajectory.campaign_id = None
+        session.add(trajectory)
+    session.flush()
 
 
 @router.get("/", response_model=list[CampaignRead])
@@ -501,12 +626,7 @@ async def run_campaign(
 
     # Reset state for re-run (completed or failed campaigns)
     if campaign.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
-        # Delete previous runs to allow fresh start
-        prev_runs = session.exec(
-            select(EvalRun).where(EvalRun.campaign_id == campaign_id)
-        ).all()
-        for r in prev_runs:
-            session.delete(r)
+        _purge_eval_run_graph(session, campaign_id)
         campaign.status = JobStatus.PENDING
         campaign.progress = 0.0
         campaign.error_message = None
@@ -592,9 +712,7 @@ def delete_campaign(
         raise HTTPException(404, detail="Campaign not found.")
     if campaign.status == JobStatus.RUNNING:
         raise HTTPException(409, detail="Stop the campaign before deleting.")
-    # Cascade delete runs
-    for r in session.exec(select(EvalRun).where(EvalRun.campaign_id == campaign_id)).all():
-        session.delete(r)
+    _purge_campaign_dependents(session, campaign_id)
     session.delete(campaign)
     session.commit()
 
