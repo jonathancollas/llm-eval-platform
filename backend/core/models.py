@@ -2,6 +2,7 @@
 SQLModel ORM models — all database tables.
 """
 from sqlmodel import Field, SQLModel
+from sqlalchemy import UniqueConstraint
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -259,11 +260,17 @@ class FailureProfile(SQLModel, table=True):
 
 
 class ModelFingerprint(SQLModel, table=True):
-    """Behavioral fingerprint aggregated per model across all campaigns."""
+    """Behavioral fingerprint aggregated per model across one tenant's campaigns."""
     __tablename__ = "model_fingerprints"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "model_id", name="uq_model_fingerprints_tenant_model"
+        ),
+    )
 
     id: Optional[int]        = Field(default=None, primary_key=True)
-    model_id: int            = Field(foreign_key="llm_models.id", index=True, unique=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="tenants.id", index=True)
+    model_id: int            = Field(foreign_key="llm_models.id", index=True)
     genome_json: str         = Field(default="{}")   # aggregate genome
     stats_json: str          = Field(default="{}")   # {avg_score, refusal_rate, avg_latency, num_runs}
     updated_at: datetime     = Field(default_factory=datetime.utcnow)

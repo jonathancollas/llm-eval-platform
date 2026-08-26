@@ -9,8 +9,19 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from core.auth import require_tenant
 from core.database import get_session
-from core.models import Campaign, EvalRun, EvalResult, LLMModel, Benchmark, FailureProfile, ModelFingerprint, JobStatus
+from core.models import (
+    Campaign,
+    EvalRun,
+    EvalResult,
+    LLMModel,
+    Benchmark,
+    FailureProfile,
+    ModelFingerprint,
+    JobStatus,
+    Tenant,
+)
 from core.utils import safe_json_load
 from eval_engine.failure_genome.ontology import ONTOLOGY, FAILURE_GENOME_VERSION
 from eval_engine.failure_genome.classifiers import classify_run, aggregate_genome, classify_run_hybrid
@@ -28,12 +39,21 @@ _HEATMAP_TTL = 300.0  # 5 minutes
 
 # ── Compute genome for a campaign ─────────────────────────────────────────────
 
-@router.post("/campaigns/{campaign_id}/compute")
-def compute_campaign_genome(campaign_id: int, session: Session = Depends(get_session)):
-    """Compute and store Failure Genome for all runs in a campaign (#63 — robust error handling)."""
+def _owned_campaign(session: Session, campaign_id: int, tenant: Tenant) -> Campaign:
     campaign = session.get(Campaign, campaign_id)
-    if not campaign:
+    if not campaign or campaign.tenant_id != tenant.id:
         raise HTTPException(404, detail="Campaign not found.")
+    return campaign
+
+
+@router.post("/campaigns/{campaign_id}/compute")
+def compute_campaign_genome(
+    campaign_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    """Compute and store Failure Genome for all runs in a campaign (#63 — robust error handling)."""
+    campaign = _owned_campaign(session, campaign_id, tenant)
     if campaign.status != JobStatus.COMPLETED:
         raise HTTPException(400, detail="Campaign must be completed before computing genome.")
 
@@ -104,28 +124,55 @@ def compute_campaign_genome(campaign_id: int, session: Session = Depends(get_ses
             continue
 
     session.commit()
-    _update_model_fingerprints(campaign_id, session)
+    _update_model_fingerprints(campaign_id, session, tenant_id=tenant.id)
     return {"profiles_created": profiles_created, "total_runs": len(runs), "errors": errors}
 
 
-def _update_model_fingerprints(campaign_id: int, session: Session):
-    """Aggregate genomes per model across all campaigns."""
-    profiles = session.exec(
-        select(FailureProfile).where(FailureProfile.campaign_id == campaign_id)
-    ).all()
+def _update_model_fingerprints(campaign_id: int, session: Session, tenant_id: int | None):
+    """Aggregate genomes per model across this tenant's campaigns.
 
-    by_model: dict[int, list[dict]] = {}
-    for p in profiles:
-        by_model.setdefault(p.model_id, []).append(safe_json_load(p.genome_json, {}))
+    Fingerprints used to be unique on ``model_id`` alone. Computing genome on a
+    later campaign overwrote the stored DNA (last-write-wins, even for the same
+    tenant) and mixed every tenant's completed EvalRun scores/costs into stats.
+    GET /genome/models then served that global row with no tenant check.
+    """
+    if tenant_id is None:
+        return
 
-    for model_id, genomes in by_model.items():
+    campaign_ids = list(
+        session.exec(select(Campaign.id).where(Campaign.tenant_id == tenant_id)).all()
+    )
+    if not campaign_ids:
+        return
+
+    touched_model_ids = {
+        p.model_id
+        for p in session.exec(
+            select(FailureProfile).where(FailureProfile.campaign_id == campaign_id)
+        ).all()
+    }
+    if not touched_model_ids:
+        return
+
+    from datetime import datetime, UTC
+
+    for model_id in touched_model_ids:
+        profiles = session.exec(
+            select(FailureProfile).where(
+                FailureProfile.model_id == model_id,
+                FailureProfile.campaign_id.in_(campaign_ids),
+            )
+        ).all()
+        genomes = [safe_json_load(p.genome_json, {}) for p in profiles]
         agg = aggregate_genome(genomes)
 
-        # Get stats from runs
         runs = session.exec(
-            select(EvalRun).where(
+            select(EvalRun)
+            .join(Campaign, EvalRun.campaign_id == Campaign.id)
+            .where(
                 EvalRun.model_id == model_id,
                 EvalRun.status == JobStatus.COMPLETED,
+                Campaign.tenant_id == tenant_id,
             )
         ).all()
 
@@ -137,16 +184,19 @@ def _update_model_fingerprints(campaign_id: int, session: Session):
         }
 
         existing = session.exec(
-            select(ModelFingerprint).where(ModelFingerprint.model_id == model_id)
+            select(ModelFingerprint).where(
+                ModelFingerprint.model_id == model_id,
+                ModelFingerprint.tenant_id == tenant_id,
+            )
         ).first()
         if existing:
             existing.genome_json = json.dumps(agg)
             existing.stats_json = json.dumps(stats)
-            from datetime import datetime, UTC
             existing.updated_at = datetime.now(UTC)
             session.add(existing)
         else:
             session.add(ModelFingerprint(
+                tenant_id=tenant_id,
                 model_id=model_id,
                 genome_json=json.dumps(agg),
                 stats_json=json.dumps(stats),
@@ -190,14 +240,21 @@ def get_campaign_genome(campaign_id: int, session: Session = Depends(get_session
 
 
 @router.get("/models/{model_id}")
-def get_model_genome(model_id: int, session: Session = Depends(get_session)):
-    """Get behavioral fingerprint for a specific model."""
+def get_model_genome(
+    model_id: int,
+    session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
+):
+    """Get behavioral fingerprint for a specific model (this tenant only)."""
     model = session.get(LLMModel, model_id)
     if not model:
         raise HTTPException(404, detail="Model not found.")
 
     fp = session.exec(
-        select(ModelFingerprint).where(ModelFingerprint.model_id == model_id)
+        select(ModelFingerprint).where(
+            ModelFingerprint.model_id == model_id,
+            ModelFingerprint.tenant_id == tenant.id,
+        )
     ).first()
 
     return {
@@ -215,9 +272,15 @@ def list_model_fingerprints(
     limit: int = Query(default=100, le=1000),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_session),
+    tenant: Tenant = Depends(require_tenant),
 ):
-    """List all model fingerprints for comparison."""
-    fps = session.exec(select(ModelFingerprint).offset(offset).limit(limit)).all()
+    """List this tenant's model fingerprints for comparison."""
+    fps = session.exec(
+        select(ModelFingerprint)
+        .where(ModelFingerprint.tenant_id == tenant.id)
+        .offset(offset)
+        .limit(limit)
+    ).all()
     if not fps:
         return {"fingerprints": [], "ontology": ONTOLOGY, "limit": limit, "offset": offset}
 
