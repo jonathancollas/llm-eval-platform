@@ -126,6 +126,7 @@ def _migrate_add_columns() -> None:
         ("eval_runs", "propensity_score", "REAL", "NULL"),
         ("benchmarks", "eval_dimension", "TEXT", "'capability'"),
         ("llm_models", "is_open_weight", "INTEGER", "0"),
+        ("model_fingerprints", "tenant_id", "INTEGER", "NULL"),
     ]
     import sqlite3
     db_path = settings.database_url.replace("sqlite:///", "").replace("sqlite://", "")
@@ -141,6 +142,24 @@ def _migrate_add_columns() -> None:
                 logger.info(f"Added column {table}.{column}")
             except sqlite3.OperationalError:
                 pass  # Column already exists — idempotent
+        # model_fingerprints.model_id used to be globally unique, which made
+        # a second tenant's fingerprint for the same catalog model IntegrityError
+        # (or a silent overwrite). Drop that unique index if it still exists.
+        try:
+            indexes = conn.execute("PRAGMA index_list('model_fingerprints')").fetchall()
+            for row in indexes:
+                name, is_unique = row[1], row[2]
+                if not is_unique:
+                    continue
+                cols = [
+                    info[2]
+                    for info in conn.execute(f'PRAGMA index_info("{name}")').fetchall()
+                ]
+                if cols == ["model_id"]:
+                    conn.execute(f'DROP INDEX IF EXISTS "{name}"')
+                    logger.info("Dropped unique index %s on model_fingerprints.model_id", name)
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
