@@ -503,6 +503,45 @@ class HuggingFaceImportRequest(BaseModel):
     benchmark_type: BenchmarkType = Field(default=BenchmarkType.CUSTOM)
 
 
+def _hf_import_bench_name(payload: HuggingFaceImportRequest) -> str:
+    return payload.benchmark_name or payload.repo_id.replace("/", "_")
+
+
+def _resolve_hf_import_target(
+    session: Session, *, bench_name: str, repo_id: str
+) -> Optional[Benchmark]:
+    """Return the existing row to refresh, or None to insert.
+
+    HuggingFace import used to UPDATE any Benchmark with a colliding name,
+    including builtins (``is_builtin=True``). That silently re-pointed
+    catalog datasets such as ``MMLU (subset)`` at attacker-controlled files.
+    Upload-dataset already refuses builtins; import must do the same.
+    Re-import of the *same* HuggingFace repo is still allowed.
+    """
+    existing = session.exec(
+        select(Benchmark).where(Benchmark.name == bench_name)
+    ).first()
+    if existing is None:
+        return None
+    if existing.is_builtin:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot override built-in benchmark datasets.",
+        )
+    try:
+        cfg = json.loads(existing.config_json or "{}")
+    except json.JSONDecodeError:
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    if cfg.get("source") != "huggingface" or cfg.get("repo_id") != repo_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Benchmark '{bench_name}' already exists. Choose a different name.",
+        )
+    return existing
+
+
 @router.post("/import-huggingface")
 async def import_huggingface_dataset(
     payload: HuggingFaceImportRequest,
@@ -513,6 +552,11 @@ async def import_huggingface_dataset(
     import logging as _log
 
     logger = _log.getLogger(__name__)
+
+    bench_name = _hf_import_bench_name(payload)
+    existing = _resolve_hf_import_target(
+        session, bench_name=bench_name, repo_id=payload.repo_id
+    )
 
     # Build HuggingFace API URL
     base = "https://datasets-server.huggingface.co/rows"
@@ -574,7 +618,6 @@ async def import_huggingface_dataset(
         raise HTTPException(400, detail=f"No items found in '{payload.repo_id}' split='{payload.split}'")
 
     # Save as JSON
-    bench_name = payload.benchmark_name or payload.repo_id.replace("/", "_")
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in bench_name)
     filename = f"huggingface_{safe_name}_{payload.split}.json"
     dataset_dir = Path(settings.bench_library_path) / "custom"
@@ -584,15 +627,18 @@ async def import_huggingface_dataset(
     with open(dataset_path, "w", encoding="utf-8") as f:
         json.dump(all_items, f, ensure_ascii=False, indent=2)
 
-    # Create or update benchmark
-    existing = session.exec(
-        select(Benchmark).where(Benchmark.name == bench_name)
-    ).first()
+    hf_config = {
+        "source": "huggingface",
+        "repo_id": payload.repo_id,
+        "split": payload.split,
+        "subset": payload.subset,
+    }
 
     if existing:
         existing.dataset_path = f"custom/{filename}"
         existing.has_dataset = True
         existing.num_samples = len(all_items)
+        existing.config_json = json.dumps(hf_config)
         session.add(existing)
         session.commit()
         session.refresh(existing)
@@ -606,7 +652,7 @@ async def import_huggingface_dataset(
             dataset_path=f"custom/{filename}",
             metric="accuracy",
             num_samples=min(len(all_items), 50),
-            config_json=json.dumps({"source": "huggingface", "repo_id": payload.repo_id, "split": payload.split, "subset": payload.subset}),
+            config_json=json.dumps(hf_config),
             is_builtin=False,
             has_dataset=True,
         )
