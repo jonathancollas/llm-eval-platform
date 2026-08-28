@@ -97,7 +97,10 @@ def _lazy_register():
 
     _NAME_REGISTRY = {
         "MMLU (subset)":                      MMLURunner,
-        "HumanEval (mini)":                   MMLURunner,
+        # Coding items use `prompt` + `expected_keywords`, not MMLU's
+        # `question`/`choices`/`answer`. Routing this through MMLURunner
+        # KeyErrors on every item and fails the eval run.
+        "HumanEval (mini)":                   CustomRunner,
         "Safety Refusals":                    SafetyRefusalsRunner,
         "Giskard LLM Scan":                   GiskardRunner,
         "Safety Refusals (INESIA)":           SafetyRefusalsRunner,

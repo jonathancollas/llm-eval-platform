@@ -394,3 +394,60 @@ class TestPurpleLlamaMetrics:
         assert m["by_llamaguard_category"]["S1"] == 0.5
         assert m["by_llamaguard_category"]["S10"] == 1.0
 
+
+# ── HumanEval (mini) must not use the MMLU multiple-choice runner ─────────────
+
+class TestHumanEvalMiniRouting:
+    """HumanEval items are coding prompts, not A–D questions.
+
+    Mapping this seeded builtin to MMLURunner KeyErrors on `item['question']`
+    and fails the entire eval run.
+    """
+
+    def setup_method(self):
+        self.bench_library_path = os.path.join(os.path.dirname(__file__), "..", "bench_library")
+        self.bench = Benchmark(
+            id=1,
+            name="HumanEval (mini)",
+            type=BenchmarkType.CODING,
+            dataset_path="academic/humaneval_mini.json",
+            has_dataset=True,
+            metric="pass@1",
+        )
+
+    def test_registry_routes_humaneval_mini_to_custom_runner(self):
+        runner = get_runner(self.bench, self.bench_library_path)
+        assert isinstance(runner, CustomRunner)
+        assert not isinstance(runner, MMLURunner)
+
+    def test_humaneval_item_builds_prompt_without_question_key(self):
+        runner = get_runner(self.bench, self.bench_library_path)
+        item = {
+            "prompt": "Write a Python function `is_prime(n: int) -> bool`.",
+            "expected_keywords": ["def is_prime", "return"],
+            "category": "number_theory",
+            "test_cases": [{"input": [11], "expected": True}],
+        }
+        prompt = asyncio.run(runner.build_prompt(item, []))
+        assert "is_prime" in prompt
+        assert "Question:" not in prompt
+
+    def test_humaneval_keyword_score_not_letter_match(self):
+        runner = get_runner(self.bench, self.bench_library_path)
+        item = {
+            "prompt": "Write is_prime",
+            "expected_keywords": ["def is_prime", "return"],
+        }
+        response = "def is_prime(n: int) -> bool:\n    return n > 1"
+        assert runner.score_item(response, item) == 1.0
+
+    def test_mmlu_runner_cannot_prompt_humaneval_items(self):
+        """Lock in the failure mode so we don't re-route to MMLURunner."""
+        mmlu = MMLURunner(self.bench, self.bench_library_path)
+        item = {
+            "prompt": "Write a Python function `is_prime(n: int) -> bool`.",
+            "expected_keywords": ["def is_prime", "return"],
+        }
+        with pytest.raises(KeyError, match="question"):
+            asyncio.run(mmlu.build_prompt(item, []))
+
