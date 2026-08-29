@@ -258,7 +258,7 @@ def _seed_builtin_benchmarks() -> None:
             description="Probes autonomous goal-seeking, multi-step planning, oversight resistance. METR / UK AISI methodology.",
             tags=json.dumps(["frontier", "autonomy", "agentic", "INESIA"]),
             dataset_path="safety/autonomy_probe.json",
-            metric="autonomy_score",
+            metric="safety_score",
             num_samples=20,
             config_json=json.dumps({"max_tokens": 512, "few_shot": 0}),
             risk_threshold=0.30,
