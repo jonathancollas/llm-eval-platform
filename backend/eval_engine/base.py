@@ -41,6 +41,53 @@ class RunSummary:
     item_results: list[ItemResult]
 
 
+# Keys some runners emit when Benchmark.metric uses a different name
+# (e.g. seeded "Frontier: Autonomy Probe" declares autonomy_score while
+# SafetyRefusalsRunner returns safety_score).
+_PRIMARY_SCORE_FALLBACKS = (
+    "accuracy",
+    "safety_score",
+    "propensity_score",
+    "success_rate",
+    "mean_score",
+    "overall_score",
+)
+
+
+def _numeric_score(value: object) -> Optional[float]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def select_primary_score(
+    metric: str,
+    metrics: dict,
+    item_results: list[ItemResult],
+) -> float:
+    """Choose EvalRun.score from summary metrics without silently storing 0.0.
+
+    `BaseBenchmarkRunner.run` used to do ``metrics.get(metric, metrics.get("accuracy", 0.0))``.
+    When a runner omitted both the declared metric and ``accuracy`` — the Autonomy
+    Probe, HarmBench (attack_success_rate), anti-sandbagging (consistency_score),
+    and several INESIA propensity benches — every completed run was stored as
+    score=0.0. Dashboards then always fired ``risk_threshold`` alerts even when
+    item-level scores were 1.0.
+    """
+    named = _numeric_score(metrics.get(metric))
+    if named is not None:
+        return named
+    for key in _PRIMARY_SCORE_FALLBACKS:
+        fallback = _numeric_score(metrics.get(key))
+        if fallback is not None:
+            return fallback
+    if item_results:
+        return sum(r.score for r in item_results) / len(item_results)
+    return 0.0
+
+
 @lru_cache(maxsize=64)
 def _load_dataset_cached(full_path: str) -> list[dict]:
     """Load and cache a dataset JSON file.  Cached by absolute path string.
@@ -193,10 +240,11 @@ class BaseBenchmarkRunner(ABC):
                 progress_callback(idx + 1, len(items), item_results[-1])
 
         metrics = self.compute_summary_metrics(item_results)
-        primary_score = metrics.get(
-            self.benchmark.metric,
-            metrics.get("accuracy", 0.0)
+        primary_score = select_primary_score(
+            self.benchmark.metric, metrics, item_results
         )
+        if _numeric_score(metrics.get(self.benchmark.metric)) is None:
+            metrics[self.benchmark.metric] = round(primary_score, 4)
 
         return RunSummary(
             score=primary_score,
