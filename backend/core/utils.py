@@ -1,6 +1,7 @@
 """Shared utility functions."""
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,20 @@ BYPASS_UNBREACHED_REFUSAL_ADJUSTMENT = 0.1
 CONFIDENCE_BASE = 0.35
 CONFIDENCE_VALID_RESPONSE_BONUS = 0.45
 CONFIDENCE_RESPONSE_SIGNAL_WEIGHT = 0.2
+
+
+def as_utc(dt: datetime | None) -> datetime | None:
+    """Return *dt* as timezone-aware UTC.
+
+    SQLite strips tzinfo on DateTime round-trip, so comparisons against
+    ``datetime.now(UTC)`` raise TypeError unless naive values are treated
+    as UTC (the only timezone this app writes).
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def resolve_safe_path(base: Path, relative: str) -> Path:
