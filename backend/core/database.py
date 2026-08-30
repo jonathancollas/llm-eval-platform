@@ -152,6 +152,7 @@ def _reset_stuck_campaigns() -> None:
     """
     from datetime import datetime, timedelta, UTC
     from core.models import Campaign, JobStatus
+    from core.utils import as_utc
     STALE_THRESHOLD = timedelta(seconds=120)
 
     with Session(engine) as session:
@@ -163,7 +164,7 @@ def _reset_stuck_campaigns() -> None:
         now = datetime.now(UTC)
         reset_count = 0
         for c in stuck:
-            heartbeat = getattr(c, "last_heartbeat_at", None)
+            heartbeat = as_utc(getattr(c, "last_heartbeat_at", None))
             if heartbeat is None:
                 # Pre-heartbeat campaign (before #S3) — reset it
                 stale = True

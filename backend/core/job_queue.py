@@ -14,6 +14,7 @@ from celery import Celery
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.config import get_settings
+from core.utils import as_utc
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -289,7 +290,7 @@ def is_running(campaign_id: int) -> bool:
         with _get_session() as session:
             c = session.get(Campaign, campaign_id)
             if c and c.status == JobStatus.RUNNING:
-                heartbeat = getattr(c, "last_heartbeat_at", None)
+                heartbeat = as_utc(getattr(c, "last_heartbeat_at", None))
                 if heartbeat is None:
                     return False  # Pre-heartbeat campaign
                 age = (datetime.now(UTC) - heartbeat).total_seconds()
@@ -324,7 +325,7 @@ def get_all_running() -> dict[int, str]:
                 select(Campaign).where(Campaign.status == JobStatus.RUNNING)
             ).all()
             for c in running:
-                heartbeat = getattr(c, "last_heartbeat_at", None)
+                heartbeat = as_utc(getattr(c, "last_heartbeat_at", None))
                 stale = (heartbeat is None or
                          (datetime.now(UTC) - heartbeat).total_seconds() > STALE_THRESHOLD_S)
                 states[c.id] = "stale" if stale else "running"
@@ -344,7 +345,7 @@ def recover_stale_campaigns() -> list[int]:
                 select(Campaign).where(Campaign.status == JobStatus.RUNNING)
             ).all()
             for c in running:
-                heartbeat = getattr(c, "last_heartbeat_at", None)
+                heartbeat = as_utc(getattr(c, "last_heartbeat_at", None))
                 stale = (heartbeat is None or
                          (datetime.now(UTC) - heartbeat).total_seconds() > STALE_THRESHOLD_S)
                 if stale:

@@ -160,6 +160,8 @@ class Campaign(SQLModel, table=True):
     owner_id: Optional[int]        = Field(default=None, sa_column_kwargs={"nullable": True})
     # Heartbeat for durable job queue (#S3) — updated every 30s by running campaign
     last_heartbeat_at: Optional[datetime] = Field(default=None, sa_column_kwargs={"nullable": True})
+    # Celery / local-fallback task id — required so cancel can revoke the worker
+    worker_task_id: Optional[str] = Field(default=None, sa_column_kwargs={"nullable": True})
     created_at: datetime          = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
