@@ -14,7 +14,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { classifyIntent, fetchTypeahead, executeIntent } from "./api";
+import { classifyIntent, fetchTypeahead, executeIntent, resolveApiEndpoint, buildHeaders } from "./api";
 import type {
   IntentResponse,
   IntentPayload,
@@ -44,6 +44,7 @@ export function OmniBar({
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
+  const [executeError, setExecuteError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Debounce
@@ -78,6 +79,7 @@ export function OmniBar({
   const onExecute = useCallback(async () => {
     if (!intent || isExecuting) return;
     setIsExecuting(true);
+    setExecuteError(null);
     try {
       const payload = intent.payload;
       if (payload.kind === "navigate") {
@@ -89,16 +91,20 @@ export function OmniBar({
           query: intent.query, role,
         });
         if (submit_body && submit_endpoint) {
-          const res = await fetch(submit_endpoint, {
+          const res = await fetch(resolveApiEndpoint(submit_endpoint), {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: buildHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(submit_body),
           });
-          if (res.ok) {
-            const created = await res.json();
-            router.push(`/campaigns/${created.id}`);
-            if (mode === "overlay") onOpenChange?.(false);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: res.statusText }));
+            const detail = err?.detail;
+            const message = typeof detail === "string" ? detail : `Launch failed (${res.status})`;
+            throw new Error(message);
           }
+          // There is no /campaigns/[id] page — land on the run-history list.
+          router.push("/campaigns");
+          if (mode === "overlay") onOpenChange?.(false);
         }
       } else if (payload.kind === "attack") {
         // Redirect to Red Room with prefilled state — user confirms there
@@ -114,6 +120,7 @@ export function OmniBar({
       // ASK: nothing to execute — answer is already shown
     } catch (e) {
       console.error("[omnibar] execute failed:", e);
+      setExecuteError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsExecuting(false);
     }
@@ -167,7 +174,7 @@ export function OmniBar({
             </span>
           </div>
         </div>
-        {showResults && intent && <IntentRenderer intent={intent} onExecute={onExecute} />}
+        {showResults && intent && <IntentRenderer intent={intent} onExecute={onExecute} executeError={executeError} isExecuting={isExecuting} />}
         {!showResults && typeahead && typeahead.groups.length > 0 && (
           <TypeaheadRenderer data={typeahead} onPick={(href) => router.push(href)} />
         )}
@@ -194,7 +201,7 @@ export function OmniBar({
         </div>
         {intent && <IntentBadgeStrip intent={intent} />}
         <div className="omni-overlay__body">
-          {showResults && intent && <IntentRenderer intent={intent} onExecute={onExecute} compact />}
+          {showResults && intent && <IntentRenderer intent={intent} onExecute={onExecute} executeError={executeError} isExecuting={isExecuting} compact />}
           {!showResults && typeahead && typeahead.groups.length > 0 && (
             <TypeaheadRenderer data={typeahead} onPick={(href) => {
               router.push(href); onOpenChange?.(false);
@@ -243,8 +250,14 @@ function Compact({ onClick, placeholder }: { onClick: () => void; placeholder: s
 // ═══════════════════════════════════════════════════════════════════════════
 
 function IntentRenderer({
-  intent, onExecute, compact = false,
-}: { intent: IntentResponse; onExecute: () => void; compact?: boolean }) {
+  intent, onExecute, compact = false, executeError = null, isExecuting = false,
+}: {
+  intent: IntentResponse;
+  onExecute: () => void;
+  compact?: boolean;
+  executeError?: string | null;
+  isExecuting?: boolean;
+}) {
   const { payload } = intent;
   switch (payload.kind) {
     case "navigate":
@@ -252,7 +265,7 @@ function IntentRenderer({
     case "ask":
       return <AskView payload={payload} compact={compact} />;
     case "launch":
-      return <LaunchView payload={payload} onExecute={onExecute} compact={compact} />;
+      return <LaunchView payload={payload} onExecute={onExecute} compact={compact} executeError={executeError} isExecuting={isExecuting} />;
     case "attack":
       return <AttackView payload={payload} onExecute={onExecute} compact={compact} />;
   }
@@ -297,8 +310,14 @@ function AskView({ payload, compact }: { payload: Extract<IntentPayload, { kind:
 }
 
 function LaunchView({
-  payload, onExecute, compact,
-}: { payload: Extract<IntentPayload, { kind: "launch" }>; onExecute: () => void; compact?: boolean }) {
+  payload, onExecute, compact, executeError, isExecuting,
+}: {
+  payload: Extract<IntentPayload, { kind: "launch" }>;
+  onExecute: () => void;
+  compact?: boolean;
+  executeError?: string | null;
+  isExecuting?: boolean;
+}) {
   if (payload.clarification) {
     return (
       <div className={compact ? "omni-result omni-result--compact" : "omni-result"}>
@@ -329,9 +348,14 @@ function LaunchView({
           </div>
         )}
       </div>
+      {executeError && (
+        <div className="omni-needs" role="alert">{executeError}</div>
+      )}
       <div className="omni-result__foot">
         <span className="foot-hint">Edit any field — or submit as-is</span>
-        <button className="omni-btn" onClick={onExecute}>Launch campaign →</button>
+        <button className="omni-btn" onClick={onExecute} disabled={isExecuting}>
+          {isExecuting ? "Launching…" : "Launch campaign →"}
+        </button>
       </div>
     </div>
   );

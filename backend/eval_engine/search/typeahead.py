@@ -144,7 +144,7 @@ def build_typeahead_response(
                     label=camp.name,
                     subtitle="recent campaign",
                     kind="campaign",
-                    href=f"/campaigns/{camp.id}",
+                    href=f"/dashboard?campaign={camp.id}",
                     icon="List",
                     score=camp.score,
                 )
