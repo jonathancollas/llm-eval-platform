@@ -84,7 +84,7 @@ def answer_deterministic(session: Session, question: str) -> Optional[AskPayload
                 sources=[AskSource(
                     id=f"campaign:{row.id}",
                     label=row.name,
-                    href=f"/campaigns/{row.id}",
+                    href=f"/dashboard?campaign={row.id}",
                 )],
                 deterministic=True,
             )

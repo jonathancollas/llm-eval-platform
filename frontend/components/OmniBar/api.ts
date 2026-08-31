@@ -18,10 +18,31 @@ function withTimeout(ms: number): AbortSignal {
   return c.signal;
 }
 
-function buildHeaders(extra?: HeadersInit): Headers {
+export function buildHeaders(extra?: HeadersInit): Headers {
   const h = new Headers(extra);
   if (API_KEY) h.set("X-API-Key", API_KEY);
   return h;
+}
+
+/**
+ * Join a backend path onto API_BASE.
+ *
+ * Search /execute returns paths like "/api/campaigns/" (FastAPI's public
+ * prefix). API_BASE already includes "/api" (e.g. http://localhost:8000/api),
+ * and a raw fetch("/api/campaigns/") hits the Next.js origin — not the
+ * backend. Strip a leading "/api" so the POST lands on the API server.
+ */
+export function resolveApiEndpoint(path: string, apiBase: string = API_BASE): string {
+  const raw = (path || "").trim();
+  if (!raw) return apiBase.replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const base = apiBase.replace(/\/+$/, "");
+  let suffix = raw.startsWith("/") ? raw : `/${raw}`;
+  if (suffix === "/api" || suffix.startsWith("/api/")) {
+    suffix = suffix.slice(4) || "/";
+  }
+  if (!suffix.startsWith("/")) suffix = `/${suffix}`;
+  return `${base}${suffix}`;
 }
 
 /**

@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from core.models import Benchmark, BenchmarkType, LLMModel, ModelProvider
+from core.models import Benchmark, BenchmarkType, Campaign, LLMModel, ModelProvider
 from eval_engine.search.classifier import classify_deterministic
 from eval_engine.search.engine import SearchEngine
 from eval_engine.search.schema import (
@@ -70,6 +70,7 @@ def session():
             description="Massive Multitask Language Understanding subset.",
             metric="accuracy",
         ))
+        sess.add(Campaign(name="Frontier cyber eval"))
         sess.commit()
         yield sess
     if db_path.exists():
@@ -156,6 +157,20 @@ class TestSearchEngine:
         resp = engine.typeahead("evaluate gpt-4o-mini")
         assert any(g.kind == "action" for g in resp.groups)
 
+    def test_typeahead_campaign_href_is_a_real_frontend_route(self, session):
+        """Campaign detail lives at /dashboard?campaign=, not /campaigns/{id}."""
+        engine = SearchEngine(session)
+        resp = engine.typeahead("Frontier cyber")
+        campaign_group = next(g for g in resp.groups if g.kind == "campaign")
+        assert campaign_group.items[0].href == f"/dashboard?campaign={campaign_group.items[0].id.split(':', 1)[1]}"
+
+    def test_ask_latest_campaign_href_is_a_real_frontend_route(self, session):
+        from eval_engine.search.ask_engine import answer_deterministic
+        payload = answer_deterministic(session, "latest campaign")
+        assert payload is not None
+        assert payload.sources
+        assert payload.sources[0].href and payload.sources[0].href.startswith("/dashboard?campaign=")
+
     def test_classify_navigate(self, session):
         engine = SearchEngine(session)
         r = asyncio.run(engine.classify("leaderboard"))
@@ -225,6 +240,8 @@ class TestSearchEngine:
         )
         resp = asyncio.run(engine.execute(req))
         assert resp.submit_endpoint == "/api/campaigns/"
+        # Clients must join this onto API_BASE (which already includes /api).
+        # A raw fetch(submit_endpoint) hits the Next.js origin and 404s.
         assert resp.submit_body is not None
         assert resp.submit_body["max_samples"] == 25
         assert resp.submit_body["model_ids"] and resp.submit_body["benchmark_ids"]
