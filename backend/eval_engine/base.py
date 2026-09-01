@@ -154,8 +154,9 @@ class BaseBenchmarkRunner(ABC):
         item_results: list[ItemResult] = []
 
         for idx, item in enumerate(items):
-            prompt = await self.build_prompt(item, few_shot_examples)
+            prompt = ""
             try:
+                prompt = await self.build_prompt(item, few_shot_examples)
                 result = await complete(
                     model=model,
                     prompt=prompt,

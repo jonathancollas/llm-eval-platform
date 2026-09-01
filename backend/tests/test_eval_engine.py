@@ -394,3 +394,130 @@ class TestPurpleLlamaMetrics:
         assert m["by_llamaguard_category"]["S1"] == 0.5
         assert m["by_llamaguard_category"]["S10"] == 1.0
 
+
+# ── Academic local datasets must not use MMLURunner unless they are MC ────────
+
+_BENCH_LIB = os.path.join(os.path.dirname(__file__), "..", "bench_library")
+
+
+def _catalog_bench(name: str, dataset_path: str, type_=BenchmarkType.ACADEMIC) -> Benchmark:
+    return Benchmark(
+        id=99,
+        name=name,
+        type=type_,
+        dataset_path=dataset_path,
+        has_dataset=True,
+        metric="accuracy",
+    )
+
+
+class TestNonMultipleChoiceAcademicRouting:
+    """Catalog academic benches with local JSON used to hit MMLURunner via the
+    ACADEMIC type fallback. MMLURunner.build_prompt does item['question']
+    before the per-item try/except, so NaturalQuestions crashed the campaign;
+    GSM8K has ``question`` but no ``choices``, so every item scored 0.0.
+    """
+
+    def test_naturalquestions_uses_custom_runner(self):
+        runner = get_runner(
+            _catalog_bench("NaturalQuestions", "academic/naturalquestions_subset.json"),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, CustomRunner)
+
+    def test_triviaqa_uses_custom_runner(self):
+        runner = get_runner(
+            _catalog_bench("TriviaQA", "academic/naturalquestions_subset.json"),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, CustomRunner)
+
+    def test_gsm8k_uses_custom_runner(self):
+        runner = get_runner(
+            _catalog_bench("GSM8K", "academic/gsm8k_subset.json"),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, CustomRunner)
+
+    def test_math_uses_custom_runner(self):
+        runner = get_runner(
+            _catalog_bench("MATH", "academic/math_subset.json"),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, CustomRunner)
+
+    def test_humaneval_mini_uses_custom_runner(self):
+        runner = get_runner(
+            _catalog_bench("HumanEval (mini)", "academic/humaneval_mini.json", BenchmarkType.CODING),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, CustomRunner)
+
+    def test_hellaswag_keeps_mmlu_runner(self):
+        runner = get_runner(
+            _catalog_bench("HellaSwag", "academic/hellaswag_subset.json"),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, MMLURunner)
+
+    def test_mmlu_subset_keeps_named_mmlu_runner(self):
+        runner = get_runner(
+            _catalog_bench("MMLU (subset)", "academic/mmlu_subset.json"),
+            _BENCH_LIB,
+        )
+        assert isinstance(runner, MMLURunner)
+
+    def test_mmlu_runner_keyerrors_on_naturalquestions_item(self):
+        """Contract: MMLURunner is unsafe on prompt/keyword items — routing must demote."""
+        tmp = tempfile.mkdtemp()
+        try:
+            runner = MMLURunner(_make_bench("MMLU (subset)", BenchmarkType.ACADEMIC), tmp)
+            with pytest.raises(KeyError):
+                asyncio.run(runner.build_prompt(
+                    {"prompt": "Who wrote Hamlet?", "expected_keywords": ["Shakespeare"]},
+                    [],
+                ))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_custom_runner_prompts_and_scores_keyword_items(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            runner = CustomRunner(_make_bench("NaturalQuestions", BenchmarkType.ACADEMIC), tmp)
+            item = {"prompt": "Who wrote Hamlet?", "expected_keywords": ["Shakespeare"]}
+            prompt = asyncio.run(runner.build_prompt(item, []))
+            assert "Hamlet" in prompt
+            assert runner.score_item("William Shakespeare wrote Hamlet.", item) == 1.0
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_gsm8k_keyword_score_is_nonzero_unlike_mmlu_letter_match(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            item = {
+                "question": "How much does she make daily?",
+                "expected_keywords": ["18"],
+                "answer": "18",
+            }
+            custom = CustomRunner(_make_bench("GSM8K", BenchmarkType.ACADEMIC), tmp)
+            mmlu = MMLURunner(_make_bench("MMLU (subset)", BenchmarkType.ACADEMIC), tmp)
+            response = "She makes $18 per day."
+            assert custom.score_item(response, item) == 1.0
+            assert mmlu.score_item(response, item) == 0.0
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_naturalquestions_build_prompt_on_real_item(self):
+        """The catalog file has ``prompt`` not ``question``; MMLURunner KeyErrors here."""
+        import json
+        runner = get_runner(
+            _catalog_bench("NaturalQuestions", "academic/naturalquestions_subset.json"),
+            _BENCH_LIB,
+        )
+        with open(os.path.join(_BENCH_LIB, "academic/naturalquestions_subset.json"), encoding="utf-8") as f:
+            item = json.load(f)[0]
+        prompt = asyncio.run(runner.build_prompt(item, []))
+        assert prompt
+        assert "question" not in item
+        assert "Hamlet" in prompt or "prompt" in item
+

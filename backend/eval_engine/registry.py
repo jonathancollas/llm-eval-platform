@@ -157,6 +157,45 @@ def _lazy_register():
     _initialized = True
 
 
+def _local_dataset_incompatible_with_mmlu(full_path) -> bool:
+    """True when a local JSON dataset would KeyError or score 0.0 under MMLURunner.
+
+    MMLURunner.build_prompt requires ``item['question']`` (outside the per-item
+    try/except in BaseBenchmarkRunner.run) and scores A–D letters against
+    ``answer``. Catalog benches such as NaturalQuestions (prompt + keywords)
+    and GSM8K (free-form numeric answers) are academic-typed with a local
+    file, so the ACADEMIC → MMLURunner fallback used to crash or silently
+    zero the campaign.
+    """
+    from eval_engine.base import _load_dataset_cached
+
+    try:
+        items = _load_dataset_cached(str(full_path))
+    except Exception:
+        return False
+    if not items or not isinstance(items[0], dict):
+        return False
+    sample = items[0]
+    return "question" not in sample or "choices" not in sample
+
+
+def _instantiate_runner(runner_cls, benchmark: Benchmark, bench_library_path: str):
+    """Build a runner, demoting MMLURunner when the dataset is not multiple-choice."""
+    from pathlib import Path
+    from eval_engine.custom.runner import CustomRunner
+
+    if getattr(runner_cls, "__name__", "") == "MMLURunner" and benchmark.dataset_path:
+        full_path = Path(bench_library_path) / benchmark.dataset_path
+        if full_path.exists() and _local_dataset_incompatible_with_mmlu(full_path):
+            logger.warning(
+                "Local dataset for '%s' is not multiple-choice; "
+                "using CustomRunner instead of MMLURunner",
+                benchmark.name,
+            )
+            runner_cls = CustomRunner
+    return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
+
+
 def get_runner(benchmark: Benchmark, bench_library_path: str) -> BaseBenchmarkRunner:
     _lazy_register()
 
@@ -169,13 +208,13 @@ def get_runner(benchmark: Benchmark, bench_library_path: str) -> BaseBenchmarkRu
             runner_cls = _NAME_REGISTRY.get(benchmark.name) or _TYPE_REGISTRY.get(benchmark.type)
             if runner_cls:
                 logger.info(f"Local dataset → using {runner_cls.__name__} for '{benchmark.name}'")
-                return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
+                return _instantiate_runner(runner_cls, benchmark, bench_library_path)
 
     # 2. Named override (always takes priority for known INESIA benchmarks)
     if benchmark.name in _NAME_REGISTRY:
         runner_cls = _NAME_REGISTRY[benchmark.name]
         logger.info(f"Named override → {runner_cls.__name__} for '{benchmark.name}'")
-        return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
+        return _instantiate_runner(runner_cls, benchmark, bench_library_path)
 
     # 3. lm-eval harness — only for benchmarks WITHOUT a local dataset
     #    (they explicitly need HuggingFace)
@@ -198,7 +237,7 @@ def get_runner(benchmark: Benchmark, bench_library_path: str) -> BaseBenchmarkRu
     runner_cls = _TYPE_REGISTRY.get(benchmark.type)
     if runner_cls:
         logger.info(f"Type fallback → {runner_cls.__name__} for '{benchmark.name}' (type={benchmark.type})")
-        return runner_cls(benchmark=benchmark, bench_library_path=bench_library_path)
+        return _instantiate_runner(runner_cls, benchmark, bench_library_path)
 
     # 5. Generic fallback
     from eval_engine.custom.runner import CustomRunner
