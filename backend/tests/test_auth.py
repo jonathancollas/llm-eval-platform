@@ -317,12 +317,31 @@ class TestRoleGating:
         a.dependency_overrides[get_session] = _session_override
         return a
 
-    def test_no_user_email_is_viewer_and_blocked(
+    def test_no_user_email_cannot_admin_in_permissive(
         self, app_with_role_endpoint, permissive_mode
     ):
-        """Without X-User-Email, role defaults to 'viewer', which is blocked."""
+        """Without X-User-Email, permissive mode is evaluator — not admin."""
         client = TestClient(app_with_role_endpoint)
         r = client.get("/admin-only")
+        assert r.status_code == 403
+
+    def test_no_user_email_can_evaluate_in_permissive(
+        self, app_with_role_endpoint, permissive_mode
+    ):
+        """Rollout mode has no login UI; evaluator writes must still work."""
+        client = TestClient(app_with_role_endpoint)
+        r = client.get("/evaluator-or-admin")
+        assert r.status_code == 200
+
+    def test_no_user_email_is_viewer_in_strict(
+        self, app_with_role_endpoint, strict_mode, tenant_with_key
+    ):
+        """Strict mode keeps least privilege when the caller is unidentified."""
+        _, raw_key = tenant_with_key
+        client = TestClient(app_with_role_endpoint)
+        r = client.get(
+            "/evaluator-or-admin", headers={"X-Tenant-Key": raw_key}
+        )
         assert r.status_code == 403
 
     def test_x_role_header_does_not_escalate(

@@ -23,9 +23,9 @@ Charter authorization is enforced inside ``run_probe`` (the runtime
 gate) AND at the dependency layer for the POST endpoint (early-fail
 before any DB write). Tenant scoping is enforced at every read.
 
-Errors are uniform: 400 for malformed payload, 401 for missing role
-(via require_role), 403 for charter refusal, 404 for missing session,
-429 for charter rate limit, 500 for unexpected.
+Errors are uniform: 400 for malformed payload, 401 for missing tenant
+key (strict mode), 403 for charter refusal or insufficient role,
+404 for missing session, 429 for charter rate limit, 500 for unexpected.
 """
 from __future__ import annotations
 
@@ -400,7 +400,13 @@ def verify_session(
 )
 def get_artifact_html(
     session_id: str,
-    emit_export: bool = Query(default=True),
+    emit_export: bool = Query(
+        default=False,
+        description=(
+            "When true, append an EXPORT row to the tenant chain. Defaults "
+            "to false so viewing/downloading the HTML is a read."
+        ),
+    ),
     tenant: Tenant = Depends(require_tenant),
     db: Session = Depends(get_session),
 ):
