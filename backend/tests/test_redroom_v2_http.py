@@ -5,10 +5,10 @@ Covers:
   - POST /sessions/{id}/probe runs end-to-end with a mocked target
   - GET /traces lists rows for the calling tenant only
   - GET /verify reports chain status
-  - GET /artifact.html returns a full HTML doc
+  - GET /artifact.html returns a full HTML doc without mutating the chain
   - Charter refusal: aggressiveness above max → 403
   - Tenant isolation across all reads
-  - Role gating: viewer cannot POST /probe, can GET traces
+  - Unidentified callers in permissive mode can POST /probe (no login UI)
 """
 from __future__ import annotations
 
@@ -123,6 +123,21 @@ class TestCreateSession:
         )
         assert r.status_code == 422
 
+    def test_unidentified_permissive_caller_can_create(self, app, monkeypatch):
+        """The /redbox/v2 wizard never sends X-User-Email.
+
+        Tests override get_user_role to admin, which hid a 403: the real
+        resolver used to default unidentified callers to viewer.
+        """
+        from core.auth import get_user_role
+
+        monkeypatch.delenv("AUTH_ENFORCED", raising=False)
+        app.dependency_overrides.pop(get_user_role, None)
+        client = TestClient(app)
+        r = client.post("/api/redroom/v2/sessions", json={})
+        assert r.status_code == 200, r.text
+        assert r.json()["session_id"].startswith("sess-")
+
 
 # ════════════════════════════════════════════════════════════════════
 #  POST /sessions/{id}/probe
@@ -176,6 +191,25 @@ class TestProbe:
             },
         )
         assert r.status_code == 403, r.text
+
+    def test_unidentified_permissive_caller_can_probe(self, app, monkeypatch):
+        from core.auth import get_user_role
+
+        monkeypatch.delenv("AUTH_ENFORCED", raising=False)
+        app.dependency_overrides.pop(get_user_role, None)
+        client = TestClient(app)
+        r = client.post(
+            "/api/redroom/v2/sessions/sess-anon-probe/probe",
+            json={
+                "technique": "many_shot",
+                "target_model_id": 1,
+                "aggressiveness": 2,
+                "max_turns": 2,
+                "prompt_seed": "x",
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["n_attempts"] >= 1
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -276,3 +310,55 @@ class TestArtifact:
         assert "<!DOCTYPE html>" in r.text
         assert "Mercury Retrograde" in r.text
         assert "many_shot" in r.text
+
+    def test_get_artifact_does_not_append_export_by_default(self, client):
+        """Viewing the HTML must not mutate the append-only audit chain."""
+        sid = "sess-artifact-idempotent"
+        client.post(
+            f"/api/redroom/v2/sessions/{sid}/probe",
+            json={
+                "technique": "many_shot",
+                "target_model_id": 1,
+                "aggressiveness": 2,
+                "max_turns": 2,
+                "prompt_seed": "x",
+            },
+        )
+        before = client.get(f"/api/redroom/v2/sessions/{sid}/traces")
+        assert before.status_code == 200
+        n_before = len(before.json()["rows"])
+        assert n_before >= 1
+
+        r = client.get(f"/api/redroom/v2/sessions/{sid}/artifact.html")
+        assert r.status_code == 200
+
+        after = client.get(f"/api/redroom/v2/sessions/{sid}/traces")
+        assert after.status_code == 200
+        assert len(after.json()["rows"]) == n_before
+        assert not any(row["kind"] == "export" for row in after.json()["rows"])
+
+    def test_get_artifact_emit_export_true_appends_once(self, client):
+        sid = "sess-artifact-export"
+        client.post(
+            f"/api/redroom/v2/sessions/{sid}/probe",
+            json={
+                "technique": "many_shot",
+                "target_model_id": 1,
+                "aggressiveness": 2,
+                "max_turns": 2,
+                "prompt_seed": "x",
+            },
+        )
+        before = client.get(f"/api/redroom/v2/sessions/{sid}/traces")
+        n_before = len(before.json()["rows"])
+
+        r = client.get(
+            f"/api/redroom/v2/sessions/{sid}/artifact.html",
+            params={"emit_export": "true"},
+        )
+        assert r.status_code == 200
+
+        after = client.get(f"/api/redroom/v2/sessions/{sid}/traces")
+        rows = after.json()["rows"]
+        assert len(rows) == n_before + 1
+        assert rows[-1]["kind"] == "export"

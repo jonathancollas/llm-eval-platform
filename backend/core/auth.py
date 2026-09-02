@@ -243,7 +243,12 @@ def get_user_role(
       - When ``X-User-Email`` is present, look up that user within the resolved
         tenant. The user must belong to ``tenant`` — cross-tenant lookup is
         forbidden even if a valid email is provided.
-      - Otherwise, return the lowest privilege ("viewer").
+      - When the header is absent and AUTH_ENFORCED is on, return the lowest
+        privilege ("viewer").
+      - When the header is absent and AUTH_ENFORCED is off, return "evaluator".
+        There is no login UI yet; anonymous callers already create campaigns
+        and models via require_tenant's default-tenant fallback. Defaulting
+        to viewer uniquely 403'd Red Room v2 POSTs from /redbox/v2.
 
     The previous implementation read a role straight from an X-Role / X-User-Role
     header, which let any caller claim ``admin`` simply by adding a header.
@@ -252,7 +257,10 @@ def get_user_role(
     """
     email = (request.headers.get("X-User-Email") or "").strip().lower()
     if not email:
-        return "viewer"
+        # Strict mode: unidentified → least privilege.
+        # Permissive/rollout mode: unidentified → evaluator, matching the
+        # write access the rest of the app already grants without a User row.
+        return "viewer" if _is_strict_mode() else "evaluator"
 
     user = session.exec(
         select(User).where(

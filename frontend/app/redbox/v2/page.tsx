@@ -4,7 +4,17 @@ import { useCallback, useState } from "react";
 import { Spinner } from "@/components/Spinner";
 import { Badge } from "@/components/Badge";
 import { Shield, Play, FileText, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
-import { API_BASE } from "@/lib/config";
+import { API_BASE, API_KEY } from "@/lib/config";
+
+function v2Headers(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  headers.set("Content-Type", "application/json");
+  if (API_KEY) {
+    headers.set("X-API-Key", API_KEY);
+    headers.set("X-Tenant-Key", API_KEY);
+  }
+  return headers;
+}
 
 // ── Types matching backend/api/routers/redroom_v2.py ──────────────────────────
 
@@ -87,7 +97,7 @@ export default function RedRoomV2Page() {
       // 1. Create session
       const sRes = await fetch(`${API_BASE}/redroom/v2/sessions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: v2Headers(),
         body: JSON.stringify({
           name: `frontend-${Date.now()}`,
           target_class: "self",
@@ -104,7 +114,7 @@ export default function RedRoomV2Page() {
         `${API_BASE}/redroom/v2/sessions/${s.session_id}/probe`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: v2Headers(),
           body: JSON.stringify({
             technique,
             target_model_id: targetModelId,
@@ -125,7 +135,8 @@ export default function RedRoomV2Page() {
 
       // 3. Fetch traces
       const tRes = await fetch(
-        `${API_BASE}/redroom/v2/sessions/${s.session_id}/traces?limit=200`
+        `${API_BASE}/redroom/v2/sessions/${s.session_id}/traces?limit=200`,
+        { headers: v2Headers() },
       );
       if (tRes.ok) {
         const t = await tRes.json();
@@ -134,7 +145,8 @@ export default function RedRoomV2Page() {
 
       // 4. Verify chain
       const vRes = await fetch(
-        `${API_BASE}/redroom/v2/sessions/${s.session_id}/verify`
+        `${API_BASE}/redroom/v2/sessions/${s.session_id}/verify`,
+        { headers: v2Headers() },
       );
       if (vRes.ok) {
         const v: VerifyResponse = await vRes.json();
