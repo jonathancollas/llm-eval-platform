@@ -187,7 +187,11 @@ export function BenchmarkCatalogModal({ onClose }: { onClose: () => void }) {
         tags: ["lm-eval", h.domain, "harness", ...(h.is_curated ? ["curated"] : [])],
         metric: h.metric.split(",")[0],
         num_samples: 50,
-        config: {},
+        config: {
+          lm_eval_task: h.key,
+          few_shot: h.few_shot,
+          source: "lm-eval-harness",
+        },
       });
       setHarnessAdded(prev => new Set([...prev, h.key]));
     } catch (e: any) {

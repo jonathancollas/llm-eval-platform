@@ -158,6 +158,77 @@ def test_harness_search_endpoint_limit_validation(catalog_client):
     assert resp.status_code == 422
 
 
+# ── Runner routing (harness-search "Add" → campaign) ──────────────────────────
+
+def test_find_harness_task_does_not_prefix_match_curated_ids():
+    """Display names like 'Mmlu Abstract Algebra' must not resolve to 'mmlu'."""
+    from eval_engine.registry import _find_harness_task
+
+    assert _find_harness_task("Mmlu Abstract Algebra") != "mmlu"
+    assert _find_harness_task("Humaneval Instruct") != "humaneval"
+    assert _find_harness_task("Gsm8k Hard") != "gsm8k"
+
+
+def test_find_harness_task_honors_explicit_config():
+    from eval_engine.registry import _find_harness_task
+
+    assert _find_harness_task(
+        "Mmlu Abstract Algebra",
+        {"lm_eval_task": "mmlu_abstract_algebra"},
+    ) == "mmlu_abstract_algebra"
+    assert _find_harness_task(
+        "Xnli",
+        {"lm_eval_task": "xnli"},
+    ) == "xnli"
+
+
+def test_find_harness_task_exact_curated_display_name():
+    from eval_engine.registry import _find_harness_task
+
+    assert _find_harness_task("GSM8K") == "gsm8k"
+    assert _find_harness_task("gsm8k") == "gsm8k"
+    assert _find_harness_task("GSM8K (CoT)") == "gsm8k_cot"
+
+
+def test_get_runner_uses_explicit_harness_task_not_mmlu_prefix():
+    from core.models import Benchmark, BenchmarkType
+    from eval_engine.harness_runner import HarnessRunner
+    from eval_engine.registry import get_runner
+
+    bench = Benchmark(
+        name="Mmlu Abstract Algebra",
+        type=BenchmarkType.ACADEMIC,
+        has_dataset=False,
+        dataset_path=None,
+        config_json='{"lm_eval_task": "mmlu_abstract_algebra", "source": "lm-eval-harness"}',
+    )
+    runner = get_runner(bench, "/tmp")
+    assert isinstance(runner, HarnessRunner)
+    assert runner.task_name == "mmlu_abstract_algebra"
+
+
+def test_get_runner_does_not_route_uncurated_display_name_to_parent_task():
+    from core.models import Benchmark, BenchmarkType
+    from eval_engine.academic.mmlu import MMLURunner
+    from eval_engine.harness_runner import HarnessRunner
+    from eval_engine.registry import get_runner
+
+    bench = Benchmark(
+        name="Mmlu Abstract Algebra",
+        type=BenchmarkType.ACADEMIC,
+        has_dataset=False,
+        dataset_path=None,
+        config_json="{}",
+    )
+    runner = get_runner(bench, "/tmp")
+    if isinstance(runner, HarnessRunner):
+        assert runner.task_name != "mmlu"
+        assert runner.task_name == "mmlu_abstract_algebra"
+    else:
+        # lm-eval index unavailable or task not installed: type fallback, not parent MMLU harness.
+        assert isinstance(runner, MMLURunner)
+
+
 def test_harness_search_endpoint_result_shape(catalog_client):
     resp = catalog_client.get("/catalog/benchmarks/harness-search?q=arc_challenge&limit=5")
     assert resp.status_code == 200

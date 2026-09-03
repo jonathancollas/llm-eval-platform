@@ -4,10 +4,11 @@ Runner registry — routes a Benchmark to the correct runner.
 Priority:
 1. has_dataset=True AND dataset_path set → always use local runner (fast, no HuggingFace)
 2. Named override (INESIA frontier benchmarks)
-3. lm-eval harness (by task name match) — only if no local dataset
+3. lm-eval harness (explicit config.lm_eval_task, then exact name match)
 4. Type fallback
 5. CustomRunner (default)
 """
+import json
 import logging
 from core.models import Benchmark, BenchmarkType
 from eval_engine.base import BaseBenchmarkRunner
@@ -179,12 +180,19 @@ def get_runner(benchmark: Benchmark, bench_library_path: str) -> BaseBenchmarkRu
 
     # 3. lm-eval harness — only for benchmarks WITHOUT a local dataset
     #    (they explicitly need HuggingFace)
+    config = _benchmark_config(benchmark)
     if benchmark.name not in LOCAL_ONLY_NAMES:
-        task_name = _find_harness_task(benchmark.name)
+        task_name = _find_harness_task(benchmark.name, config)
         if task_name:
             try:
                 from eval_engine.harness_runner import HarnessRunner, get_available_harness_tasks
-                if task_name in get_available_harness_tasks():
+                available = get_available_harness_tasks()
+                explicit = bool(
+                    config.get("lm_eval_task") or config.get("harness_task")
+                )
+                # Honor an explicit task id from harness-search "Add" even if
+                # the installed index failed to enumerate the full 14k list.
+                if explicit or task_name in available:
                     logger.info(f"lm-eval harness → task '{task_name}' for '{benchmark.name}'")
                     return HarnessRunner(
                         benchmark=benchmark,
@@ -206,29 +214,51 @@ def get_runner(benchmark: Benchmark, bench_library_path: str) -> BaseBenchmarkRu
     return CustomRunner(benchmark=benchmark, bench_library_path=bench_library_path)
 
 
-def _find_harness_task(benchmark_name: str) -> str | None:
-    """Match a benchmark name to a lm-eval task ID."""
+def _benchmark_config(benchmark: Benchmark) -> dict:
+    raw = getattr(benchmark, "config_json", None) or ""
+    if not raw:
+        return {}
     try:
-        from eval_engine.harness_runner import HARNESS_CATALOG, _task_display_name
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _find_harness_task(benchmark_name: str, config: dict | None = None) -> str | None:
+    """Match a benchmark to a lm-eval task ID.
+
+    Prefer an explicit ``lm_eval_task`` stored when the bench was added from
+    harness search. Otherwise require an *exact* task-id, slug, or display-name
+    match against the installed lm-eval index.
+
+    Do not prefix-match curated catalog keys: that routed
+    ``mmlu_abstract_algebra`` (display "Mmlu Abstract Algebra") to ``mmlu``.
+    """
+    if config:
+        explicit = config.get("lm_eval_task") or config.get("harness_task")
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip()
+
+    try:
+        from eval_engine.harness_runner import _task_display_name, get_available_harness_tasks
     except ImportError:
         return None
 
-    name_lower = benchmark_name.lower().strip()
+    available = get_available_harness_tasks()
+    name_lower = (benchmark_name or "").lower().strip()
+    if not name_lower:
+        return None
 
-    # Direct task ID match
-    if name_lower in HARNESS_CATALOG:
+    if name_lower in available:
         return name_lower
 
-    # Display name match
-    for task_id in HARNESS_CATALOG:
-        display = _task_display_name(task_id).lower()
-        if name_lower == display:
-            return task_id
-
-    # Fuzzy: task ID embedded in benchmark name (e.g. "GSM8K (CoT)" → "gsm8k_cot")
     name_slug = name_lower.replace(" ", "_").replace("-", "_")
-    for task_id in HARNESS_CATALOG:
-        if task_id in name_slug or name_slug.startswith(task_id):
+    if name_slug in available:
+        return name_slug
+
+    for task_id in available:
+        if name_lower == _task_display_name(task_id).lower():
             return task_id
 
     return None
