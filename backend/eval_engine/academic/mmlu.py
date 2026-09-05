@@ -5,6 +5,7 @@ Standard format used by lm-evaluation-harness.
 """
 import re
 from eval_engine.base import BaseBenchmarkRunner, ItemResult
+from eval_engine.item_normalize import canonical_mc_answer
 
 
 SYSTEM_PROMPT = (
@@ -20,7 +21,7 @@ def _format_question(item: dict, include_answer: bool = False) -> str:
     for letter, choice in zip(CHOICES, item.get("choices", [])):
         lines.append(f"({letter}) {choice}")
     if include_answer:
-        lines.append(f"Answer: {item['answer']}")
+        lines.append(f"Answer: {canonical_mc_answer(item)}")
     else:
         lines.append("Answer:")
     return "\n".join(lines)
@@ -47,7 +48,7 @@ class MMLURunner(BaseBenchmarkRunner):
             predicted = response[0]
         else:
             return 0.0
-        return 1.0 if predicted == item.get("answer", "").upper() else 0.0
+        return 1.0 if predicted == canonical_mc_answer(item) else 0.0
 
     def compute_summary_metrics(self, results: list[ItemResult]) -> dict:
         if not results:

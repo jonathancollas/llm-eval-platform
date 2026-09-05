@@ -14,6 +14,7 @@ from core.database import get_session
 from core.models import Benchmark, BenchmarkType
 from core.config import get_settings
 from core.utils import resolve_safe_path
+from eval_engine.item_normalize import normalize_imported_item
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 settings = get_settings()
@@ -500,6 +501,10 @@ class HuggingFaceImportRequest(BaseModel):
     subset: Optional[str] = Field(default=None, description="Dataset subset/config name")
     max_items: int = Field(default=500, ge=10, le=5000)
     benchmark_name: Optional[str] = Field(default=None, description="Custom name, defaults to repo_id")
+    name_override: Optional[str] = Field(
+        default=None,
+        description="Alias for benchmark_name; the wizard historically sent this field only",
+    )
     benchmark_type: BenchmarkType = Field(default=BenchmarkType.CUSTOM)
 
 
@@ -546,22 +551,9 @@ async def import_huggingface_dataset(
 
                 for row in rows:
                     item = row.get("row", {})
-                    # Normalize common field names
-                    normalized = {}
-                    for k, v in item.items():
-                        normalized[k] = v
-                    # Try to detect question/answer fields
-                    q_fields = ["question", "input", "prompt", "text", "query", "instruction"]
-                    a_fields = ["answer", "output", "target", "expected", "response", "label"]
-                    for qf in q_fields:
-                        if qf in normalized and "question" not in normalized:
-                            normalized["question"] = normalized[qf]
-                            break
-                    for af in a_fields:
-                        if af in normalized and "answer" not in normalized:
-                            normalized["answer"] = str(normalized[af])
-                            break
-                    all_items.append(normalized)
+                    if not isinstance(item, dict):
+                        continue
+                    all_items.append(normalize_imported_item(item))
 
                 offset += len(rows)
                 if len(rows) < params["length"]:
@@ -574,7 +566,7 @@ async def import_huggingface_dataset(
         raise HTTPException(400, detail=f"No items found in '{payload.repo_id}' split='{payload.split}'")
 
     # Save as JSON
-    bench_name = payload.benchmark_name or payload.repo_id.replace("/", "_")
+    bench_name = payload.benchmark_name or payload.name_override or payload.repo_id.replace("/", "_")
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in bench_name)
     filename = f"huggingface_{safe_name}_{payload.split}.json"
     dataset_dir = Path(settings.bench_library_path) / "custom"
@@ -583,6 +575,9 @@ async def import_huggingface_dataset(
 
     with open(dataset_path, "w", encoding="utf-8") as f:
         json.dump(all_items, f, ensure_ascii=False, indent=2)
+
+    from eval_engine.base import BaseBenchmarkRunner
+    BaseBenchmarkRunner.invalidate_dataset_cache(str(dataset_path))
 
     # Create or update benchmark
     existing = session.exec(
@@ -605,7 +600,7 @@ async def import_huggingface_dataset(
             tags=json.dumps(["huggingface", payload.repo_id.split("/")[0], payload.split]),
             dataset_path=f"custom/{filename}",
             metric="accuracy",
-            num_samples=min(len(all_items), 50),
+            num_samples=len(all_items),
             config_json=json.dumps({"source": "huggingface", "repo_id": payload.repo_id, "split": payload.split, "subset": payload.subset}),
             is_builtin=False,
             has_dataset=True,
