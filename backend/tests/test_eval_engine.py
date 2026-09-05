@@ -61,6 +61,15 @@ class TestMMLUScoring:
         # "A" appears at word boundary in "Answer: A"
         assert self.runner.score_item("Answer: A", {"answer": "A"}) == 1.0
 
+    def test_integer_index_answer_maps_to_letter(self):
+        item = {"question": "q", "choices": ["Paris", "London", "Berlin", "Rome"], "answer": 0}
+        assert self.runner.score_item("A", item) == 1.0
+        assert self.runner.score_item("B", item) == 0.0
+
+    def test_digit_string_index_answer_maps_to_letter(self):
+        item = {"question": "q", "choices": ["Paris", "London", "Berlin", "Rome"], "answer": "2"}
+        assert self.runner.score_item("C", item) == 1.0
+
 
 # ── Safety refusal detection ──────────────────────────────────────────────────
 
@@ -228,6 +237,23 @@ class TestCustomRunner:
     def test_classification(self):
         item = {"prompt": "...", "expected": "POSITIVE"}
         assert self.runner.score_item("The sentiment is POSITIVE.", item) == 1.0
+
+    def test_huggingface_mmlu_integer_answer_scores(self):
+        item = {
+            "question": "Capital of France?",
+            "choices": ["Paris", "London", "Berlin", "Rome"],
+            "answer": 0,
+        }
+        assert self.runner.score_item("A", item) == 1.0
+        assert self.runner.score_item("B", item) == 0.0
+
+    def test_question_and_answer_open_ended(self):
+        item = {"question": "What is 2+2?", "answer": "4"}
+        assert self.runner.score_item("The answer is 4.", item) == 1.0
+
+    def test_numeric_zero_answer_not_dropped(self):
+        item = {"question": "How many moons?", "answer": 0}
+        assert self.runner.score_item("There are 0 moons.", item) == 1.0
 
 
 # ── Security ──────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from core.models import LLMModel, Benchmark
 from core.utils import resolve_safe_path
+from eval_engine.item_normalize import item_expected
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ class BaseBenchmarkRunner(ABC):
                     item_index=idx,
                     prompt=prompt,
                     response=result.text,
-                    expected=item.get("answer") or item.get("expected"),
+                    expected=item_expected(item),
                     score=score,
                     latency_ms=result.latency_ms,
                     input_tokens=result.input_tokens,
@@ -180,7 +181,7 @@ class BaseBenchmarkRunner(ABC):
                     item_index=idx,
                     prompt=prompt,
                     response=f"ERROR: {e}",
-                    expected=item.get("answer") or item.get("expected"),
+                    expected=item_expected(item),
                     score=0.0,
                     latency_ms=0,
                     input_tokens=0,

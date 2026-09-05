@@ -8,6 +8,7 @@ Supported item formats:
 """
 import re
 from eval_engine.base import BaseBenchmarkRunner
+from eval_engine.item_normalize import canonical_mc_answer, stringify_gold
 
 
 class CustomRunner(BaseBenchmarkRunner):
@@ -17,7 +18,10 @@ class CustomRunner(BaseBenchmarkRunner):
             return "multiple_choice"
         if "expected_keywords" in item:
             return "keyword_match"
-        if "expected" in item and "prompt" in item:
+        if (
+            ("expected" in item or "answer" in item)
+            and ("prompt" in item or "question" in item)
+        ):
             return "classification"
         return "unknown"
 
@@ -39,7 +43,7 @@ class CustomRunner(BaseBenchmarkRunner):
         if fmt == "multiple_choice":
             match = re.search(r"\b([A-D])\b", response.upper())
             if match:
-                return 1.0 if match.group(1) == item.get("answer", "").upper() else 0.0
+                return 1.0 if match.group(1) == canonical_mc_answer(item) else 0.0
             return 0.0
 
         if fmt == "keyword_match":
@@ -50,7 +54,12 @@ class CustomRunner(BaseBenchmarkRunner):
             return hits / len(keywords)
 
         if fmt == "classification":
-            expected = str(item.get("expected", "")).strip().upper()
+            raw = item.get("expected")
+            if raw is None:
+                raw = item.get("answer")
+            expected = stringify_gold(raw).strip().upper()
+            if not expected:
+                return 0.0
             return 1.0 if expected in response.upper() else 0.0
 
         return 0.0  # unknown format

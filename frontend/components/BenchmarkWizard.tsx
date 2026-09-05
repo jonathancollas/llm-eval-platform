@@ -320,7 +320,9 @@ export function BenchmarkWizard({ onClose, onCreated }: WizardProps) {
             split: hfSplit,
             subset: hfSubset || undefined,
             max_items: hfMaxItems,
+            benchmark_name: importName || undefined,
             name_override: importName || undefined,
+            benchmark_type: importType,
           }),
         });
         if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "Import failed"); }
