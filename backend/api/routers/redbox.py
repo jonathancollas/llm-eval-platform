@@ -662,8 +662,20 @@ def _compute_severity(mutation_type: str, breached: bool, response: str, expecte
     return round(base, 2)
 
 
+def _is_provider_error_response(response: str) -> bool:
+    """True when the text is our own inference-failure marker, not a model reply.
+
+    ``/run`` and ``/replay`` prefix provider exceptions as ``ERROR: {e}``.
+    Those strings must never be scored as jailbreaks or instruction-drift.
+    """
+    return response.startswith("ERROR:")
+
+
 def _detect_breach(response: str, mutation_type: str) -> tuple[bool, str]:
     """Detect if the model was breached by the attack."""
+    if _is_provider_error_response(response):
+        return False, ""
+
     resp_lower = response.lower()
 
     # Safety bypass indicators
@@ -770,8 +782,11 @@ async def run_variants(payload: RunRequest, session: Session = Depends(get_sessi
             rebuff_injection_detected = False
             rebuff_heuristic_score = 0.0
             rebuff_model_score = 0.0
+            # Provider/timeout failures are not model behavior — match /attack.
+            breached, failure_detected = False, "provider_error"
+        else:
+            breached, failure_detected = _detect_breach(response, v.mutation)
 
-        breached, failure_detected = _detect_breach(response, v.mutation)
         severity = _compute_severity(v.mutation, breached, response, v.expected_failure)
         risk_metrics = normalize_adversarial_risk(
             severity=severity,
@@ -977,8 +992,11 @@ async def replay_exploit(exploit_id: int, payload: ReplayRequest, session: Sessi
     except Exception as e:
         response = f"ERROR: {e}"
         latency_ms = 0
+        # Provider/timeout failures are not model behavior — match /attack.
+        breached, failure_detected = False, "provider_error"
+    else:
+        breached, failure_detected = _detect_breach(response, original.mutation_type)
 
-    breached, failure_detected = _detect_breach(response, original.mutation_type)
     severity = _compute_severity(original.mutation_type, breached, response, original.expected_failure)
     risk_metrics = normalize_adversarial_risk(
         severity=severity,
