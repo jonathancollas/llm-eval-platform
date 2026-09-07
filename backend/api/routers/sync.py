@@ -105,6 +105,10 @@ def sync_benchmarks_from_catalog(session: Session) -> int:
     """
     Import all catalog benchmarks missing from DB.
     Safe against duplicate inserts at startup.
+
+    Also repairs builtin rows that were inserted before catalog fields such
+    as ``eval_dimension`` and ``has_dataset`` were persisted, so a path or
+    schema fix takes effect without wiping the database.
     """
     from pathlib import Path
     from sqlalchemy.exc import IntegrityError
@@ -117,13 +121,29 @@ def sync_benchmarks_from_catalog(session: Session) -> int:
             select(Benchmark).where(Benchmark.name == item["name"])
         ).first()
 
-        if existing:
-            continue
-
         dataset_path = item.get("dataset_path", "")
         has_dataset = bool(
             dataset_path and (bench_path / dataset_path).exists()
         )
+        eval_dimension = item.get("eval_dimension") or "capability"
+
+        if existing:
+            changed = False
+            if existing.is_builtin and item.get("eval_dimension") and existing.eval_dimension != eval_dimension:
+                existing.eval_dimension = eval_dimension
+                changed = True
+            if has_dataset and not existing.has_dataset:
+                existing.has_dataset = True
+                if dataset_path and not existing.dataset_path:
+                    existing.dataset_path = dataset_path
+                changed = True
+            if changed:
+                session.add(existing)
+                try:
+                    session.commit()
+                except IntegrityError:
+                    session.rollback()
+            continue
 
         benchmark = Benchmark(
             name=item["name"],
@@ -138,6 +158,7 @@ def sync_benchmarks_from_catalog(session: Session) -> int:
             is_builtin=True,
             has_dataset=has_dataset,
             source=item.get("source", "public"),
+            eval_dimension=eval_dimension,
         )
 
         session.add(benchmark)

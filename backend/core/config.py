@@ -3,8 +3,21 @@ Application settings — Pydantic BaseSettings with env var support.
 """
 import os
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
+
+
+def _default_bench_library_path() -> str:
+    """Bundled datasets live next to the backend package.
+
+    Docker copies the backend to ``/app``, so this resolves to
+    ``/app/bench_library``. Native uvicorn from the backend tree gets the
+    same files without requiring ``BENCH_LIBRARY_PATH``. An explicit env
+    var still wins.
+    """
+    return str(Path(__file__).resolve().parent.parent / "bench_library")
 
 
 class Settings(BaseSettings):
@@ -60,7 +73,7 @@ class Settings(BaseSettings):
     redis_url: str = ""
 
     # ── Benchmark library ────────────────────────────────────────────────────────
-    bench_library_path: str = "/app/bench_library"
+    bench_library_path: str = Field(default_factory=_default_bench_library_path)
     benchmark_upload_max_bytes: int = 50 * 1024 * 1024
 
     # ── API providers ────────────────────────────────────────────────────────────

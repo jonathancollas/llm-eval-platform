@@ -17,7 +17,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///./test_http.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-http-tests-at-least-32-chars")
 os.environ.setdefault("ADMIN_API_KEY", "")   # No auth in tests
 os.environ.setdefault("MERCURY_DEV_MODE", "true")
-os.environ.setdefault("BENCH_LIBRARY_PATH", os.path.join(os.path.dirname(__file__), "../../bench_library"))
+os.environ.setdefault("BENCH_LIBRARY_PATH", os.path.join(os.path.dirname(__file__), "../bench_library"))
 
 
 @pytest.fixture(scope="module")
