@@ -18,7 +18,6 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./bench_library:/bench_library
       - backend_data:/app/data
     env_file:
       - .env          # Load all secrets from .env (not committed to git)
@@ -31,7 +30,7 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - BENCH_LIBRARY_PATH=/bench_library
+      - BENCH_LIBRARY_PATH=/app/bench_library
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - DEBUG=${DEBUG:-false}
     depends_on:
@@ -45,7 +44,6 @@ services:
     command: celery -A core.job_queue:celery_app worker --loglevel=info
     volumes:
       - ./backend:/app
-      - ./bench_library:/bench_library
       - backend_data:/app/data
     env_file:
       - .env
@@ -58,7 +56,7 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - BENCH_LIBRARY_PATH=/bench_library
+      - BENCH_LIBRARY_PATH=/app/bench_library
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - DEBUG=${DEBUG:-false}
     depends_on:
