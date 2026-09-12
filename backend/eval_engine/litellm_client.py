@@ -168,13 +168,19 @@ async def complete(
     system_prompt: Optional[str] = None,
     output_schema: Optional[dict] = None,
     safety_constraints: Optional[dict] = None,
+    messages: Optional[list[dict]] = None,
 ) -> CompletionResult:
     settings = get_settings()
     await screen_prompt_with_lakera(prompt=prompt, system_prompt=system_prompt)
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
+    if messages:
+        chat_messages = [dict(m) for m in messages]
+        if system_prompt and (not chat_messages or chat_messages[0].get("role") != "system"):
+            chat_messages.insert(0, {"role": "system", "content": system_prompt})
+    else:
+        chat_messages = []
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        chat_messages.append({"role": "user", "content": prompt})
 
     model_str = _build_litellm_model_str(model)
     kwargs = _build_kwargs(model, temperature, max_tokens)
@@ -189,7 +195,7 @@ async def complete(
             response = await asyncio.wait_for(
                 acompletion(
                     model=model_str,
-                    messages=messages,
+                    messages=chat_messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     **kwargs,

@@ -1405,15 +1405,18 @@ async def run_attack_campaign(
             turns_used = [attack.prompt]
 
             if attack.multi_turn and payload.run_multi_turn and attack.turn_sequence:
-                # Execute full multi-turn sequence
-                conversation = []
+                # Execute full multi-turn sequence with conversation history.
+                # Crescendo / InjectLab later turns are meaningless without prior replies.
+                conversation: list[dict[str, str]] = []
                 final_response = ""
                 turn_responses = []
                 for turn_prompt in attack.turn_sequence:
+                    conversation.append({"role": "user", "content": turn_prompt})
                     resp = await asyncio.wait_for(
                         complete(
                             model=model,
                             prompt=turn_prompt,
+                            messages=list(conversation),
                             system_prompt=None,
                             temperature=payload.temperature,
                             max_tokens=payload.max_tokens,
@@ -1422,6 +1425,7 @@ async def run_attack_campaign(
                     )
                     resp_text = _completion_text(resp)
                     turn_responses.append(resp_text)
+                    conversation.append({"role": "assistant", "content": resp_text})
                     final_response = resp_text
                 response = final_response
             else:

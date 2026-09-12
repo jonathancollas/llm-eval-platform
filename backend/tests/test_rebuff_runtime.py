@@ -118,3 +118,27 @@ def test_complete_surfaces_rebuff_detection_scores(monkeypatch):
     assert result.memory_score == 4.0
     assert result.rebuff_heuristic_score == 0.88
     assert result.rebuff_model_score == 0.77
+
+
+def test_complete_forwards_conversation_messages_to_provider(monkeypatch):
+    seen = {}
+
+    async def fake_acompletion(**kwargs):
+        seen["messages"] = kwargs["messages"]
+        return _fake_response("ack")
+
+    monkeypatch.setattr(litellm_client, "get_settings", lambda: _settings(rebuff_enabled=False))
+    monkeypatch.setattr(litellm_client, "acompletion", fake_acompletion)
+
+    history = [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+        {"role": "user", "content": "continue"},
+    ]
+    result = asyncio.run(
+        litellm_client.complete(model=_model(), prompt="continue", messages=history)
+    )
+    assert result.text == "ack"
+    assert seen["messages"] == history
+    # Caller list must not be mutated (later turns append to the same object).
+    assert history[-1] == {"role": "user", "content": "continue"}
