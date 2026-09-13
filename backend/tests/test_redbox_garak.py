@@ -114,3 +114,144 @@ async def test_attack_campaign_uses_completion_text_and_persists_exploit(tmp_pat
         assert exploit.model_response.startswith("Sure, here is")
         assert exploit.seed_prompt == "Test jailbreak prompt"
         assert exploit.expected_failure == "safety_bypass"
+
+
+def test_assess_attack_campaign_risk_empty_or_unexecuted_is_inconclusive():
+    assert redbox._assess_attack_campaign_risk([], 0)[0] == "INCONCLUSIVE"
+    timeouts = [
+        {"breach_type": "timeout", "breached": False},
+        {"breach_type": "provider_error", "breached": False},
+    ]
+    level, recommendation, rate = redbox._assess_attack_campaign_risk(timeouts, 0)
+    assert level == "INCONCLUSIVE"
+    assert rate == 0.0
+    assert "cannot be assessed" in recommendation
+
+
+def test_assess_attack_campaign_risk_ignores_unexecuted_in_rate():
+    results = [
+        {"breach_type": "jailbreak", "breached": True},
+        {"breach_type": "provider_error", "breached": False},
+        {"breach_type": "timeout", "breached": False},
+    ]
+    level, recommendation, rate = redbox._assess_attack_campaign_risk(results, 1)
+    assert rate == 1.0
+    assert level == "CRITICAL"
+    assert "1/1" in recommendation
+    assert "2 attacks failed to execute" in recommendation
+
+
+@pytest.mark.asyncio
+async def test_attack_campaign_provider_errors_are_inconclusive(tmp_path, monkeypatch):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'redbox_attack_error.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    attack = attack_engine.Attack(
+        prompt="Test jailbreak prompt",
+        attack_type="jailbreak",
+        technique="Regression attack",
+        difficulty=0.8,
+        expected_failure="safety_bypass",
+        framework_origin="native",
+        multi_turn=True,
+        turn_sequence=["turn 1", "turn 2"],
+    )
+
+    class FakeOrchestrator:
+        def generate_attacks(self, **_kwargs):
+            return [attack]
+
+    async def fake_complete(**_kwargs):
+        raise ConnectionError("Ollama connection refused")
+
+    fake_litellm_client = types.SimpleNamespace(complete=fake_complete)
+    monkeypatch.setitem(sys.modules, "eval_engine.litellm_client", fake_litellm_client)
+    monkeypatch.setattr(attack_engine, "RedRoomOrchestrator", FakeOrchestrator)
+
+    with Session(engine) as session:
+        model = LLMModel(
+            name="Test Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="test/model",
+        )
+        session.add(model)
+        session.commit()
+        session.refresh(model)
+
+        payload = redbox.AttackCampaignRequest(
+            model_id=model.id,
+            goal="unsafe goal",
+            max_attacks=1,
+            run_multi_turn=False,
+        )
+        response = await redbox.run_attack_campaign(payload, session=session)
+
+        assert response["risk_level"] == "INCONCLUSIVE"
+        assert response["statistics"]["total_attacks"] == 1
+        assert response["statistics"]["completed_attacks"] == 0
+        assert response["statistics"]["failed_to_execute"] == 1
+        assert response["statistics"]["breached"] == 0
+        assert response["statistics"]["multi_turn_attacks"] == 1
+        assert response["results"][0]["breach_type"] == "provider_error"
+        assert response["results"][0]["breached"] is False
+        assert response["results"][0]["multi_turn"] is True
+        assert "cannot be assessed" in response["recommendation"]
+
+
+@pytest.mark.asyncio
+async def test_attack_campaign_timeout_includes_multi_turn_and_is_inconclusive(
+    tmp_path, monkeypatch
+):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'redbox_attack_timeout.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    attack = attack_engine.Attack(
+        prompt="Test jailbreak prompt",
+        attack_type="jailbreak",
+        technique="Regression attack",
+        difficulty=0.8,
+        expected_failure="safety_bypass",
+        framework_origin="native",
+        multi_turn=True,
+        turn_sequence=["turn 1"],
+    )
+
+    class FakeOrchestrator:
+        def generate_attacks(self, **_kwargs):
+            return [attack]
+
+    async def fake_complete(**_kwargs):
+        raise TimeoutError("LLM call timed out after 30s")
+
+    fake_litellm_client = types.SimpleNamespace(complete=fake_complete)
+    monkeypatch.setitem(sys.modules, "eval_engine.litellm_client", fake_litellm_client)
+    monkeypatch.setattr(attack_engine, "RedRoomOrchestrator", FakeOrchestrator)
+
+    with Session(engine) as session:
+        model = LLMModel(
+            name="Test Model",
+            provider=ModelProvider.CUSTOM,
+            model_id="test/model",
+        )
+        session.add(model)
+        session.commit()
+        session.refresh(model)
+
+        payload = redbox.AttackCampaignRequest(
+            model_id=model.id,
+            goal="unsafe goal",
+            max_attacks=1,
+            run_multi_turn=False,
+        )
+        response = await redbox.run_attack_campaign(payload, session=session)
+
+        assert response["risk_level"] == "INCONCLUSIVE"
+        assert response["results"][0]["breach_type"] == "timeout"
+        assert response["results"][0]["multi_turn"] is True
+        assert response["statistics"]["multi_turn_attacks"] == 1

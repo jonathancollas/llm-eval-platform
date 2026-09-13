@@ -158,6 +158,7 @@ function AttackCampaign({ models }: { models: any[] }) {
     HIGH:     "bg-red-800 border-red-500 text-red-200",
     MODERATE: "bg-orange-900 border-orange-600 text-orange-300",
     LOW:      "bg-green-900 border-green-700 text-green-300",
+    INCONCLUSIVE: "bg-yellow-900 border-yellow-600 text-yellow-300",
   }[level] || "bg-slate-800");
 
   return (
@@ -254,7 +255,7 @@ function AttackCampaign({ models }: { models: any[] }) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-lg">{result.risk_level} RISK</span>
                   <span className="text-2xl">{
-                    ({ CRITICAL: "☠️", HIGH: "🔴", MODERATE: "🟠", LOW: "🟢" } as Record<string, string>)[result.risk_level] || "⚪"
+                    ({ CRITICAL: "☠️", HIGH: "🔴", MODERATE: "🟠", LOW: "🟢", INCONCLUSIVE: "⚠️" } as Record<string, string>)[result.risk_level] || "⚪"
                   }</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center mb-3">
