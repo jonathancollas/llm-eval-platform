@@ -18,7 +18,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ./bench_library:/bench_library
+      - ./backend/bench_library:/bench_library
       - backend_data:/app/data
     env_file:
       - .env          # Load all secrets from .env (not committed to git)
@@ -45,7 +45,7 @@ services:
     command: celery -A core.job_queue:celery_app worker --loglevel=info
     volumes:
       - ./backend:/app
-      - ./bench_library:/bench_library
+      - ./backend/bench_library:/bench_library
       - backend_data:/app/data
     env_file:
       - .env

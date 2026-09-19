@@ -1,10 +1,49 @@
 """
 Application settings — Pydantic BaseSettings with env var support.
 """
+import logging
 import os
+import secrets
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
+
+# Compose historically mounted the empty repo-root ./bench_library at
+# /bench_library while builtins live in backend/bench_library (also /app/bench_library
+# inside the image). Fall back only for these Docker defaults so test tmp dirs
+# are not redirected.
+_BUNDLED_BENCH_MARKER = Path("safety") / "refusals.json"
+_DOCKER_BENCH_LIBRARY_DEFAULTS = frozenset({"/bench_library", "/app/bench_library"})
+_BUNDLED_BENCH_LIBRARY = Path(__file__).resolve().parent.parent / "bench_library"
+
+
+def resolve_bench_library_path(path: str) -> str:
+    """Return a bench-library dir that actually contains builtin datasets.
+
+    The README quick start sets BENCH_LIBRARY_PATH=/bench_library and bind-mounts
+    the nearly empty repo-root folder. Runners then load zero items and persist
+    COMPLETED campaigns with score 0.0. If the configured Docker default is empty,
+    use the bundled backend/bench_library instead. Explicit custom paths are
+    left unchanged so tests and user overrides keep isolation.
+    """
+    configured = Path(path)
+    if (configured / _BUNDLED_BENCH_MARKER).is_file():
+        return str(configured)
+
+    normalized = str(configured).rstrip("/") or "/"
+    if normalized in _DOCKER_BENCH_LIBRARY_DEFAULTS:
+        if (_BUNDLED_BENCH_LIBRARY / _BUNDLED_BENCH_MARKER).is_file():
+            logger.warning(
+                "BENCH_LIBRARY_PATH=%s has no builtin datasets; using bundled library %s",
+                path,
+                _BUNDLED_BENCH_LIBRARY,
+            )
+            return str(_BUNDLED_BENCH_LIBRARY)
+    return path
 
 
 class Settings(BaseSettings):
@@ -34,15 +73,13 @@ class Settings(BaseSettings):
                 )
             # In dev: only allow ephemeral key if explicitly opted in
             dev_mode = os.getenv("MERCURY_DEV_MODE", "").lower() in ("1", "true", "yes")
-            import secrets, logging
-            log = logging.getLogger(__name__)
             if dev_mode:
-                log.warning(
+                logger.warning(
                     "SECRET_KEY not set — ephemeral key in use (MERCURY_DEV_MODE=true). "
                     "Never deploy with this setting."
                 )
             else:
-                log.warning(
+                logger.warning(
                     "SECRET_KEY not set — ephemeral key in use. "
                     "Set SECRET_KEY in .env or set MERCURY_DEV_MODE=true to silence this warning."
                 )
@@ -62,6 +99,11 @@ class Settings(BaseSettings):
     # ── Benchmark library ────────────────────────────────────────────────────────
     bench_library_path: str = "/app/bench_library"
     benchmark_upload_max_bytes: int = 50 * 1024 * 1024
+
+    @field_validator("bench_library_path")
+    @classmethod
+    def validate_bench_library_path(cls, v: str) -> str:
+        return resolve_bench_library_path(v)
 
     # ── API providers ────────────────────────────────────────────────────────────
     openai_api_key: str = ""
