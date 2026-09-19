@@ -1,12 +1,16 @@
 import os
 import secrets
 import sys
+from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.config import Settings, get_settings
+from core.config import Settings, get_settings, resolve_bench_library_path
+
+BUNDLED_BENCH_LIBRARY = Path(__file__).resolve().parent.parent / "bench_library"
+REFUSALS_MARKER = BUNDLED_BENCH_LIBRARY / "safety" / "refusals.json"
 
 
 @pytest.fixture(autouse=True)
@@ -68,3 +72,37 @@ def test_get_settings_cache_clear_refreshes_env(monkeypatch):
     get_settings.cache_clear()
     refreshed_settings = get_settings()
     assert refreshed_settings.secret_key == second
+
+
+def test_resolve_bench_library_falls_back_from_empty_docker_defaults():
+    """README compose used /bench_library mounted from an empty host folder."""
+    assert REFUSALS_MARKER.is_file()
+    for docker_default in ("/bench_library", "/app/bench_library"):
+        resolved = resolve_bench_library_path(docker_default)
+        assert Path(resolved) == BUNDLED_BENCH_LIBRARY
+        assert (Path(resolved) / "safety" / "refusals.json").is_file()
+
+
+def test_resolve_bench_library_keeps_explicit_custom_path(tmp_path):
+    resolved = resolve_bench_library_path(str(tmp_path))
+    assert resolved == str(tmp_path)
+
+
+def test_resolve_bench_library_keeps_path_that_already_has_datasets():
+    resolved = resolve_bench_library_path(str(BUNDLED_BENCH_LIBRARY))
+    assert Path(resolved) == BUNDLED_BENCH_LIBRARY
+
+
+def test_settings_docker_default_bench_library_uses_bundled_datasets(monkeypatch):
+    monkeypatch.setenv("BENCH_LIBRARY_PATH", "/bench_library")
+    settings = Settings()
+    assert (Path(settings.bench_library_path) / "safety" / "refusals.json").is_file()
+
+
+def test_docker_compose_mounts_backend_bench_library():
+    """Quick start must bind-mount the bundled datasets, not the empty root folder."""
+    repo = Path(__file__).resolve().parents[2]
+    compose = (repo / "docker-compose.yml").read_text()
+    assert compose.count("./backend/bench_library:/bench_library") == 2
+    assert "- ./bench_library:/bench_library" not in compose
+    assert REFUSALS_MARKER.is_file()
