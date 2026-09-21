@@ -41,18 +41,49 @@ class RunSummary:
     item_results: list[ItemResult]
 
 
+def _parse_dataset_text(full_path: str, text: str) -> list[dict]:
+    """Parse dataset file contents. Supports JSON, JSONL, and CSV."""
+    suffix = Path(full_path).suffix.lower()
+    if suffix == ".csv":
+        import csv
+        import io
+
+        reader = csv.DictReader(io.StringIO(text))
+        return [
+            dict(row)
+            for row in reader
+            if any((value or "").strip() for value in row.values())
+        ]
+    if suffix == ".jsonl":
+        items: list[dict] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            if isinstance(obj, dict):
+                items.append(obj)
+        return items
+    data = json.loads(text)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("items", [])
+    return []
+
+
 @lru_cache(maxsize=64)
 def _load_dataset_cached(full_path: str) -> list[dict]:
-    """Load and cache a dataset JSON file.  Cached by absolute path string.
+    """Load and cache a dataset file.  Cached by absolute path string.
 
-    The cache is process-level and lives for the lifetime of the worker.
-    It is invalidated automatically when the process restarts (e.g. after a
-    dataset upload followed by a gunicorn worker restart or Docker redeploy).
+    Accepts JSON (list or ``{items: [...]}``), JSONL, and CSV.  The cache is
+    process-level and lives for the lifetime of the worker.
     """
     try:
         with open(full_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else data.get("items", [])
+            text = f.read()
+        data = _parse_dataset_text(full_path, text)
+        return data if isinstance(data, list) else []
     except Exception as e:
         logger.error(f"Failed to load dataset {full_path}: {e}")
         return []
