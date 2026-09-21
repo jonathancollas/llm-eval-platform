@@ -53,13 +53,13 @@ class TestUploadSecurity:
             assert Path(name).name == name
 
     def test_extension_whitelist(self):
-        """Only .json and .csv should be allowed."""
-        allowed = ["dataset.json", "bench.csv"]
+        """Only .json, .jsonl, and .csv should be allowed."""
+        allowed = ["dataset.json", "bench.csv", "rows.jsonl"]
         rejected = ["evil.sh", "malware.exe", "script.py", "data.xml", "payload.html"]
         for f in allowed:
-            assert f.endswith(".json") or f.endswith(".csv"), f"{f} should be allowed"
+            assert f.endswith((".json", ".jsonl", ".csv")), f"{f} should be allowed"
         for f in rejected:
-            assert not (f.endswith(".json") or f.endswith(".csv")), f"{f} should be rejected"
+            assert not f.endswith((".json", ".jsonl", ".csv")), f"{f} should be rejected"
 
     def test_max_size_logic(self):
         """Uploads above 50MB should trigger rejection."""

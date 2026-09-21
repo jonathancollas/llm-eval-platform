@@ -208,6 +208,28 @@ class TestCustomRunner:
     def teardown_method(self):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
+    def test_load_dataset_csv(self):
+        from eval_engine.base import BaseBenchmarkRunner
+
+        csv_path = os.path.join(self.tmp_dir, "items.csv")
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("prompt,expected\nCapital of France?,Paris\n")
+        self.runner.benchmark.dataset_path = "items.csv"
+        BaseBenchmarkRunner.invalidate_dataset_cache(csv_path)
+        items = self.runner.load_dataset()
+        assert items == [{"prompt": "Capital of France?", "expected": "Paris"}]
+
+    def test_load_dataset_jsonl(self):
+        from eval_engine.base import BaseBenchmarkRunner
+
+        jsonl_path = os.path.join(self.tmp_dir, "items.jsonl")
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            f.write('{"prompt":"Q","expected":"A"}\n')
+        self.runner.benchmark.dataset_path = "items.jsonl"
+        BaseBenchmarkRunner.invalidate_dataset_cache(jsonl_path)
+        items = self.runner.load_dataset()
+        assert items == [{"prompt": "Q", "expected": "A"}]
+
     def test_multiple_choice_correct(self):
         item = {"choices": ["Paris", "London", "Berlin", "Rome"], "answer": "A"}
         assert self.runner.score_item("A", item) == 1.0

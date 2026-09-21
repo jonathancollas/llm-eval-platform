@@ -83,6 +83,7 @@ def benchmark_id(client):
 
 
 def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
+    import json as _json
     custom_dir = test_dirs["bench_library"] / "custom"
     existing_files = set(custom_dir.glob("*_dataset.json")) if custom_dir.exists() else set()
     payload = b'{"items":[{"prompt":"p","answer":"a"}]}'
@@ -95,7 +96,80 @@ def test_upload_dataset_json_success(client, benchmark_id, test_dirs):
     created_files = set(custom_dir.glob("*_dataset.json")) - existing_files
     assert len(created_files) == 1
     created_file = next(iter(created_files))
-    assert created_file.read_bytes() == payload
+    assert _json.loads(created_file.read_text(encoding="utf-8")) == [{"prompt": "p", "answer": "a"}]
+
+
+def test_upload_dataset_csv_is_loadable_by_runner(client, benchmark_id, test_dirs):
+    """CSV uploads must be persisted as JSON so eval runs don't complete at 0.0."""
+    import json as _json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.models import Benchmark, BenchmarkType
+    from eval_engine.custom.runner import CustomRunner
+
+    csv_payload = b"prompt,expected\nCapital of France?,Paris\n2+2,4\n"
+    files = {"file": ("capitals.csv", csv_payload, "text/csv")}
+    resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["has_dataset"] is True
+    assert body["num_samples"] == 2
+
+    custom_dir = test_dirs["bench_library"] / "custom"
+    json_files = list(custom_dir.glob("*_capitals.json"))
+    assert len(json_files) == 1
+    stored = _json.loads(json_files[0].read_text(encoding="utf-8"))
+    assert stored == [
+        {"prompt": "Capital of France?", "expected": "Paris"},
+        {"prompt": "2+2", "expected": "4"},
+    ]
+
+    bench = Benchmark(
+        id=1,
+        name="csv-upload",
+        type=BenchmarkType.CUSTOM,
+        dataset_path=f"custom/{json_files[0].name}",
+        has_dataset=True,
+    )
+    runner = CustomRunner(bench, str(test_dirs["bench_library"]))
+    items = runner.load_dataset()
+    assert len(items) == 2
+    assert items[0]["expected"] == "Paris"
+
+
+def test_upload_dataset_jsonl_is_loadable_by_runner(client, benchmark_id, test_dirs):
+    import json as _json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from core.models import Benchmark, BenchmarkType
+    from eval_engine.custom.runner import CustomRunner
+
+    jsonl_payload = b'{"prompt":"Q1","expected":"A1"}\n{"prompt":"Q2","expected":"A2"}\n'
+    files = {"file": ("qa_rows.jsonl", jsonl_payload, "text/plain")}
+    resp = client.post(f"/benchmarks/{benchmark_id}/upload-dataset", files=files)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["has_dataset"] is True
+
+    custom_dir = test_dirs["bench_library"] / "custom"
+    json_files = list(custom_dir.glob("*_qa_rows.json"))
+    assert len(json_files) == 1
+    stored = _json.loads(json_files[0].read_text(encoding="utf-8"))
+    assert len(stored) == 2
+
+    bench = Benchmark(
+        id=1,
+        name="jsonl-upload",
+        type=BenchmarkType.CUSTOM,
+        dataset_path=f"custom/{json_files[0].name}",
+        has_dataset=True,
+    )
+    runner = CustomRunner(bench, str(test_dirs["bench_library"]))
+    assert len(runner.load_dataset()) == 2
 
 
 def test_upload_dataset_empty_json_rejected(client, benchmark_id):

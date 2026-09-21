@@ -95,6 +95,66 @@ def list_benchmarks(
     return [_to_read(b) for b in session.exec(query).all()]
 
 
+def _parse_uploaded_dataset(filename: str, content: bytes) -> list[dict]:
+    """Parse an uploaded JSON / JSONL / CSV dataset into a list of item dicts."""
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"File is not valid UTF-8: {e}")
+
+    lower = filename.lower()
+    if lower.endswith(".csv"):
+        import csv as _csv
+        import io as _io
+        try:
+            reader = _csv.DictReader(_io.StringIO(text))
+            if reader.fieldnames is None:
+                raise HTTPException(status_code=422, detail="CSV file is missing a header row.")
+            items = [
+                dict(row)
+                for row in reader
+                if any((value or "").strip() for value in row.values())
+            ]
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Invalid CSV: {e}")
+        return items
+
+    if lower.endswith(".jsonl"):
+        items: list[dict] = []
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=422, detail=f"Invalid JSONL on line {line_no}: {e}")
+            if not isinstance(obj, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"JSONL line {line_no} must be a JSON object.",
+                )
+            items.append(obj)
+        return items
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        items = data.get("items", [])
+        if isinstance(items, list):
+            return items
+    raise HTTPException(
+        status_code=422,
+        detail="Dataset must be a JSON list or an object with an 'items' array.",
+    )
+
+
 # ── Benchmark Packs — versioned publishable collections ────────────────────────
 
 class BenchmarkPackCreate(BaseModel):
@@ -243,11 +303,18 @@ async def upload_dataset(
     # ── Security hardening (#S2) ──────────────────────────────────────────────
     MAX_UPLOAD_BYTES = settings.benchmark_upload_max_bytes  # configurable via env
 
-    # MIME type whitelist — only JSON and CSV
-    allowed_content_types = {"application/json", "text/csv", "text/plain", "application/octet-stream"}
+    # MIME type whitelist — JSON, JSONL, CSV, and generic upload types
+    allowed_content_types = {
+        "application/json",
+        "application/jsonl",
+        "application/x-ndjson",
+        "text/csv",
+        "text/plain",
+        "application/octet-stream",
+    }
     ct = file.content_type or ""
     if ct and ct.split(";")[0].strip() not in allowed_content_types:
-        raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/CSV allowed.")
+        raise HTTPException(status_code=415, detail=f"Unsupported file type '{ct}'. Only JSON/JSONL/CSV allowed.")
 
     # Filename sanitization — strip all directory components (path traversal prevention)
     raw_name = file.filename or "dataset.json"
@@ -260,8 +327,9 @@ async def upload_dataset(
         safe_name = "dataset.json"
 
     # Extension whitelist
-    if not (safe_name.endswith(".json") or safe_name.endswith(".csv")):
-        raise HTTPException(status_code=415, detail="Only .json and .csv files are accepted.")
+    lower_name = safe_name.lower()
+    if not lower_name.endswith((".json", ".jsonl", ".csv")):
+        raise HTTPException(status_code=415, detail="Only .json, .jsonl, and .csv files are accepted.")
 
     # Bounded read — never read more than MAX_UPLOAD_BYTES
     # UploadFile.read() in chunks using spooled file
@@ -282,41 +350,33 @@ async def upload_dataset(
     content = b"".join(chunks)
     # ─────────────────────────────────────────────────────────────────────────
 
-    # Parse content — JSON or CSV depending on extension
-    if safe_name.endswith(".csv"):
-        import csv as _csv
-        import io as _io
-        try:
-            text = content.decode("utf-8")
-        except UnicodeDecodeError as e:
-            raise HTTPException(status_code=422, detail=f"CSV file is not valid UTF-8: {e}")
-        try:
-            reader = _csv.DictReader(_io.StringIO(text))
-            items = [dict(row) for row in reader]
-        except Exception as e:
-            raise HTTPException(status_code=422, detail=f"Invalid CSV: {e}")
-    else:
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=422, detail=f"Invalid JSON: {e}")
-        items = data if isinstance(data, list) else data.get("items", [])
-
+    items = _parse_uploaded_dataset(safe_name, content)
     if not items:
         raise HTTPException(status_code=422, detail="Dataset must contain a non-empty list of items.")
 
-    # Save to bench_library/custom/ with sanitized filename
+    # Persist as JSON so the eval runner can load the dataset. CSV/JSONL are
+    # accepted on upload but stored as a JSON array — otherwise load_dataset()
+    # json-parses the file, returns empty, and the campaign completes at 0.0.
     custom_dir = Path(settings.bench_library_path) / "custom"
     custom_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+    stem = Path(safe_name).stem or "dataset"
+    filename = f"{uuid.uuid4().hex[:8]}_{stem}.json"
     dest = custom_dir / filename
-    # Final safety check — ensure dest is inside custom_dir (no symlink escape)
     dest = dest.resolve()
-    if not str(dest).startswith(str(custom_dir.resolve())):
+    try:
+        dest.relative_to(custom_dir.resolve())
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid file path.")
-    dest.write_bytes(content)
+    dest.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    try:
+        from eval_engine.base import BaseBenchmarkRunner
+        BaseBenchmarkRunner.invalidate_dataset_cache(str(dest))
+    except Exception:
+        pass
 
     bench.dataset_path = f"custom/{filename}"
+    bench.has_dataset = True
     bench.num_samples = bench.num_samples or len(items)
     session.add(bench)
     session.commit()
