@@ -187,12 +187,24 @@ _ALLOWED_ORIGINS = [o.strip() for o in _os.getenv("ALLOWED_ORIGINS", "").split("
     "http://localhost:3000",
     "http://localhost:3001",
 ]
+# Browsers preflight any non-safelisted header. The UI sends X-API-Key once
+# NEXT_PUBLIC_API_KEY is set, and tenant auth uses X-Tenant-Key / X-User-Email.
+# Omitting them makes every authenticated cross-origin call fail before the
+# route runs (frontend :3000 → API :8000, and the Render split deploy).
+_CORS_ALLOW_HEADERS = [
+    "Accept",
+    "Authorization",
+    "Content-Type",
+    "X-API-Key",
+    "X-Tenant-Key",
+    "X-User-Email",
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept"],
+    allow_headers=_CORS_ALLOW_HEADERS,
 )
 
 
