@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 
 from core.database import get_session
 from core.models import TaskRegistryEntry
-from datetime import datetime
+from datetime import UTC, datetime
 from eval_engine.task_registry import task_registry, TaskEntry
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -99,7 +99,7 @@ def _entry_to_read(entry: TaskRegistryEntry) -> TaskRead:
 
 
 def _task_entry_to_db(task: TaskEntry) -> TaskRegistryEntry:
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     return TaskRegistryEntry(
         canonical_id=task.canonical_id,
         name=task.name,
@@ -239,7 +239,7 @@ def create_task(
     if existing:
         raise HTTPException(status_code=409, detail=f"Task '{body.canonical_id}' already exists.")
 
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     entry = TaskRegistryEntry(
         canonical_id=body.canonical_id,
         name=body.name,

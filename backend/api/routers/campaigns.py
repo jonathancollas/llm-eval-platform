@@ -488,7 +488,7 @@ async def run_campaign(
 ):
     """Start or re-run a campaign."""
     import logging
-    from datetime import datetime as _dt
+    from datetime import UTC, datetime as _dt
     _logger = logging.getLogger(__name__)
 
     campaign = session.exec(
@@ -519,7 +519,7 @@ async def run_campaign(
     # Set RUNNING immediately — before submitting the task
     # This prevents the "pending forever" appearance in the UI
     campaign.status = JobStatus.RUNNING
-    campaign.started_at = _dt.utcnow()
+    campaign.started_at = _dt.now(UTC)
     campaign.progress = 0.0
     campaign.error_message = None
     session.add(campaign)
@@ -531,7 +531,7 @@ async def run_campaign(
     except Exception as e:
         campaign.status = JobStatus.FAILED
         campaign.error_message = f"queue_enqueue_failed: {str(e)[:MAX_QUEUE_ERROR_MESSAGE_LENGTH]}"
-        campaign.completed_at = _dt.utcnow()
+        campaign.completed_at = _dt.now(UTC)
         session.add(campaign)
         session.commit()
         session.refresh(campaign)
