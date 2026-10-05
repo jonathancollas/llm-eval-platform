@@ -536,8 +536,8 @@ async def _live_telemetry_subscriber(event: EvalEvent) -> None:
                 campaign.current_item_label = p.get("current_item_label")
 
             elif event.event_type in (EventType.CAMPAIGN_COMPLETED, EventType.CAMPAIGN_FAILED):
-                from datetime import datetime as _dt
-                campaign.completed_at = _dt.utcnow()
+                from datetime import UTC, datetime as _dt
+                campaign.completed_at = _dt.now(UTC)
 
             session.add(campaign)
             session.commit()
