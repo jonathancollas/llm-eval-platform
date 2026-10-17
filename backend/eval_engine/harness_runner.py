@@ -7,6 +7,7 @@ Provides a curated catalog of 60+ top benchmarks, plus search access to all
 """
 import asyncio
 import logging
+import os
 import time
 from typing import Optional
 
@@ -14,6 +15,39 @@ from core.models import LLMModel, Benchmark
 from eval_engine.base import BaseBenchmarkRunner, RunSummary, ItemResult
 
 logger = logging.getLogger(__name__)
+
+
+def _pin_lm_api_key(lm: object, api_key: str) -> None:
+    """Bind one lm-eval client to a single API key.
+
+    ``LocalCompletionsAPI.api_key`` reads the process-wide ``OPENAI_API_KEY``,
+    and ``TemplateAPI.header`` turns that into the ``Authorization`` header on
+    first use (``cached_property`` since lm-eval 0.4.4). Campaign jobs share
+    this process when Celery is down: the local queue runs them on threads,
+    and each harness job executes in the default thread pool. Writing
+    ``OPENAI_API_KEY`` from those threads lets one model's key be cached onto
+    another model's client and sent to that client's ``base_url``.
+
+    Pinning overrides both a cached header and a live ``api_key`` property, and
+    does not write the environment. An empty per-model key snapshots the
+    ambient variable once so a later writer cannot swap it.
+    """
+    token = api_key or os.environ.get("OPENAI_API_KEY", "")
+    pinned_header = {"Authorization": f"Bearer {token}"}
+    base = type(lm)
+
+    class _PinnedAuth(base):  # type: ignore[misc, valid-type]
+        @property
+        def api_key(self) -> str:
+            return token
+
+        @property
+        def header(self) -> dict:
+            return pinned_header
+
+    _PinnedAuth.__name__ = base.__name__
+    _PinnedAuth.__qualname__ = base.__qualname__
+    lm.__class__ = _PinnedAuth
 
 
 # ── Curated task catalog ───────────────────────────────────────────────────────
@@ -480,9 +514,9 @@ class HarnessRunner(BaseBenchmarkRunner):
             tokenizer_backend=None,
             max_length=min(model.context_length or 4096, 4096),
         )
-        if api_key:
-            import os
-            os.environ["OPENAI_API_KEY"] = api_key
+        # Do not publish this key via os.environ. Concurrent harness jobs
+        # would otherwise authenticate against each other's endpoints.
+        _pin_lm_api_key(lm, api_key)
 
         meta = HARNESS_CATALOG.get(self.task_name, {})
         few_shot = meta.get("few_shot", 0)
